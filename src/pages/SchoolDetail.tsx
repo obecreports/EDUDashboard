@@ -514,10 +514,11 @@ function InfoItem({ icon, label, value }: { icon: React.ReactNode; label: string
     </div>
   );
 }
-
 /* =====================================================
    TAB 0: Overview (ภาพรวม)
    ===================================================== */
+
+
 function OverviewTab({ school }: { school: SchoolFull }) {
   return (
     <div>
