@@ -524,7 +524,7 @@ function OverviewTab({ school }: { school: SchoolFull }) {
       <div className="overview-grid">
         {/* Left Column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
+
           {/* School Owner Position & Profile Pic */}
           <div className="overview-card">
             <div className="overview-card__header">
@@ -580,7 +580,7 @@ function OverviewTab({ school }: { school: SchoolFull }) {
 
         {/* Right Column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
+
           {/* Spider Chart Card */}
           <div className="overview-card">
             <div className="overview-card__header">
@@ -589,7 +589,7 @@ function OverviewTab({ school }: { school: SchoolFull }) {
             </div>
             <div className="overview-card__body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <SpiderChart scores={school.pillarScores} />
-              
+
               <div className="pillar-scores">
                 <PillarProgressBar label="1. ด้านผู้เรียน" score={school.pillarScores.learner} />
                 <PillarProgressBar label="2. ด้านการมีส่วนร่วม" score={school.pillarScores.participation} />
