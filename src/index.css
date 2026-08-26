@@ -7,18 +7,31 @@
 
 /* -- CSS Variables -------------------------------------------------------- */
 :root {
-  /* Primary Palette */
-  --green-50: #f0fdf4;
-  --green-100: #dcfce7;
-  --green-200: #bbf7d0;
-  --green-300: #86efac;
-  --green-400: #4ade80;
-  --green-500: #22c55e;
-  --green-600: #16a34a;
-  --green-700: #15803d;
-  --green-800: #166534;
-  --green-900: #14532d;
-  --green-950: #052e16;
+  /* Navy Blue Palette */
+  --navy-50: #f4f6fa;
+  --navy-100: #e1e7f0;
+  --navy-200: #c3cfdf;
+  --navy-300: #98aec9;
+  --navy-400: #6788b1;
+  --navy-500: #476b9c;
+  --navy-600: #1d3d6f;
+  --navy-700: #173059;
+  --navy-800: #122444;
+  --navy-900: #0b172d;
+  --navy-950: #050a15;
+
+  /* Gold Accent Palette */
+  --gold-50: #fdfbe7;
+  --gold-100: #fbf5c4;
+  --gold-200: #f7e68c;
+  --gold-300: #f3ce4c;
+  --gold-400: #eeb319;
+  --gold-500: #d4950b;
+  --gold-600: #b27307;
+  --gold-700: #8c5308;
+  --gold-800: #74420e;
+  --gold-900: #633611;
+  --gold-950: #3a1a05;
 
   /* Neutrals */
   --white: #ffffff;
@@ -34,11 +47,11 @@
   --gray-900: #0f172a;
 
   /* Semantic */
-  --primary: var(--green-600);
-  --primary-light: var(--green-100);
-  --primary-dark: var(--green-800);
-  --primary-hover: var(--green-700);
-  --accent: var(--green-500);
+  --primary: var(--navy-600);
+  --primary-light: var(--navy-100);
+  --primary-dark: var(--navy-800);
+  --primary-hover: var(--navy-700);
+  --accent: var(--gold-500);
   --background: var(--gray-50);
   --surface: var(--white);
   --text: var(--gray-800);
@@ -155,7 +168,8 @@ img {
   left: 0;
   right: 0;
   height: var(--navbar-height);
-  background: linear-gradient(135deg, var(--green-700) 0%, var(--green-600) 50%, var(--green-500) 100%);
+  background: linear-gradient(135deg, var(--navy-800) 0%, var(--navy-700) 50%, var(--navy-600) 100%);
+  border-bottom: 2px solid var(--white); /* White line separator */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -293,18 +307,20 @@ img {
 }
 
 .sidebar__item:hover {
-  background: var(--green-50);
-  color: var(--green-700);
+  background: var(--navy-50);
+  color: var(--navy-700);
 }
 
 .sidebar__item--active {
-  background: var(--green-100);
-  color: var(--green-700);
+  background: var(--navy-900);
+  color: var(--white);
   font-weight: 600;
+  border: 1.5px solid var(--white); /* White border around active item */
+  box-shadow: 0 0 0 1.5px var(--gold-500); /* Gold outer accent line */
 }
 
 .sidebar__item--active .sidebar__icon {
-  color: var(--green-600);
+  color: var(--gold-400);
 }
 
 .sidebar__icon {
@@ -343,9 +359,9 @@ img {
 }
 
 .sidebar__toggle:hover {
-  background: var(--green-50);
-  color: var(--green-600);
-  border-color: var(--green-200);
+  background: var(--navy-50);
+  color: var(--navy-600);
+  border-color: var(--navy-200);
 }
 
 /* Collapsed sidebar */
@@ -416,7 +432,7 @@ img {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--green-400), var(--green-600));
+  background: linear-gradient(90deg, var(--navy-600), var(--gold-500));
   opacity: 0;
   transition: opacity var(--transition-base);
 }
@@ -441,8 +457,15 @@ img {
 }
 
 .stat-card__icon--green {
-  background: var(--green-100);
-  color: var(--green-600);
+  background: var(--navy-100);
+  color: var(--navy-600);
+}
+
+.stat-card__icon--gold {
+  background: var(--gold-100);
+  color: var(--gold-600);
+  border: 1.5px solid var(--white); /* White outline border */
+  box-shadow: var(--shadow-xs);
 }
 
 .stat-card__icon--blue {
@@ -544,8 +567,8 @@ img {
 
 .filter-bar__input:focus,
 .filter-bar__select:focus {
-  border-color: var(--green-400);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+  border-color: var(--navy-400);
+  box-shadow: 0 0 0 3px rgba(29, 61, 111, 0.15);
 }
 
 .filter-bar__input::placeholder {
@@ -609,12 +632,13 @@ img {
 .school-card:hover {
   box-shadow: var(--shadow-lg);
   transform: translateY(-3px);
-  border-color: var(--green-200);
+  border-color: var(--navy-200);
 }
 
 .school-card__header {
-  background: linear-gradient(135deg, var(--green-600) 0%, var(--green-500) 100%);
+  background: linear-gradient(135deg, var(--navy-800) 0%, var(--navy-600) 100%);
   padding: 18px 22px;
+  border-bottom: 2px solid var(--white); /* White separator line */
   color: var(--white);
 }
 
@@ -654,7 +678,7 @@ img {
 .school-card__info-icon {
   width: 16px;
   height: 16px;
-  color: var(--green-500);
+  color: var(--navy-500);
   flex-shrink: 0;
 }
 
@@ -711,7 +735,7 @@ img {
 }
 
 .school-card__arrow {
-  color: var(--green-500);
+  color: var(--accent);
   transition: transform var(--transition-fast);
 }
 
@@ -743,7 +767,7 @@ img {
 }
 
 .data-table-wrapper__title-icon {
-  color: var(--green-600);
+  color: var(--primary);
 }
 
 .data-table {
@@ -752,15 +776,15 @@ img {
 }
 
 .data-table th {
-  background: var(--green-50);
+  background: var(--navy-50);
   padding: 12px 18px;
   text-align: left;
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--green-800);
+  color: var(--navy-800);
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  border-bottom: 2px solid var(--green-100);
+  border-bottom: 2px solid var(--navy-100);
   white-space: nowrap;
 }
 
@@ -776,7 +800,7 @@ img {
 }
 
 .data-table tr:hover td {
-  background: var(--green-50);
+  background: var(--navy-50);
 }
 
 .data-table--striped tr:nth-child(even) td {
@@ -784,7 +808,7 @@ img {
 }
 
 .data-table--striped tr:nth-child(even):hover td {
-  background: var(--green-50);
+  background: var(--navy-50);
 }
 
 .data-table .text-right {
@@ -840,15 +864,16 @@ img {
 }
 
 .tabs__item:hover {
-  color: var(--green-700);
-  background: var(--green-50);
+  color: var(--navy-700);
+  background: var(--navy-50);
 }
 
 .tabs__item--active {
   color: var(--white);
   background: var(--primary);
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3);
+  box-shadow: 0 2px 8px rgba(29, 61, 111, 0.3);
+  border: 1px solid var(--white); /* White line outline for active state */
 }
 
 .tabs__item--active:hover {
@@ -894,7 +919,7 @@ img {
 }
 
 .breadcrumb a {
-  color: var(--green-600);
+  color: var(--navy-600);
 }
 
 .breadcrumb__sep {
@@ -922,7 +947,7 @@ img {
 }
 
 .info-item__icon {
-  color: var(--green-600);
+  color: var(--navy-600);
   width: 20px;
   height: 20px;
   flex-shrink: 0;
@@ -952,7 +977,9 @@ img {
    SCHOOL DETAIL - Header Banner
    ========================================================================== */
 .school-banner {
-  background: linear-gradient(135deg, var(--green-700) 0%, var(--green-500) 60%, var(--green-400) 100%);
+  background: linear-gradient(135deg, var(--navy-800) 0%, var(--navy-600) 60%, var(--navy-500) 100%);
+  border: 2px solid var(--white); /* White border around school banner */
+  box-shadow: var(--shadow-md), 0 0 0 2.5px var(--gold-500); /* gold accent boundary */
   border-radius: var(--radius-xl);
   padding: 32px 36px;
   color: var(--white);
@@ -1204,9 +1231,9 @@ img {
 }
 
 .pagination__btn:hover {
-  background: var(--green-50);
-  border-color: var(--green-300);
-  color: var(--green-700);
+  background: var(--navy-50);
+  border-color: var(--navy-300);
+  color: var(--navy-700);
 }
 
 .pagination__btn--active {
@@ -1246,14 +1273,14 @@ img {
 }
 
 .recent-item:hover {
-  background: var(--green-50);
+  background: var(--navy-50);
 }
 
 .recent-item__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--green-500);
+  background: var(--gold-500); /* Gold dot for updates */
   flex-shrink: 0;
 }
 
@@ -1273,7 +1300,10 @@ img {
 /* ==========================================================================
    UTILITIES
    ========================================================================== */
-.text-green { color: var(--green-600); }
+.text-green { color: var(--navy-600); }
+.text-navy { color: var(--navy-600); }
+.text-gold { color: var(--gold-500); }
+.text-accent { color: var(--accent); }
 .text-muted { color: var(--text-muted); }
 .font-en { font-family: var(--font-en); }
 .mt-1 { margin-top: 8px; }
@@ -1372,7 +1402,7 @@ img {
 }
 
 .overview-card__header-icon {
-  color: var(--green-600);
+  color: var(--navy-600);
 }
 
 .overview-card__body {
@@ -1391,12 +1421,13 @@ img {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--green-100), var(--green-200));
+  background: linear-gradient(135deg, var(--navy-50), var(--navy-100));
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border: 3px solid var(--green-300);
+  border: 3px solid var(--white); /* White inner border */
+  box-shadow: 0 0 0 2px var(--gold-400); /* Gold outer border */
 }
 
 .profile-card__info {
@@ -1418,7 +1449,7 @@ img {
 
 .profile-card__contact {
   font-size: 0.8rem;
-  color: var(--green-600);
+  color: var(--navy-600);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1444,12 +1475,12 @@ img {
   width: 100%;
   height: 200px;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--green-50), var(--green-100));
+  background: linear-gradient(135deg, var(--navy-50), var(--navy-100));
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--green-400);
+  color: var(--navy-400);
   gap: 8px;
 }
 
@@ -1505,7 +1536,7 @@ img {
 }
 
 .infra-mini-item__icon {
-  color: var(--green-600);
+  color: var(--navy-600);
   flex-shrink: 0;
 }
 
@@ -1549,13 +1580,13 @@ img {
 }
 
 .spider-chart__area {
-  fill: rgba(22, 163, 74, 0.2);
-  stroke: var(--green-600);
+  fill: rgba(29, 61, 111, 0.15);
+  stroke: var(--navy-600);
   stroke-width: 2.5;
 }
 
 .spider-chart__point {
-  fill: var(--green-600);
+  fill: var(--navy-600);
   stroke: var(--white);
   stroke-width: 2;
 }
@@ -1570,7 +1601,7 @@ img {
 
 .spider-chart__score {
   font-size: 10px;
-  fill: var(--green-600);
+  fill: var(--navy-600);
   font-weight: 700;
   text-anchor: middle;
   font-family: var(--font-en);
@@ -1610,7 +1641,7 @@ img {
 .pillar-score-item__bar-fill {
   height: 100%;
   border-radius: var(--radius-sm);
-  background: linear-gradient(90deg, var(--green-500), var(--green-400));
+  background: linear-gradient(90deg, var(--navy-500), var(--navy-400));
   display: flex;
   align-items: center;
   justify-content: flex-end;

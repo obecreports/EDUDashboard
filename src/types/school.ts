@@ -93,6 +93,7 @@ export interface AssessmentData {
 }
 
 export interface SchoolFull extends School {
+  scores?: any;
   students: StudentData[];
   personnel: PersonnelData[];
   infrastructure: InfrastructureData;

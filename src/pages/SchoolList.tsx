@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Search,
@@ -9,28 +9,41 @@ import {
   RotateCcw,
   School,
 } from 'lucide-react';
-import { getAllSchoolsFull } from '../data/mockSchools';
-import type { SchoolFull, SchoolSize, QualityLevel } from '../types/school';
+import { fetchSchools } from '../services/supabase';
+import type { SchoolFull, SchoolSize } from '../types/school';
 
 export default function SchoolList() {
-  const allSchools = getAllSchoolsFull();
+  const [allSchools, setAllSchools] = useState<SchoolFull[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await fetchSchools();
+        setAllSchools(data);
+      } catch (e) {
+        console.error('Failed to load schools from Supabase:', e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const [search, setSearch] = useState('');
   const [filterProvince, setFilterProvince] = useState('');
   const [filterOrganize, setFilterOrganize] = useState('');
   const [filterSize, setFilterSize] = useState('');
-  const [filterQuality, setFilterQuality] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const perPage = 9;
 
   // Unique filter options
   const provinces = useMemo(
-    () => [...new Set(allSchools.map(s => s.province))].sort(),
+    () => [...new Set(allSchools.map(s => s.province).filter(Boolean))].sort(),
     [allSchools]
   );
 
   const organizeDomains = useMemo(
-    () => [...new Set(allSchools.map(s => s.organize_domain))].sort(),
+    () => [...new Set(allSchools.map(s => s.organize_domain).filter(Boolean))].sort(),
     [allSchools]
   );
 
@@ -40,15 +53,14 @@ export default function SchoolList() {
       const matchSearch =
         !search ||
         s.school_name_th.includes(search) ||
-        s.school_name_en.toLowerCase().includes(search.toLowerCase()) ||
+        (s.school_name_en && s.school_name_en.toLowerCase().includes(search.toLowerCase())) ||
         s.school_id.includes(search);
       const matchProvince = !filterProvince || s.province === filterProvince;
       const matchOrganize = !filterOrganize || s.organize_domain === filterOrganize;
       const matchSize = !filterSize || s.school_size === filterSize;
-      const matchQuality = !filterQuality || s.assessment.quality_level === filterQuality;
-      return matchSearch && matchProvince && matchOrganize && matchSize && matchQuality;
+      return matchSearch && matchProvince && matchOrganize && matchSize;
     });
-  }, [allSchools, search, filterProvince, filterOrganize, filterSize, filterQuality]);
+  }, [allSchools, search, filterProvince, filterOrganize, filterSize]);
 
   // Pagination
   const totalPages = Math.ceil(filtered.length / perPage);
@@ -59,24 +71,27 @@ export default function SchoolList() {
     setFilterProvince('');
     setFilterOrganize('');
     setFilterSize('');
-    setFilterQuality('');
     setCurrentPage(1);
-  };
-
-  const qualityBadgeClass = (level: QualityLevel): string => {
-    return `school-card__badge badge--${level.toLowerCase()}`;
   };
 
   const sizeBadgeLabel = (size: SchoolSize): string => {
     return `ขนาด${size}`;
   };
 
+  if (loading) return <p className="loading-msg">กำลังดึงข้อมูลจาก Supabase …</p>;
+  if (allSchools.length === 0) return (
+    <div className="empty-state" style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
+      <School size={48} style={{ marginBottom: '16px', opacity: 0.3 }} />
+      <p style={{ fontSize: '1rem', fontWeight: 500 }}>ไม่มีข้อมูลโรงเรียนในระบบ</p>
+    </div>
+  );
+
   return (
     <div>
       <div className="page-header">
         <h1 className="page-header__title">รายชื่อโรงเรียน</h1>
         <p className="page-header__subtitle">
-          โรงเรียนในสังกัดทั้งหมด {allSchools.length} แห่ง • ปีการศึกษา 2567
+          โรงเรียนในสังกัดทั้งหมด {allSchools.length} แห่ง
         </p>
       </div>
 
@@ -144,22 +159,6 @@ export default function SchoolList() {
           </select>
         </div>
 
-        <div className="filter-bar__group">
-          <label className="filter-bar__label">ระดับคุณภาพ</label>
-          <select
-            className="filter-bar__select"
-            value={filterQuality}
-            onChange={e => { setFilterQuality(e.target.value); setCurrentPage(1); }}
-          >
-            <option value="">ทุกระดับ</option>
-            <option value="Excellent">Excellent</option>
-            <option value="Great">Great</option>
-            <option value="Good">Good</option>
-            <option value="Fair">Fair</option>
-            <option value="Developing">Developing</option>
-          </select>
-        </div>
-
         <button className="filter-bar__btn filter-bar__btn--outline" onClick={clearFilters}>
           <RotateCcw size={14} /> ล้าง
         </button>
@@ -168,7 +167,7 @@ export default function SchoolList() {
       {/* Results count */}
       <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
         แสดงผล {filtered.length} โรงเรียน
-        {search || filterProvince || filterOrganize || filterSize || filterQuality ? ' (กรองแล้ว)' : ''}
+        {search || filterProvince || filterOrganize || filterSize ? ' (กรองแล้ว)' : ''}
       </p>
 
       {/* School Cards Grid */}
@@ -198,21 +197,21 @@ export default function SchoolList() {
               <div className="school-card__stats">
                 <div className="school-card__stat">
                   <div className="school-card__stat-value">
-                    <Users size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px', color: 'var(--green-500)' }} />
-                    {school.studentSummary.totalStudents}
+                    <Users size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px', color: 'var(--accent)' }} />
+                    {school.studentSummary?.totalStudents ?? 0}
                   </div>
                   <div className="school-card__stat-label">นักเรียน</div>
                 </div>
                 <div className="school-card__stat">
                   <div className="school-card__stat-value">
-                    <GraduationCap size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px', color: 'var(--green-500)' }} />
-                    {school.personnelSummary.totalPersonnel}
+                    <GraduationCap size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px', color: 'var(--accent)' }} />
+                    {school.personnelSummary?.totalPersonnel ?? 0}
                   </div>
                   <div className="school-card__stat-label">บุคลากร</div>
                 </div>
                 <div className="school-card__stat">
                   <div className="school-card__stat-value font-en" style={{ fontSize: '0.85rem' }}>
-                    {school.studentSummary.totalClassrooms}
+                    {school.studentSummary?.totalClassrooms ?? 0}
                   </div>
                   <div className="school-card__stat-label">ห้องเรียน</div>
                 </div>
@@ -220,9 +219,6 @@ export default function SchoolList() {
             </div>
             <div className="school-card__footer">
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <span className={qualityBadgeClass(school.assessment.quality_level)}>
-                  {school.assessment.quality_level}
-                </span>
                 <span className="school-card__badge badge--size">
                   {sizeBadgeLabel(school.school_size)}
                 </span>
