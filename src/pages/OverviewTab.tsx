@@ -108,8 +108,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
             <div className="pl-2">
               <span className="text-xs text-gray-500 block font-semibold mb-1">ค่าเฉลี่ยทุกโรงเรียน</span>
-              <span className="text-4xl font-black text-amber-500">{nationalAvgScore.toFixed(2)}</span>
-              <span className="text-xs text-amber-700 font-medium block mt-1">
+              <span className="text-4xl font-black text-blue-900">{nationalAvgScore.toFixed(2)}</span>
+              <span className="text-xs text-blue-800 font-medium block mt-1">
                 {getScoreLabel(nationalAvgScore)}
               </span>
             </div>
@@ -136,12 +136,12 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-emerald-700"></div>
             </div>
 
-            {/* Indicator Marker for All Schools Average */}
+            {/* Indicator Marker for All Schools Average (Navy Blue) */}
             <div
-              className="absolute top-0 transition-all transform -translate-x-1/2 flex flex-col items-center opacity-80"
+              className="absolute top-0 transition-all transform -translate-x-1/2 flex flex-col items-center z-10"
               style={{ left: `${(nationalAvgScore / 5) * 100}%` }}
             >
-              <div className="w-0 h-0 border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-amber-600 mt-7"></div>
+              <div className="w-0 h-0 border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-blue-900 mt-7"></div>
             </div>
 
             {/* Scale 0-5 */}
@@ -178,7 +178,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               <span className="font-semibold text-gray-700">โรงเรียนนี้</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-3.5 h-3.5 rounded bg-amber-300 border border-amber-500 border-dashed inline-block"></span>
+              <span className="w-3.5 h-3.5 rounded bg-blue-900 border border-blue-950 border-dashed inline-block"></span>
               <span className="font-semibold text-gray-700">ค่าเฉลี่ยทุกโรงเรียน</span>
             </div>
           </div>
@@ -219,11 +219,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 );
               })}
 
-              {/* Average Polygon (Yellow Background with Dot Line) */}
+              {/* Average Polygon (Navy Blue Background with Dot Line) */}
               <polygon
                 points={avgPoints}
-                fill="rgba(251, 191, 36, 0.25)"
-                stroke="#f59e0b"
+                fill="rgba(30, 58, 138, 0.2)"
+                stroke="#1e3a8a"
                 strokeWidth="2"
                 strokeDasharray="4 4"
               />

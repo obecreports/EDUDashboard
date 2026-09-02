@@ -102,11 +102,11 @@ export const DualRadarChart: React.FC<{
       {
         label: 'ค่าเฉลี่ยทุกโรงเรียน (All School Avg)',
         data: nationalAvgs,
-        backgroundColor: 'rgba(251, 191, 36, 0.2)',
-        borderColor: 'rgba(245, 158, 11, 1)',
+        backgroundColor: 'rgba(30, 58, 138, 0.2)',
+        borderColor: 'rgba(30, 58, 138, 1)',
         borderWidth: 2,
         borderDash: [4, 4],
-        pointBackgroundColor: 'rgba(245, 158, 11, 1)',
+        pointBackgroundColor: 'rgba(30, 58, 138, 1)',
       },
     ],
   };
