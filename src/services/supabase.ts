@@ -24,11 +24,11 @@ function toSchoolFull(raw: any): SchoolFull {
     village_name: basic.village_name ?? '',
     area_name: gov.area_name ?? basic.area_name ?? basic.organize_domain ?? '',
     zipcode: basic.zip_code ?? '',
-    phone: basic.phone_num ?? '',
+    phone: basic.phone_number ?? basic.phone ?? '',
     organize_domain: basic.organize_domain ?? '',
     school_size: basic.school_size ?? '',
-    latitude: basic.lat ?? 0,
-    longitude: basic.long ?? 0,
+    latitude: basic.lat ?? '',
+    longitude: basic.long ?? '',
     // Director info (if present in the basic table)
     director_name: basic.director_name ?? '',
     director_title: basic.director_title ?? '',
@@ -126,10 +126,11 @@ export async function fetchSchools(filters?: { province?: string; organizeDomain
   }
 
   // Fetch related tables in parallel using the list of IDs
-  const [scoreRes, peopleRes, govRes] = await Promise.all([
+  const [scoreRes, peopleRes, govRes, labelRes] = await Promise.all([
     supabase.from('School_Score').select('*').in('school_id', schoolIds),
     supabase.from('School_People').select('*').in('school_id', schoolIds),
     supabase.from('Gov_Domain').select('area_id, area_name'),
+    supabase.from('Label_Lookup').select('label_code, label_name'),
   ]);
 
   if (scoreRes.error) console.warn('Supabase fetchSchools (score) warning:', scoreRes.error);
@@ -154,8 +155,25 @@ export async function fetchSchools(filters?: { province?: string; organizeDomain
     Gov_Domain: basic.area_id ? (govMap.get(basic.area_id) ?? {}) : {},
   }));
 
-  // Transform to the full UI type
-  return combined.map(toSchoolFull);
+  // Build label lookup map (code -> name)
+  const labelMap: Record<string, string> = {};
+  (labelRes.data ?? []).forEach(l => {
+    if (l.label_code) labelMap[l.label_code] = l.label_name ?? '';
+  });
+
+  // Transform to the full UI type, adding labelLookup and overallScore (average of G01‑G05)
+  return combined.map(item => {
+    const full = toSchoolFull(item);
+    // attach label lookup
+    (full as any).labelLookup = labelMap;
+    // compute overallScore as average of pillar averages (G01‑G05) already in full.pillarScores
+    const { learner, participation, teacherAdmin, curriculum, infrastructure } = full.pillarScores ?? {};
+    const overall = [learner, participation, teacherAdmin, curriculum, infrastructure]
+      .filter(v => typeof v === 'number')
+      .reduce((sum, v) => sum + v, 0) / 5;
+    (full as any).overallScore = Number.isFinite(overall) ? overall : 0;
+    return full;
+  });
 }
 
 
@@ -165,7 +183,7 @@ export async function fetchSchoolById(schoolId: string) {
   const { data: basic, error: basicError } = await supabase
     .from('School_Basic')
     .select('*')
-    .eq('school_id', schoolId)
+    .eq('school_id', Number(schoolId))
     .maybeSingle();
 
   if (basicError) {
@@ -177,25 +195,44 @@ export async function fetchSchoolById(schoolId: string) {
     return null;
   }
 
-  // Fetch related tables without crashing if missing or errored
-  const [scoreRes, peopleRes, govRes] = await Promise.all([
-    supabase.from('School_Score').select('*').eq('school_id', schoolId).maybeSingle(),
-    supabase.from('School_People').select('*').eq('school_id', schoolId).maybeSingle(),
-    basic.area_id
-      ? supabase.from('Gov_Domain').select('area_id, area_name').eq('area_id', basic.area_id).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
+  // Fetch related tables
+  const [scoreRes, peopleRes, govRes, labelRes] = await Promise.all([
+    supabase.from('School_Score').select('*').eq('school_id', Number(schoolId)),
+    supabase.from('School_People').select('*').eq('school_id', Number(schoolId)),
+    supabase.from('Gov_Domain').select('area_id, area_name'),
+    supabase.from('Label_Lookup').select('label_code, label_name'),
   ]);
 
-  if (scoreRes.error) console.warn(`Supabase fetchSchoolById(${schoolId}) score warning:`, scoreRes.error);
-  if (peopleRes.error) console.warn(`Supabase fetchSchoolById(${schoolId}) people warning:`, peopleRes.error);
-  if (govRes.error) console.warn(`Supabase fetchSchoolById(${schoolId}) gov warning:`, govRes.error);
+  if (scoreRes.error) console.warn('Supabase fetchSchoolById (score) warning:', scoreRes.error);
+  if (peopleRes.error) console.warn('Supabase fetchSchoolById (people) warning:', peopleRes.error);
+  if (govRes.error) console.warn('Supabase fetchSchoolById (gov) warning:', govRes.error);
+  if (labelRes.error) console.warn('Supabase fetchSchoolById (label) warning:', labelRes.error);
 
+  // Build label lookup map
+  const labelMap: Record<string, string> = {};
+  (labelRes.data ?? []).forEach(l => {
+    if (l.label_code) labelMap[l.label_code] = l.label_name ?? '';
+  });
+
+  // Combine basic with related data
   const combined = {
     ...basic,
-    School_Score: scoreRes.data ?? {},
-    School_People: peopleRes.data ?? {},
-    Gov_Domain: govRes.data ?? {},
+    School_Score: (scoreRes.data?.[0]) ?? {},
+    School_People: (peopleRes.data?.[0]) ?? {},
+    Gov_Domain: basic.area_id
+      ? (govRes.data?.find(g => g.area_id === basic.area_id) ?? {})
+      : {},
   };
 
-  return toSchoolFull(combined);
+  const full = toSchoolFull(combined);
+  // attach label lookup
+  (full as any).labelLookup = labelMap;
+  // compute overallScore as average of pillar scores
+  const { learner, participation, teacherAdmin, curriculum, infrastructure } = full.pillarScores ?? {};
+  const overall = [learner, participation, teacherAdmin, curriculum, infrastructure]
+    .filter(v => typeof v === 'number')
+    .reduce((sum, v) => sum + v, 0) / 5;
+  (full as any).overallScore = Number.isFinite(overall) ? overall : 0;
+
+  return full;
 }

@@ -111,4 +111,7 @@ export interface SchoolFull extends School {
     totalMale: number;
     totalFemale: number;
   };
+  School_Score?: Record<string, number>;
+  labelLookup?: Record<string, string>;
+  overallScore?: number;
 }
