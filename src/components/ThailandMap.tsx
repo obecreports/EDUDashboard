@@ -137,7 +137,7 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
         cachedGeoFeatures = parsed;
         return parsed;
       }
-    } catch (e) {}
+    } catch (e) { }
     return [];
   });
   const [loading, setLoading] = useState(() => !cachedGeoFeatures && geoFeatures.length === 0);
@@ -164,7 +164,7 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
           setGeoFeatures(data.features);
           try {
             sessionStorage.setItem('coned_thailand_geojson', JSON.stringify(data.features));
-          } catch (e) {}
+          } catch (e) { }
         }
       })
       .catch((err) => console.error('Failed to load Thailand GeoJSON:', err))
@@ -441,14 +441,14 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                     onMouseLeave={() => setHoveredProvince(null)}
                     onClick={() => setSelectedProvince(isSelected ? null : thName)}
                     className={`cursor-pointer transition-all duration-300 ${isSelected
-                        ? 'fill-sky-600 stroke-sky-900 stroke-2'
-                        : isHovered
-                          ? 'fill-sky-500 stroke-sky-700 stroke-1.5'
-                          : isDimmed
-                            ? 'fill-slate-200 stroke-slate-300 opacity-40 hover:opacity-80'
-                            : hasData
-                              ? 'fill-sky-400 hover:fill-sky-500 stroke-white stroke-[0.5]'
-                              : 'fill-slate-300 hover:fill-slate-400 stroke-white stroke-[0.5]'
+                      ? 'fill-sky-600 stroke-sky-900 stroke-2'
+                      : isHovered
+                        ? 'fill-sky-500 stroke-sky-700 stroke-1.5'
+                        : isDimmed
+                          ? 'fill-slate-200 stroke-slate-300 opacity-40 hover:opacity-80'
+                          : hasData
+                            ? 'fill-sky-400 hover:fill-sky-500 stroke-white stroke-[0.5]'
+                            : 'fill-slate-300 hover:fill-slate-400 stroke-white stroke-[0.5]'
                       }`}
                   >
                     <title>{thName}</title>
@@ -497,11 +497,10 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                       )}
                       <circle
                         r={isHighlighted ? 6.5 : 4.5}
-                        className={`transition-all duration-200 ${
-                          isHighlighted
-                            ? 'fill-amber-400 stroke-slate-900 stroke-2 scale-125'
-                            : 'fill-rose-600 stroke-white stroke-[1.5] group-hover:scale-150 group-hover:fill-rose-500'
-                        }`}
+                        className={`transition-all duration-200 ${isHighlighted
+                          ? 'fill-amber-400 stroke-slate-900 stroke-2 scale-125'
+                          : 'fill-rose-600 stroke-white stroke-[1.5] group-hover:scale-150 group-hover:fill-rose-500'
+                          }`}
                       />
                       <title>{school.school_name_th}</title>
                     </g>
@@ -577,21 +576,19 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                 <div className="flex items-center space-x-1 bg-sky-100/80 p-1 rounded-lg mb-3">
                   <button
                     onClick={() => setViewMode('district')}
-                    className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all ${
-                      viewMode === 'district'
-                        ? 'bg-white text-sky-900 shadow-sm'
-                        : 'text-sky-700 hover:text-sky-900 hover:bg-sky-50'
-                    }`}
+                    className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all ${viewMode === 'district'
+                      ? 'bg-white text-sky-900 shadow-sm'
+                      : 'text-sky-700 hover:text-sky-900 hover:bg-sky-50'
+                      }`}
                   >
                     แบ่งตามอำเภอ ({districtList.length})
                   </button>
                   <button
                     onClick={() => setViewMode('area')}
-                    className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all ${
-                      viewMode === 'area'
-                        ? 'bg-white text-sky-900 shadow-sm'
-                        : 'text-sky-700 hover:text-sky-900 hover:bg-sky-50'
-                    }`}
+                    className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all ${viewMode === 'area'
+                      ? 'bg-white text-sky-900 shadow-sm'
+                      : 'text-sky-700 hover:text-sky-900 hover:bg-sky-50'
+                      }`}
                   >
                     แบ่งตามเขตพื้นที่ ({areaList.length})
                   </button>
@@ -611,11 +608,10 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                             key={dName}
                             onMouseEnter={() => setHoveredDistrict(dName)}
                             onMouseLeave={() => setHoveredDistrict(null)}
-                            className={`p-3 border rounded-md space-y-2 transition-all ${
-                              hoveredDistrict === dName
-                                ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-400/50 shadow-sm'
-                                : 'bg-white border-sky-100'
-                            }`}
+                            className={`p-3 border rounded-md space-y-2 transition-all ${hoveredDistrict === dName
+                              ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-400/50 shadow-sm'
+                              : 'bg-white border-sky-100'
+                              }`}
                           >
                             <div className="flex justify-between items-start border-b border-gray-100 pb-2">
                               <div>
@@ -642,11 +638,10 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                                   onMouseEnter={() => setHoveredSchoolId(sch.school_id)}
                                   onMouseLeave={() => setHoveredSchoolId(null)}
                                   onClick={() => setSelectedSchoolModal({ school_id: sch.school_id, school_name_th: sch.school_name_th })}
-                                  className={`flex justify-between items-center text-[11px] py-1 px-1.5 rounded transition-all cursor-pointer ${
-                                    hoveredSchoolId === sch.school_id
-                                      ? 'bg-rose-100 text-rose-900 font-bold border-l-2 border-rose-600'
-                                      : 'text-gray-700 hover:bg-sky-50'
-                                  }`}
+                                  className={`flex justify-between items-center text-[11px] py-1 px-1.5 rounded transition-all cursor-pointer ${hoveredSchoolId === sch.school_id
+                                    ? 'bg-rose-100 text-rose-900 font-bold border-l-2 border-rose-600'
+                                    : 'text-gray-700 hover:bg-sky-50'
+                                    }`}
                                 >
                                   <span className="font-medium truncate max-w-[190px]" title={sch.school_name_th}>
                                     • {sch.school_name_th}
@@ -680,11 +675,10 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                             key={aKey}
                             onMouseEnter={() => setHoveredAreaKey(aKey)}
                             onMouseLeave={() => setHoveredAreaKey(null)}
-                            className={`p-3 border rounded-md space-y-2 transition-all ${
-                              hoveredAreaKey === aKey
-                                ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-400/50 shadow-sm'
-                                : 'bg-white border-sky-100'
-                            }`}
+                            className={`p-3 border rounded-md space-y-2 transition-all ${hoveredAreaKey === aKey
+                              ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-400/50 shadow-sm'
+                              : 'bg-white border-sky-100'
+                              }`}
                           >
                             <div className="flex justify-between items-start border-b border-gray-100 pb-2">
                               <div>
@@ -711,11 +705,10 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                                   onMouseEnter={() => setHoveredSchoolId(sch.school_id)}
                                   onMouseLeave={() => setHoveredSchoolId(null)}
                                   onClick={() => setSelectedSchoolModal({ school_id: sch.school_id, school_name_th: sch.school_name_th })}
-                                  className={`flex justify-between items-center text-[11px] py-1 px-1.5 rounded transition-all cursor-pointer ${
-                                    hoveredSchoolId === sch.school_id
-                                      ? 'bg-rose-100 text-rose-900 font-bold border-l-2 border-rose-600'
-                                      : 'text-gray-700 hover:bg-sky-50'
-                                  }`}
+                                  className={`flex justify-between items-center text-[11px] py-1 px-1.5 rounded transition-all cursor-pointer ${hoveredSchoolId === sch.school_id
+                                    ? 'bg-rose-100 text-rose-900 font-bold border-l-2 border-rose-600'
+                                    : 'text-gray-700 hover:bg-sky-50'
+                                    }`}
                                 >
                                   <span className="font-medium truncate max-w-[190px]" title={sch.school_name_th}>
                                     • {sch.school_name_th}
@@ -787,11 +780,10 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                         onClick={() => setSelectedProvince(p.provinceName)}
                         onMouseEnter={() => setHoveredProvince(p.provinceName)}
                         onMouseLeave={() => setHoveredProvince(null)}
-                        className={`p-3 border rounded-lg flex justify-between items-center text-xs transition-all cursor-pointer ${
-                          isHovered
-                            ? 'bg-sky-100 border-sky-400 shadow-sm ring-2 ring-sky-300/60 translate-x-0.5'
-                            : 'bg-white border-gray-200 hover:border-sky-300 hover:bg-sky-50/50'
-                        }`}
+                        className={`p-3 border rounded-lg flex justify-between items-center text-xs transition-all cursor-pointer ${isHovered
+                          ? 'bg-sky-100 border-sky-400 shadow-sm ring-2 ring-sky-300/60 translate-x-0.5'
+                          : 'bg-white border-gray-200 hover:border-sky-300 hover:bg-sky-50/50'
+                          }`}
                       >
                         <div>
                           <div className="flex items-center space-x-1.5">
@@ -869,4 +861,3 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
     </div>
   );
 };
-
