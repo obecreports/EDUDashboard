@@ -34,6 +34,9 @@ export interface School {
   latitude: number;
   longitude: number;
   image_url: string;
+  area_id?: number | string;
+  area_name?: string;
+  Gov_Domain?: { area_id?: any; area_name?: string };
   created_at: string;
   updated_at: string;
 }

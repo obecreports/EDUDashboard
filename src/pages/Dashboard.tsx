@@ -36,13 +36,13 @@ export default function Dashboard() {
   const totalPersonnel = allSchools.reduce((sum, s) => sum + (s.personnelSummary?.totalPersonnel ?? 0), 0);
   const avgRatio = totalPersonnel > 0 ? Math.ceil(totalStudents / totalPersonnel) : 0;
 
-  // Province grouping (top 5)
+  // Province grouping (top 10)
   const provinceMap = new Map<string, number>();
   allSchools.forEach(s => {
     const prov = s.province || 'ไม่ระบุ';
     provinceMap.set(prov, (provinceMap.get(prov) ?? 0) + (s.studentSummary?.totalStudents ?? 0));
   });
-  const provinceData = Array.from(provinceMap.entries()).sort((a,b) => b[1] - a[1]);
+  const provinceData = Array.from(provinceMap.entries()).sort((a,b) => b[1] - a[1]).slice(0, 10);
   const maxProvince = Math.max(...provinceData.map(p => p[1]), 1);
 
   // Quality level counts based on overall score
@@ -149,7 +149,7 @@ const pillarLabels: Record<string, string> = {
     const d = s.district || 'ไม่ระบุ';
     districtMap.set(d, (districtMap.get(d) ?? 0) + (s.studentSummary?.totalStudents ?? 0));
   });
-  const districtData = Array.from(districtMap.entries()).sort((a, b) => b[1] - a[1]);
+  const districtData = Array.from(districtMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
   const maxStudents = Math.max(...districtData.map(d => d[1]), 1);
   const donutColors = ['#0284c7', '#10b981', '#f59e0b', '#8b5cf6'];
   const sizeEntries = Object.entries(sizeDistribution);
@@ -251,7 +251,7 @@ const pillarLabels: Record<string, string> = {
               {/* จำนวนบุคลากรรวม */}
               <div className="p-4 bg-white border border-gray-200 shadow-sm">
                 <h3 className="font-bold mb-2">จำนวนบุคลากรรวม</h3>
-                <p className="text-3xl font-extrabold">{totalPersonnel}</p>
+                <p className="text-3xl font-extrabold">{totalPersonnel.toLocaleString()}</p>
               </div>
               {/* อัตราส่วนนักเรียน:ครู */}
               <div className="p-4 bg-white border border-gray-200 shadow-sm">
@@ -261,12 +261,12 @@ const pillarLabels: Record<string, string> = {
               {/* จำนวนโรงเรียนทั้งหมด */}
               <div className="p-4 bg-white border border-gray-200 shadow-sm">
                 <h3 className="font-bold mb-2">จำนวนโรงเรียนทั้งหมด</h3>
-                <p className="text-3xl font-extrabold">{totalSchools}</p>
+                <p className="text-3xl font-extrabold">{totalSchools.toLocaleString()}</p>
               </div>
               {/* จำนวนนักเรียนทั้งหมด */}
               <div className="p-4 bg-white border border-gray-200 shadow-sm">
                 <h3 className="font-bold mb-2">จำนวนนักเรียนทั้งหมด</h3>
-                <p className="text-3xl font-extrabold">{totalStudents}</p>
+                <p className="text-3xl font-extrabold">{totalStudents.toLocaleString()}</p>
               </div>
             </div>
 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">

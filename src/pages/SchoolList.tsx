@@ -93,10 +93,16 @@ export default function SchoolList() {
     return provinces.filter((p) => p.toLowerCase().includes(term));
   }, [provinces, provinceSearch]);
 
-  // Extract unique Area ID & Area Name mapping for "สังกัด/เขตพื้นที่" combobox
+  // Filter options based on selected Province
+  const schoolsInProvince = useMemo(() => {
+    if (!filterProvince) return allSchools;
+    return allSchools.filter((s) => s.province === filterProvince);
+  }, [allSchools, filterProvince]);
+
+  // Extract unique Area ID & Area Name mapping for "สังกัด/เขตพื้นที่" combobox (filtered by Province if selected)
   const areaOptions = useMemo(() => {
     const map = new Map<string, string>(); // area_id -> area_name
-    allSchools.forEach((s: any) => {
+    schoolsInProvince.forEach((s: any) => {
       const areaId = s.area_id !== undefined && s.area_id !== null ? String(s.area_id) : '';
       const areaName = s.area_name || s.Gov_Domain?.area_name || s.organize_domain || (areaId ? `เขตพื้นที่ ${areaId}` : '');
 
@@ -110,7 +116,22 @@ export default function SchoolList() {
     return Array.from(map.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, 'th'));
-  }, [allSchools]);
+  }, [schoolsInProvince]);
+
+  // Extract unique school sizes available in selected Province
+  const sizeOptions = useMemo(() => {
+    const set = new Set<string>();
+    schoolsInProvince.forEach((s) => {
+      if (s.school_size) set.add(s.school_size.trim());
+    });
+    const order = ['เล็ก', 'กลาง', 'ใหญ่', 'ใหญ่พิเศษ'];
+    return Array.from(set).sort((a, b) => {
+      const idxA = order.indexOf(a);
+      const idxB = order.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      return a.localeCompare(b, 'th');
+    });
+  }, [schoolsInProvince]);
 
   // Filtered area options for combobox search input
   const filteredAreaOptions = useMemo(() => {
@@ -467,10 +488,11 @@ export default function SchoolList() {
                 }}
               >
                 <option value="">-- ทุกขนาด --</option>
-                <option value="เล็ก">เล็ก</option>
-                <option value="กลาง">กลาง</option>
-                <option value="ใหญ่">ใหญ่</option>
-                <option value="ใหญ่พิเศษ">ใหญ่พิเศษ</option>
+                {(sizeOptions.length > 0 ? sizeOptions : ['เล็ก', 'กลาง', 'ใหญ่', 'ใหญ่พิเศษ']).map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
