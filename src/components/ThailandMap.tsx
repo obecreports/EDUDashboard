@@ -115,6 +115,13 @@ export interface AreaGroup {
   totalPersonnel: number;
 }
 
+export interface DistrictGroup {
+  districtName: string;
+  schools: AreaSchoolItem[];
+  totalStudents: number;
+  totalPersonnel: number;
+}
+
 let cachedGeoFeatures: GeoFeature[] | null = null;
 
 export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
@@ -168,7 +175,7 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
   const { provinceStatsMap, districtStatsMap, areaStatsMap } = useMemo(() => {
     const provMap = new Map<string, { schools: number; students: number; personnel: number; areasCount: number }>();
     const provAreaSets = new Map<string, Set<string>>();
-    const distMap = new Map<string, Map<string, { schools: number; students: number; personnel: number }>>();
+    const distMap = new Map<string, Map<string, DistrictGroup>>();
     const areaMap = new Map<string, Map<string, AreaGroup>>();
 
     schools.forEach((s) => {
@@ -202,11 +209,23 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
         distMap.set(provName, new Map());
       }
       const dSubMap = distMap.get(provName)!;
-      const dCurrent = dSubMap.get(distName) || { schools: 0, students: 0, personnel: 0 };
-      dCurrent.schools += 1;
-      dCurrent.students += students;
-      dCurrent.personnel += personnel;
-      dSubMap.set(distName, dCurrent);
+      if (!dSubMap.has(distName)) {
+        dSubMap.set(distName, {
+          districtName: distName,
+          schools: [],
+          totalStudents: 0,
+          totalPersonnel: 0,
+        });
+      }
+      const dGroup = dSubMap.get(distName)!;
+      dGroup.totalStudents += students;
+      dGroup.totalPersonnel += personnel;
+      dGroup.schools.push({
+        school_id: s.school_id,
+        school_name_th: s.school_name_th || s.school_name_en || 'ไม่ระบุชื่อโรงเรียน',
+        students,
+        personnel,
+      });
 
       // Area stats per province
       if (!areaMap.has(provName)) {
@@ -586,25 +605,57 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                     </h5>
 
                     {districtList.length > 0 ? (
-                      <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                        {districtList.map(([dName, dStats]) => (
+                      <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
+                        {districtList.map(([dName, dGroup]) => (
                           <div
                             key={dName}
                             onMouseEnter={() => setHoveredDistrict(dName)}
                             onMouseLeave={() => setHoveredDistrict(null)}
-                            className={`p-3 border rounded-md flex justify-between items-center text-xs transition-all cursor-pointer ${
+                            className={`p-3 border rounded-md space-y-2 transition-all ${
                               hoveredDistrict === dName
-                                ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-400/60 shadow-sm'
-                                : 'bg-white border-sky-100 hover:border-sky-300 hover:bg-sky-50/50'
+                                ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-400/50 shadow-sm'
+                                : 'bg-white border-sky-100'
                             }`}
                           >
-                            <div>
-                              <span className="font-semibold text-gray-800 block">{dName}</span>
-                              <span className="text-gray-500 text-[10px]">{dStats.schools} โรงเรียน</span>
+                            <div className="flex justify-between items-start border-b border-gray-100 pb-2">
+                              <div>
+                                <span className="font-bold text-sky-900 text-xs block">{dName}</span>
+                                <span className="text-gray-500 text-[10px]">
+                                  {dGroup.schools.length} โรงเรียน
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="font-semibold text-sky-800 text-[11px] block">
+                                  {dGroup.totalStudents.toLocaleString()} นักเรียน
+                                </span>
+                                <span className="text-gray-500 text-[10px]">
+                                  {dGroup.totalPersonnel.toLocaleString()} บุคลากร
+                                </span>
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <span className="font-bold text-sky-800 block">{dStats.students.toLocaleString()} นักเรียน</span>
-                              <span className="text-gray-500 text-[10px]">{dStats.personnel} บุคลากร</span>
+
+                            {/* Schools detail within this District */}
+                            <div className="space-y-1.5 pl-2 border-l-2 border-amber-200">
+                              {dGroup.schools.map((sch) => (
+                                <div
+                                  key={sch.school_id}
+                                  onMouseEnter={() => setHoveredSchoolId(sch.school_id)}
+                                  onMouseLeave={() => setHoveredSchoolId(null)}
+                                  onClick={() => setSelectedSchoolModal({ school_id: sch.school_id, school_name_th: sch.school_name_th })}
+                                  className={`flex justify-between items-center text-[11px] py-1 px-1.5 rounded transition-all cursor-pointer ${
+                                    hoveredSchoolId === sch.school_id
+                                      ? 'bg-rose-100 text-rose-900 font-bold border-l-2 border-rose-600'
+                                      : 'text-gray-700 hover:bg-sky-50'
+                                  }`}
+                                >
+                                  <span className="font-medium truncate max-w-[190px]" title={sch.school_name_th}>
+                                    • {sch.school_name_th}
+                                  </span>
+                                  <div className="text-right text-[10px] text-gray-500 shrink-0 ml-2">
+                                    <span className="font-medium text-sky-700">{sch.students.toLocaleString()}</span> นักเรียน / <span className="font-medium text-sky-700">{sch.personnel.toLocaleString()}</span> บุคลากร
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         ))}
