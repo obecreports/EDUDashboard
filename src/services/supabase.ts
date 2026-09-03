@@ -80,8 +80,73 @@ export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-// FETCH ONLY TOTAL SCHOOL COUNT
+/* =============================================================================
+   Caching Layer (In-Memory & SessionStorage Cache)
+   ============================================================================= */
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes TTL
+
+interface CacheItem<T> {
+  timestamp: number;
+  data: T;
+}
+
+const memoryCache = new Map<string, CacheItem<any>>();
+let labelLookupCache: Record<string, string> | null = null;
+let govDomainCache: Map<string, any> | null = null;
+
+/** Helper to get item from memory or sessionStorage */
+function getCachedData<T>(key: string): T | null {
+  // Check RAM cache first
+  const mem = memoryCache.get(key);
+  if (mem && Date.now() - mem.timestamp < CACHE_TTL_MS) {
+    return mem.data as T;
+  }
+
+  // Check SessionStorage cache fallback
+  try {
+    const raw = sessionStorage.getItem(`coned_cache_${key}`);
+    if (raw) {
+      const parsed: CacheItem<T> = JSON.parse(raw);
+      if (Date.now() - parsed.timestamp < CACHE_TTL_MS) {
+        memoryCache.set(key, parsed); // restore to RAM
+        return parsed.data;
+      }
+    }
+  } catch (e) {
+    // Ignore storage errors
+  }
+  return null;
+}
+
+/** Helper to save item to memory & sessionStorage */
+function setCachedData<T>(key: string, data: T): void {
+  const item: CacheItem<T> = { timestamp: Date.now(), data };
+  memoryCache.set(key, item);
+  try {
+    sessionStorage.setItem(`coned_cache_${key}`, JSON.stringify(item));
+  } catch (e) {
+    // Ignore storage quota errors
+  }
+}
+
+/** Clear all cached school data */
+export function clearSchoolCache(): void {
+  memoryCache.clear();
+  labelLookupCache = null;
+  govDomainCache = null;
+  try {
+    Object.keys(sessionStorage).forEach((k) => {
+      if (k.startsWith("coned_cache_")) sessionStorage.removeItem(k);
+    });
+  } catch (e) {}
+}
+
+/* FETCH ONLY TOTAL SCHOOL COUNT */
 export async function fetchSchoolCount(): Promise<{ count: number; debugInfo: any }> {
+  const cacheKey = 'school_count';
+  const cached = getCachedData<{ count: number; debugInfo: any }>(cacheKey);
+  if (cached) return cached;
+
   const res = await supabase
     .from('School_Basic')
     .select('school_id', { count: 'exact' });
@@ -94,7 +159,7 @@ export async function fetchSchoolCount(): Promise<{ count: number; debugInfo: an
   }
 
   const finalCount = res.count ?? res.data?.length ?? 0;
-  return {
+  const result = {
     count: finalCount,
     debugInfo: {
       status: res.status,
@@ -104,10 +169,18 @@ export async function fetchSchoolCount(): Promise<{ count: number; debugInfo: an
       sampleData: res.data?.slice(0, 2)
     }
   };
+  setCachedData(cacheKey, result);
+  return result;
 }
 
 // FETCH ALL SCHOOLS (optional filters)
 export async function fetchSchools(filters?: { province?: string; organizeDomain?: string }) {
+  const cacheKey = `schools_${filters?.province || 'all'}_${filters?.organizeDomain || 'all'}`;
+  const cached = getCachedData<SchoolFull[]>(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   // Fetch basic school records
   let basicQuery = supabase.from('School_Basic').select('*');
   if (filters?.province) basicQuery = basicQuery.eq('province_name', filters.province);
@@ -129,13 +202,28 @@ export async function fetchSchools(filters?: { province?: string; organizeDomain
   const [scoreRes, peopleRes, govRes, labelRes] = await Promise.all([
     supabase.from('School_Score').select('*').in('school_id', schoolIds),
     supabase.from('School_People').select('*').in('school_id', schoolIds),
-    supabase.from('Gov_Domain').select('area_id, area_name'),
-    supabase.from('Label_Lookup').select('label_code, label_name'),
+    govDomainCache ? Promise.resolve({ data: null, error: null }) : supabase.from('Gov_Domain').select('area_id, area_name'),
+    labelLookupCache ? Promise.resolve({ data: null, error: null }) : supabase.from('Label_Lookup').select('label_code, label_name'),
   ]);
 
   if (scoreRes.error) console.warn('Supabase fetchSchools (score) warning:', scoreRes.error);
   if (peopleRes.error) console.warn('Supabase fetchSchools (people) warning:', peopleRes.error);
-  if (govRes.error) console.warn('Supabase fetchSchools (gov) warning:', govRes.error);
+
+  // Cache & build lookup map for Gov_Domain
+  if (!govDomainCache && govRes.data) {
+    govDomainCache = new Map<string, any>();
+    govRes.data.forEach(g => { if (g.area_id) govDomainCache!.set(g.area_id, g); });
+  }
+  const govMap = govDomainCache ?? new Map<string, any>();
+
+  // Cache & build lookup map for Label_Lookup
+  if (!labelLookupCache && labelRes.data) {
+    labelLookupCache = {};
+    labelRes.data.forEach(l => {
+      if (l.label_code) labelLookupCache![l.label_code] = l.label_name ?? '';
+    });
+  }
+  const labelMap = labelLookupCache ?? {};
 
   // Create lookup maps for quick association
   const scoreMap = new Map<string, any>();
@@ -143,9 +231,6 @@ export async function fetchSchools(filters?: { province?: string; organizeDomain
 
   const peopleMap = new Map<string, any>();
   (peopleRes.data ?? []).forEach(p => { if (p.school_id) peopleMap.set(p.school_id, p); });
-
-  const govMap = new Map<string, any>();
-  (govRes.data ?? []).forEach(g => { if (g.area_id) govMap.set(g.area_id, g); });
 
   // Combine basic records with related data
   const combined = (basics ?? []).map(basic => ({
@@ -155,18 +240,10 @@ export async function fetchSchools(filters?: { province?: string; organizeDomain
     Gov_Domain: basic.area_id ? (govMap.get(basic.area_id) ?? {}) : {},
   }));
 
-  // Build label lookup map (code -> name)
-  const labelMap: Record<string, string> = {};
-  (labelRes.data ?? []).forEach(l => {
-    if (l.label_code) labelMap[l.label_code] = l.label_name ?? '';
-  });
-
-  // Transform to the full UI type, adding labelLookup and overallScore (average of G01‑G05)
-  return combined.map(item => {
+  // Transform to the full UI type
+  const results = combined.map(item => {
     const full = toSchoolFull(item);
-    // attach label lookup
     (full as any).labelLookup = labelMap;
-    // compute overallScore as average of pillar averages (G01‑G05) already in full.pillarScores
     const { learner, participation, teacherAdmin, curriculum, infrastructure } = full.pillarScores ?? {};
     const overall = [learner, participation, teacherAdmin, curriculum, infrastructure]
       .filter(v => typeof v === 'number')
@@ -174,11 +251,18 @@ export async function fetchSchools(filters?: { province?: string; organizeDomain
     (full as any).overallScore = Number.isFinite(overall) ? overall : 0;
     return full;
   });
+
+  setCachedData(cacheKey, results);
+  return results;
 }
 
 
 /* FETCH ONE SCHOOL BY ID (used in SchoolDetail) */
 export async function fetchSchoolById(schoolId: string) {
+  const cacheKey = `school_id_${schoolId}`;
+  const cached = getCachedData<SchoolFull>(cacheKey);
+  if (cached) return cached;
+
   // Fetch basic record
   const { data: basic, error: basicError } = await supabase
     .from('School_Basic')
@@ -199,20 +283,27 @@ export async function fetchSchoolById(schoolId: string) {
   const [scoreRes, peopleRes, govRes, labelRes] = await Promise.all([
     supabase.from('School_Score').select('*').eq('school_id', Number(schoolId)),
     supabase.from('School_People').select('*').eq('school_id', Number(schoolId)),
-    supabase.from('Gov_Domain').select('area_id, area_name'),
-    supabase.from('Label_Lookup').select('label_code, label_name'),
+    govDomainCache ? Promise.resolve({ data: null, error: null }) : supabase.from('Gov_Domain').select('area_id, area_name'),
+    labelLookupCache ? Promise.resolve({ data: null, error: null }) : supabase.from('Label_Lookup').select('label_code, label_name'),
   ]);
 
   if (scoreRes.error) console.warn('Supabase fetchSchoolById (score) warning:', scoreRes.error);
   if (peopleRes.error) console.warn('Supabase fetchSchoolById (people) warning:', peopleRes.error);
-  if (govRes.error) console.warn('Supabase fetchSchoolById (gov) warning:', govRes.error);
-  if (labelRes.error) console.warn('Supabase fetchSchoolById (label) warning:', labelRes.error);
 
-  // Build label lookup map
-  const labelMap: Record<string, string> = {};
-  (labelRes.data ?? []).forEach(l => {
-    if (l.label_code) labelMap[l.label_code] = l.label_name ?? '';
-  });
+  // Cache & build lookup map for Gov_Domain
+  if (!govDomainCache && govRes.data) {
+    govDomainCache = new Map<string, any>();
+    govRes.data.forEach(g => { if (g.area_id) govDomainCache!.set(g.area_id, g); });
+  }
+
+  // Cache & build lookup map for Label_Lookup
+  if (!labelLookupCache && labelRes.data) {
+    labelLookupCache = {};
+    labelRes.data.forEach(l => {
+      if (l.label_code) labelLookupCache![l.label_code] = l.label_name ?? '';
+    });
+  }
+  const labelMap = labelLookupCache ?? {};
 
   // Combine basic with related data
   const combined = {
@@ -220,19 +311,18 @@ export async function fetchSchoolById(schoolId: string) {
     School_Score: (scoreRes.data?.[0]) ?? {},
     School_People: (peopleRes.data?.[0]) ?? {},
     Gov_Domain: basic.area_id
-      ? (govRes.data?.find(g => g.area_id === basic.area_id) ?? {})
+      ? (govDomainCache?.get(basic.area_id) ?? {})
       : {},
   };
 
   const full = toSchoolFull(combined);
-  // attach label lookup
   (full as any).labelLookup = labelMap;
-  // compute overallScore as average of pillar scores
   const { learner, participation, teacherAdmin, curriculum, infrastructure } = full.pillarScores ?? {};
   const overall = [learner, participation, teacherAdmin, curriculum, infrastructure]
     .filter(v => typeof v === 'number')
     .reduce((sum, v) => sum + v, 0) / 5;
   (full as any).overallScore = Number.isFinite(overall) ? overall : 0;
 
+  setCachedData(cacheKey, full);
   return full;
 }

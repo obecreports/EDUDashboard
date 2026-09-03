@@ -114,9 +114,22 @@ export interface AreaGroup {
   totalPersonnel: number;
 }
 
+let cachedGeoFeatures: GeoFeature[] | null = null;
+
 export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
-  const [geoFeatures, setGeoFeatures] = useState<GeoFeature[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [geoFeatures, setGeoFeatures] = useState<GeoFeature[]>(() => {
+    if (cachedGeoFeatures) return cachedGeoFeatures;
+    try {
+      const stored = sessionStorage.getItem('coned_thailand_geojson');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        cachedGeoFeatures = parsed;
+        return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+  const [loading, setLoading] = useState(() => !cachedGeoFeatures && geoFeatures.length === 0);
   const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
   const [hoveredProvince, setHoveredProvince] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'district' | 'area'>('district');
@@ -124,13 +137,23 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
   const [hoveredSchoolId, setHoveredSchoolId] = useState<string | null>(null);
   const [hoveredDistrict, setHoveredDistrict] = useState<string | null>(null);
   const [hoveredAreaKey, setHoveredAreaKey] = useState<string | null>(null);
+  const [provinceSearch, setProvinceSearch] = useState('');
 
   useEffect(() => {
+    if (cachedGeoFeatures && cachedGeoFeatures.length > 0) {
+      setLoading(false);
+      return;
+    }
+
     fetch(GEOJSON_URL)
       .then((res) => res.json())
       .then((data) => {
         if (data && data.features) {
+          cachedGeoFeatures = data.features;
           setGeoFeatures(data.features);
+          try {
+            sessionStorage.setItem('coned_thailand_geojson', JSON.stringify(data.features));
+          } catch (e) {}
         }
       })
       .catch((err) => console.error('Failed to load Thailand GeoJSON:', err))
@@ -326,6 +349,27 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
   const areasForSelected = selectedProvince ? areaStatsMap.get(selectedProvince) : null;
   const areaList = areasForSelected ? Array.from(areasForSelected.entries()) : [];
 
+  // Extract all province statistics into a list for initial sidebar display
+  const allProvincesList = useMemo(() => {
+    const list = Array.from(provinceStatsMap.entries()).map(([pName, pStats]) => ({
+      provinceName: pName,
+      schoolsCount: pStats.schools,
+      studentsCount: pStats.students,
+      personnelCount: pStats.personnel,
+      areasCount: pStats.areasCount,
+    }));
+    // Sort descending by school count
+    list.sort((a, b) => b.schoolsCount - a.schoolsCount);
+    return list;
+  }, [provinceStatsMap]);
+
+  // Filter provinces list by search input
+  const filteredProvincesList = useMemo(() => {
+    if (!provinceSearch.trim()) return allProvincesList;
+    const term = provinceSearch.trim().toLowerCase();
+    return allProvincesList.filter((p) => p.provinceName.toLowerCase().includes(term));
+  }, [allProvincesList, provinceSearch]);
+
   return (
     <div className="border border-gray-200 p-6 bg-white rounded-lg shadow-sm">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6">
@@ -466,14 +510,14 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
           )}
         </div>
 
-        {/* Selected Province / District & Area Detail View */}
+        {/* Selected Province / District & Area Detail View OR Initial All Provinces List */}
         <div className="flex flex-col h-full">
-          {activeProvince ? (
+          {selectedProvince && activeProvince ? (
             <div className="p-5 border border-sky-200 bg-sky-50/60 rounded-lg space-y-4">
               <div className="border-b border-sky-200 pb-3 flex justify-between items-end">
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-wider text-sky-600">
-                    {selectedProvince ? 'จังหวัดที่เลือก (คลิกซูมขยายแล้ว)' : 'จังหวัด'}
+                    จังหวัดที่เลือก (คลิกซูมขยายแล้ว)
                   </span>
                   <h4 className="text-2xl font-extrabold text-sky-900">{activeProvince}</h4>
                 </div>
@@ -504,148 +548,221 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
               </div>
 
               {/* Switcher & Breakdown Lists */}
-              {selectedProvince && (
-                <div className="mt-4 pt-3 border-t border-sky-200">
-                  {/* Mode Switcher Buttons */}
-                  <div className="flex items-center space-x-1 bg-sky-100/80 p-1 rounded-lg mb-3">
-                    <button
-                      onClick={() => setViewMode('district')}
-                      className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all ${
-                        viewMode === 'district'
-                          ? 'bg-white text-sky-900 shadow-sm'
-                          : 'text-sky-700 hover:text-sky-900 hover:bg-sky-50'
-                      }`}
-                    >
-                      แบ่งตามอำเภอ ({districtList.length})
-                    </button>
-                    <button
-                      onClick={() => setViewMode('area')}
-                      className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all ${
-                        viewMode === 'area'
-                          ? 'bg-white text-sky-900 shadow-sm'
-                          : 'text-sky-700 hover:text-sky-900 hover:bg-sky-50'
-                      }`}
-                    >
-                      แบ่งตามเขตพื้นที่ ({areaList.length})
-                    </button>
-                  </div>
+              <div className="mt-4 pt-3 border-t border-sky-200">
+                {/* Mode Switcher Buttons */}
+                <div className="flex items-center space-x-1 bg-sky-100/80 p-1 rounded-lg mb-3">
+                  <button
+                    onClick={() => setViewMode('district')}
+                    className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all ${
+                      viewMode === 'district'
+                        ? 'bg-white text-sky-900 shadow-sm'
+                        : 'text-sky-700 hover:text-sky-900 hover:bg-sky-50'
+                    }`}
+                  >
+                    แบ่งตามอำเภอ ({districtList.length})
+                  </button>
+                  <button
+                    onClick={() => setViewMode('area')}
+                    className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-md transition-all ${
+                      viewMode === 'area'
+                        ? 'bg-white text-sky-900 shadow-sm'
+                        : 'text-sky-700 hover:text-sky-900 hover:bg-sky-50'
+                    }`}
+                  >
+                    แบ่งตามเขตพื้นที่ ({areaList.length})
+                  </button>
+                </div>
 
-                  {viewMode === 'district' ? (
-                    <>
-                      <h5 className="text-sm font-bold text-sky-900 mb-2 flex items-center justify-between">
-                        <span>แบ่งตามอำเภอ</span>
-                        <span className="text-xs font-normal text-sky-700">({districtList.length} อำเภอ)</span>
-                      </h5>
+                {viewMode === 'district' ? (
+                  <>
+                    <h5 className="text-sm font-bold text-sky-900 mb-2 flex items-center justify-between">
+                      <span>แบ่งตามอำเภอ</span>
+                      <span className="text-xs font-normal text-sky-700">({districtList.length} อำเภอ)</span>
+                    </h5>
 
-                      {districtList.length > 0 ? (
-                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                          {districtList.map(([dName, dStats]) => (
-                            <div
-                              key={dName}
-                              onMouseEnter={() => setHoveredDistrict(dName)}
-                              onMouseLeave={() => setHoveredDistrict(null)}
-                              className={`p-3 border rounded-md flex justify-between items-center text-xs transition-all cursor-pointer ${
-                                hoveredDistrict === dName
-                                  ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-400/60 shadow-sm'
-                                  : 'bg-white border-sky-100 hover:border-sky-300 hover:bg-sky-50/50'
-                              }`}
-                            >
+                    {districtList.length > 0 ? (
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                        {districtList.map(([dName, dStats]) => (
+                          <div
+                            key={dName}
+                            onMouseEnter={() => setHoveredDistrict(dName)}
+                            onMouseLeave={() => setHoveredDistrict(null)}
+                            className={`p-3 border rounded-md flex justify-between items-center text-xs transition-all cursor-pointer ${
+                              hoveredDistrict === dName
+                                ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-400/60 shadow-sm'
+                                : 'bg-white border-sky-100 hover:border-sky-300 hover:bg-sky-50/50'
+                            }`}
+                          >
+                            <div>
+                              <span className="font-semibold text-gray-800 block">{dName}</span>
+                              <span className="text-gray-500 text-[10px]">{dStats.schools} โรงเรียน</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="font-bold text-sky-800 block">{dStats.students.toLocaleString()} นักเรียน</span>
+                              <span className="text-gray-500 text-[10px]">{dStats.personnel} บุคลากร</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500 italic bg-white p-3 rounded text-center">
+                        ไม่มีข้อมูลแบ่งตามอำเภอสำหรับจังหวัดนี้
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <h5 className="text-sm font-bold text-sky-900 mb-2 flex items-center justify-between">
+                      <span>แบ่งตามเขตพื้นที่การศึกษา</span>
+                      <span className="text-xs font-normal text-sky-700">({areaList.length} เขตพื้นที่)</span>
+                    </h5>
+
+                    {areaList.length > 0 ? (
+                      <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
+                        {areaList.map(([aKey, aGroup]) => (
+                          <div
+                            key={aKey}
+                            onMouseEnter={() => setHoveredAreaKey(aKey)}
+                            onMouseLeave={() => setHoveredAreaKey(null)}
+                            className={`p-3 border rounded-md space-y-2 transition-all ${
+                              hoveredAreaKey === aKey
+                                ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-400/50 shadow-sm'
+                                : 'bg-white border-sky-100'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start border-b border-gray-100 pb-2">
                               <div>
-                                <span className="font-semibold text-gray-800 block">{dName}</span>
-                                <span className="text-gray-500 text-[10px]">{dStats.schools} โรงเรียน</span>
+                                <span className="font-bold text-sky-900 text-xs block">{aGroup.areaName}</span>
+                                <span className="text-gray-500 text-[10px]">
+                                  {aGroup.schools.length} โรงเรียน
+                                </span>
                               </div>
                               <div className="text-right">
-                                <span className="font-bold text-sky-800 block">{dStats.students.toLocaleString()} นักเรียน</span>
-                                <span className="text-gray-500 text-[10px]">{dStats.personnel} บุคลากร</span>
+                                <span className="font-semibold text-sky-800 text-[11px] block">
+                                  {aGroup.totalStudents.toLocaleString()} นักเรียน
+                                </span>
+                                <span className="text-gray-500 text-[10px]">
+                                  {aGroup.totalPersonnel.toLocaleString()} บุคลากร
+                                </span>
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-500 italic bg-white p-3 rounded text-center">
-                          ไม่มีข้อมูลแบ่งตามอำเภอสำหรับจังหวัดนี้
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <h5 className="text-sm font-bold text-sky-900 mb-2 flex items-center justify-between">
-                        <span>แบ่งตามเขตพื้นที่การศึกษา</span>
-                        <span className="text-xs font-normal text-sky-700">({areaList.length} เขตพื้นที่)</span>
-                      </h5>
 
-                      {areaList.length > 0 ? (
-                        <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
-                          {areaList.map(([aKey, aGroup]) => (
-                            <div
-                              key={aKey}
-                              onMouseEnter={() => setHoveredAreaKey(aKey)}
-                              onMouseLeave={() => setHoveredAreaKey(null)}
-                              className={`p-3 border rounded-md space-y-2 transition-all ${
-                                hoveredAreaKey === aKey
-                                  ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-400/50 shadow-sm'
-                                  : 'bg-white border-sky-100'
-                              }`}
-                            >
-                              <div className="flex justify-between items-start border-b border-gray-100 pb-2">
-                                <div>
-                                  <span className="font-bold text-sky-900 text-xs block">{aGroup.areaName}</span>
-                                  <span className="text-gray-500 text-[10px]">
-                                    {aGroup.schools.length} โรงเรียน
+                            {/* Schools detail within this Educational Area */}
+                            <div className="space-y-1.5 pl-2 border-l-2 border-sky-200">
+                              {aGroup.schools.map((sch) => (
+                                <div
+                                  key={sch.school_id}
+                                  onMouseEnter={() => setHoveredSchoolId(sch.school_id)}
+                                  onMouseLeave={() => setHoveredSchoolId(null)}
+                                  className={`flex justify-between items-center text-[11px] py-1 px-1.5 rounded transition-all cursor-pointer ${
+                                    hoveredSchoolId === sch.school_id
+                                      ? 'bg-rose-100 text-rose-900 font-bold border-l-2 border-rose-600'
+                                      : 'text-gray-700 hover:bg-sky-50'
+                                  }`}
+                                >
+                                  <span className="font-medium truncate max-w-[190px]" title={sch.school_name_th}>
+                                    • {sch.school_name_th}
                                   </span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="font-semibold text-sky-800 text-[11px] block">
-                                    {aGroup.totalStudents.toLocaleString()} นักเรียน
-                                  </span>
-                                  <span className="text-gray-500 text-[10px]">
-                                    {aGroup.totalPersonnel.toLocaleString()} บุคลากร
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Schools detail within this Educational Area */}
-                              <div className="space-y-1.5 pl-2 border-l-2 border-sky-200">
-                                {aGroup.schools.map((sch) => (
-                                  <div
-                                    key={sch.school_id}
-                                    onMouseEnter={() => setHoveredSchoolId(sch.school_id)}
-                                    onMouseLeave={() => setHoveredSchoolId(null)}
-                                    className={`flex justify-between items-center text-[11px] py-1 px-1.5 rounded transition-all cursor-pointer ${
-                                      hoveredSchoolId === sch.school_id
-                                        ? 'bg-rose-100 text-rose-900 font-bold border-l-2 border-rose-600'
-                                        : 'text-gray-700 hover:bg-sky-50'
-                                    }`}
-                                  >
-                                    <span className="font-medium truncate max-w-[190px]" title={sch.school_name_th}>
-                                      • {sch.school_name_th}
-                                    </span>
-                                    <div className="text-right text-[10px] text-gray-500 shrink-0 ml-2">
-                                      <span className="font-medium text-sky-700">{sch.students.toLocaleString()}</span> นักเรียน / <span className="font-medium text-sky-700">{sch.personnel.toLocaleString()}</span> บุคลากร
-                                    </div>
+                                  <div className="text-right text-[10px] text-gray-500 shrink-0 ml-2">
+                                    <span className="font-medium text-sky-700">{sch.students.toLocaleString()}</span> นักเรียน / <span className="font-medium text-sky-700">{sch.personnel.toLocaleString()}</span> บุคลากร
                                   </div>
-                                ))}
-                              </div>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-500 italic bg-white p-3 rounded text-center">
-                          ไม่มีข้อมูลเขตพื้นที่การศึกษาสำหรับจังหวัดนี้
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500 italic bg-white p-3 rounded text-center">
+                        ไม่มีข้อมูลเขตพื้นที่การศึกษาสำหรับจังหวัดนี้
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           ) : (
-            <div className="p-6 border border-dashed border-gray-300 rounded-lg text-center text-gray-500 bg-gray-50 flex flex-col items-center justify-center min-h-[260px]">
-              <svg className="w-12 h-12 text-sky-500/60 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <p className="text-sm font-semibold text-gray-700">คลิกจังหวัดบนแผนที่เพื่อซูมขยาย</p>
-              <p className="text-xs text-gray-400 mt-1">เพื่อเจาะลึกดูข้อมูลแบ่งตามอำเภอและเขตพื้นที่</p>
+            /* Initial Default View: List All Provinces */
+            <div className="p-5 border border-slate-200 bg-slate-50/70 rounded-lg space-y-4 flex flex-col h-full">
+              <div className="border-b border-slate-200 pb-3 flex justify-between items-center">
+                <div>
+                  <h4 className="text-lg font-bold text-sky-900">รายชื่อจังหวัดทั้งหมด</h4>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    คลิกเลือกจังหวัดจากรายการ หรือคลิกบนแผนที่
+                  </p>
+                </div>
+                <span className="text-xs font-semibold px-2.5 py-1 bg-sky-100 text-sky-800 rounded-full">
+                  {allProvincesList.length} จังหวัด
+                </span>
+              </div>
+
+              {/* Search box for provinces */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="ค้นหาชื่อจังหวัด…"
+                  value={provinceSearch}
+                  onChange={(e) => setProvinceSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 pl-8 text-xs bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+                <svg className="w-4 h-4 text-gray-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                {provinceSearch && (
+                  <button
+                    onClick={() => setProvinceSearch('')}
+                    className="absolute right-2.5 top-2 text-xs text-gray-400 hover:text-gray-600 font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Province Scrollable List */}
+              <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                {filteredProvincesList.length > 0 ? (
+                  filteredProvincesList.map((p) => {
+                    const isHovered = hoveredProvince === p.provinceName;
+
+                    return (
+                      <div
+                        key={p.provinceName}
+                        onClick={() => setSelectedProvince(p.provinceName)}
+                        onMouseEnter={() => setHoveredProvince(p.provinceName)}
+                        onMouseLeave={() => setHoveredProvince(null)}
+                        className={`p-3 border rounded-lg flex justify-between items-center text-xs transition-all cursor-pointer ${
+                          isHovered
+                            ? 'bg-sky-100 border-sky-400 shadow-sm ring-2 ring-sky-300/60 translate-x-0.5'
+                            : 'bg-white border-gray-200 hover:border-sky-300 hover:bg-sky-50/50'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center space-x-1.5">
+                            <span className="font-bold text-sky-900 text-sm">{p.provinceName}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded">
+                              {p.areasCount} เขต
+                            </span>
+                          </div>
+                          <span className="text-gray-500 text-[10px] mt-0.5 block">
+                            {p.studentsCount.toLocaleString()} นักเรียน • {p.personnelCount.toLocaleString()} บุคลากร
+                          </span>
+                        </div>
+                        <div className="text-right flex items-center space-x-2">
+                          <div className="bg-sky-50 px-2.5 py-1 rounded border border-sky-100 text-center">
+                            <span className="font-extrabold text-sky-800 text-xs block">{p.schoolsCount}</span>
+                            <span className="text-gray-400 text-[9px] block">โรงเรียน</span>
+                          </div>
+                          <span className="text-sky-400 text-sm">›</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-xs text-gray-500 italic bg-white p-4 rounded text-center">
+                    ไม่พบจังหวัดที่ตรงกับ "{provinceSearch}"
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>

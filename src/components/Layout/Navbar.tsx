@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { School, LayoutDashboard, ChevronRight } from 'lucide-react';
+import { School, LayoutDashboard } from 'lucide-react';
 
 export default function Navbar() {
   const location = useLocation();
@@ -40,16 +40,6 @@ export default function Navbar() {
           );
         })}
       </ul>
-
-      <div className="navbar__actions">
-        <div className="navbar__user">
-          <div className="navbar__avatar">
-            <School size={16} />
-          </div>
-          <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>ผู้ดูแลระบบ</span>
-          <ChevronRight size={14} style={{ opacity: 0.6 }} />
-        </div>
-      </div>
     </nav>
   );
 }
