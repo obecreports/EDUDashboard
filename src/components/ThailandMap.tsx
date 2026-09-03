@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as d3 from 'd3-geo';
 import type { SchoolFull } from '../types/school';
 
@@ -117,6 +118,9 @@ export interface AreaGroup {
 let cachedGeoFeatures: GeoFeature[] | null = null;
 
 export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
+  const navigate = useNavigate();
+  const [selectedSchoolModal, setSelectedSchoolModal] = useState<{ school_id: string; school_name_th: string } | null>(null);
+
   const [geoFeatures, setGeoFeatures] = useState<GeoFeature[]>(() => {
     if (cachedGeoFeatures) return cachedGeoFeatures;
     try {
@@ -466,6 +470,7 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                       transform={`translate(${x}, ${y})`}
                       onMouseEnter={() => setHoveredSchoolId(school.school_id)}
                       onMouseLeave={() => setHoveredSchoolId(null)}
+                      onClick={() => setSelectedSchoolModal({ school_id: school.school_id, school_name_th: school.school_name_th })}
                       className="cursor-pointer group"
                     >
                       {isHighlighted && (
@@ -654,6 +659,7 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
                                   key={sch.school_id}
                                   onMouseEnter={() => setHoveredSchoolId(sch.school_id)}
                                   onMouseLeave={() => setHoveredSchoolId(null)}
+                                  onClick={() => setSelectedSchoolModal({ school_id: sch.school_id, school_name_th: sch.school_name_th })}
                                   className={`flex justify-between items-center text-[11px] py-1 px-1.5 rounded transition-all cursor-pointer ${
                                     hoveredSchoolId === sch.school_id
                                       ? 'bg-rose-100 text-rose-900 font-bold border-l-2 border-rose-600'
@@ -767,6 +773,48 @@ export const ThailandMap: React.FC<ThailandMapProps> = ({ schools }) => {
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal Popup for School Selection */}
+      {selectedSchoolModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 p-6 max-w-md w-full text-center space-y-4 animate-scaleUp">
+            <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+
+            <div>
+              <h4 className="text-lg font-bold text-gray-900 mb-1">ดูรายละเอียดโรงเรียน</h4>
+              <p className="text-sm font-semibold text-sky-800">
+                {selectedSchoolModal.school_name_th}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                คุณต้องการดูข้อมูลรายละเอียดของโรงเรียนนี้ใช่หรือไม่?
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center space-x-3 pt-2">
+              <button
+                onClick={() => setSelectedSchoolModal(null)}
+                className="px-5 py-2 text-xs font-semibold rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-sm cursor-pointer"
+              >
+                ไม่ใช่
+              </button>
+              <button
+                onClick={() => {
+                  const sId = selectedSchoolModal.school_id;
+                  setSelectedSchoolModal(null);
+                  navigate(`/schools/${sId}`);
+                }}
+                className="px-5 py-2 text-xs font-semibold rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors shadow-sm cursor-pointer"
+              >
+                ใช่
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
