@@ -1,0 +1,586 @@
+/* ==========================================================================
+   ConED MapLibre — scoped under .coned-maplibre-root
+   Mirrors legacy ThailandMap (sky palette, 2/3 + 1/3 detail panel)
+   Safe to mount beside the D3 SVG map without style collisions.
+   ========================================================================== */
+
+.coned-maplibre-root {
+  --ml-sky-900: #0c4a6e;
+  --ml-sky-800: #075985;
+  --ml-sky-700: #0369a1;
+  --ml-sky-600: #0284c7;
+  --ml-sky-500: #0ea5e9;
+  --ml-sky-400: #38bdf8;
+  --ml-sky-100: #e0f2fe;
+  --ml-sky-50: #f0f9ff;
+  --ml-slate-50: #f8fafc;
+  --ml-slate-100: #f1f5f9;
+  --ml-slate-200: #e2e8f0;
+  --ml-slate-300: #cbd5e1;
+  --ml-slate-500: #64748b;
+  --ml-amber-50: #fffbeb;
+  --ml-amber-200: #fde68a;
+  --ml-amber-400: #fbbf24;
+  --ml-rose-600: #e11d48;
+  --ml-font: 'Sarabun', 'Segoe UI', system-ui, sans-serif;
+
+  font-family: var(--ml-font);
+  color: #0f172a;
+  box-sizing: border-box;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.coned-maplibre-root *,
+.coned-maplibre-root *::before,
+.coned-maplibre-root *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(165deg, #e0f2fe 0%, #f8fafc 50%, #f1f5f9 100%);
+  min-height: 100vh;
+}
+
+/* Compact layout when mounted inside the Vite dashboard iframe */
+html.coned-ml-embed body {
+  background: transparent;
+  min-height: 0;
+}
+
+html.coned-ml-embed .coned-maplibre-root {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+html.coned-ml-embed .coned-ml-card {
+  box-shadow: none;
+}
+
+.coned-ml-card {
+  background: #fff;
+  border: 1px solid var(--ml-slate-200);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  padding: 1.5rem;
+}
+
+.coned-ml-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.coned-ml-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ml-sky-900);
+}
+
+.coned-ml-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: var(--ml-slate-500);
+}
+
+.coned-ml-btn-reset {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.375rem;
+  border: none;
+  background: var(--ml-sky-100);
+  color: var(--ml-sky-800);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.coned-ml-btn-reset:hover {
+  background: #bae6fd;
+}
+
+.coned-ml-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .coned-ml-grid {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+.coned-ml-map-wrap {
+  position: relative;
+  background: var(--ml-slate-50);
+  border: 1px solid var(--ml-slate-100);
+  border-radius: 0.75rem;
+  min-height: 500px;
+  overflow: hidden;
+}
+
+.coned-ml-map {
+  width: 100%;
+  height: min(68vh, 640px);
+  min-height: 480px;
+}
+
+.coned-ml-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: rgba(248, 250, 252, 0.85);
+  color: var(--ml-sky-700);
+  font-size: 0.875rem;
+  font-weight: 500;
+  z-index: 2;
+}
+
+.coned-ml-loading[hidden] {
+  display: none;
+}
+
+.coned-ml-spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 4px solid var(--ml-sky-600);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: coned-ml-spin 0.8s linear infinite;
+}
+
+@keyframes coned-ml-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Detail panel ---- */
+
+.coned-ml-panel {
+  background: color-mix(in srgb, var(--ml-sky-50) 60%, white);
+  border: 1px solid #bae6fd;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  min-height: 420px;
+}
+
+.coned-ml-panel.is-national {
+  background: color-mix(in srgb, var(--ml-slate-50) 70%, white);
+  border-color: var(--ml-slate-200);
+}
+
+.coned-ml-panel-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ml-sky-600);
+}
+
+.coned-ml-panel-heading {
+  margin: 0.15rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--ml-sky-900);
+}
+
+.coned-ml-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+@media (min-width: 480px) {
+  .coned-ml-stats {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.coned-ml-stat {
+  background: #fff;
+  border: 1px solid var(--ml-sky-100);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+}
+
+.coned-ml-stat span {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--ml-slate-500);
+}
+
+.coned-ml-stat strong {
+  font-size: 0.95rem;
+  color: var(--ml-sky-900);
+}
+
+.coned-ml-section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--ml-sky-900);
+  margin: 0.75rem 0 0.5rem;
+}
+
+.coned-ml-switcher {
+  display: flex;
+  gap: 0.25rem;
+  background: color-mix(in srgb, var(--ml-sky-100) 80%, white);
+  padding: 0.25rem;
+  border-radius: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.coned-ml-switch-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--ml-sky-700);
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.coned-ml-switch-btn:hover {
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--ml-sky-900);
+}
+
+.coned-ml-switch-btn.is-active {
+  background: #fff;
+  color: var(--ml-sky-900);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.coned-ml-tip-hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 0.35rem 0;
+}
+
+.coned-ml-school-list--amber {
+  border-left-color: var(--ml-amber-200);
+}
+
+.coned-ml-school-list--sky {
+  border-left-color: #bae6fd;
+}
+
+.coned-ml-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.coned-ml-scroll-tall {
+  max-height: 460px;
+}
+
+.coned-ml-district-card {
+  background: #fff;
+  border: 1px solid var(--ml-sky-100);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.coned-ml-district-card:hover,
+.coned-ml-district-card.is-hot {
+  background: var(--ml-amber-50);
+  border-color: #fcd34d;
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.35);
+}
+
+.coned-ml-district-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--ml-slate-100);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.coned-ml-district-head strong {
+  font-size: 0.75rem;
+  color: var(--ml-sky-900);
+}
+
+.coned-ml-district-head .meta {
+  font-size: 0.65rem;
+  color: var(--ml-slate-500);
+}
+
+.coned-ml-school-list {
+  border-left: 2px solid var(--ml-amber-200);
+  padding-left: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.coned-ml-school-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  padding: 0.25rem 0.35rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  color: #334155;
+}
+
+.coned-ml-school-row:hover,
+.coned-ml-school-row.is-hot {
+  background: #ffe4e6;
+  color: #881337;
+  font-weight: 700;
+  border-left: 2px solid var(--ml-rose-600);
+}
+
+/* National province list */
+.coned-ml-search {
+  position: relative;
+  margin: 0.75rem 0;
+}
+
+.coned-ml-search input {
+  width: 100%;
+  padding: 0.45rem 0.75rem 0.45rem 2rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--ml-slate-300);
+  border-radius: 0.5rem;
+  font-family: inherit;
+}
+
+.coned-ml-search input:focus {
+  outline: none;
+  border-color: var(--ml-sky-500);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.25);
+}
+
+.coned-ml-search svg {
+  position: absolute;
+  left: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0.9rem;
+  height: 0.9rem;
+  color: #94a3b8;
+}
+
+.coned-ml-prov-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #fff;
+  border: 1px solid var(--ml-slate-200);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: 0.15s;
+}
+
+.coned-ml-prov-row:hover {
+  background: var(--ml-sky-50);
+  border-color: #7dd3fc;
+  box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.45);
+  transform: translateX(2px);
+}
+
+.coned-ml-prov-row strong {
+  font-size: 0.875rem;
+  color: var(--ml-sky-900);
+}
+
+.coned-ml-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  background: var(--ml-slate-100);
+  color: #475569;
+  border-radius: 999px;
+  margin-left: 0.35rem;
+}
+
+.coned-ml-count-box {
+  background: var(--ml-sky-50);
+  border: 1px solid var(--ml-sky-100);
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.55rem;
+  text-align: center;
+}
+
+.coned-ml-count-box strong {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--ml-sky-800);
+}
+
+.coned-ml-count-box span {
+  font-size: 0.55rem;
+  color: #94a3b8;
+}
+
+.coned-ml-chip {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  background: var(--ml-sky-100);
+  color: var(--ml-sky-800);
+  border-radius: 999px;
+}
+
+.coned-ml-empty {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--ml-slate-500);
+  font-style: italic;
+  background: #fff;
+  padding: 1rem;
+  border-radius: 0.5rem;
+}
+
+/* Popup */
+.coned-ml-popup .maplibregl-popup-content {
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.5rem;
+  font-family: var(--ml-font);
+  font-size: 0.8rem;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
+}
+
+.coned-ml-tip strong {
+  color: var(--ml-sky-900);
+}
+
+.coned-ml-tip .muted {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  margin-top: 0.15rem;
+}
+
+/* Modal */
+.coned-ml-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.coned-ml-modal[hidden] {
+  display: none;
+}
+
+.coned-ml-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.coned-ml-modal-card {
+  position: relative;
+  background: #fff;
+  border-radius: 0.75rem;
+  border: 1px solid var(--ml-slate-200);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+  padding: 1.5rem;
+  max-width: 26rem;
+  width: 100%;
+  text-align: center;
+}
+
+.coned-ml-modal-icon {
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto 0.75rem;
+  border-radius: 999px;
+  background: var(--ml-sky-100);
+  color: var(--ml-sky-600);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.coned-ml-modal-heading {
+  margin: 0 0 0.35rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.coned-ml-modal-name {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ml-sky-800);
+}
+
+.coned-ml-modal-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--ml-slate-500);
+}
+
+.coned-ml-modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.coned-ml-btn-no,
+.coned-ml-btn-yes {
+  padding: 0.5rem 1.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  color: #fff;
+}
+
+.coned-ml-btn-no {
+  background: var(--ml-rose-600);
+}
+
+.coned-ml-btn-yes {
+  background: #1e293b;
+}
+
+.coned-ml-btn-no:hover {
+  background: #be123c;
+}
+
+.coned-ml-btn-yes:hover {
+  background: #0f172a;
+}

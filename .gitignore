@@ -1,0 +1,39 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Next.js
+.next
+out
+build
+dist
+
+# Env / secrets
+.env
+.env.*
+!.env.local.example
+*.local
+maplibre-dashboard/js/env.local.js
+public/maplibre-dashboard/js/env.local.js
+
+# Debug / IDE
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+*.pem
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# TypeScript
+next-env.d.ts
+*.tsbuildinfo
+
+# Legacy Vite (archived during Next migration)
+_legacy_vite_src
+src
+dist
+dist-ssr
+

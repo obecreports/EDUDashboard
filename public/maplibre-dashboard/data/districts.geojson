@@ -1,0 +1,160 @@
+{
+  "type": "FeatureCollection",
+  "name": "coned_districts",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "40-01",
+      "properties": {
+        "district_id": "40-01",
+        "district_name_th": "เมืองขอนแก่น",
+        "district_name_en": "Mueang Khon Kaen",
+        "province_id": "40",
+        "province_name_th": "ขอนแก่น",
+        "zone_code": "KKN-1",
+        "school_count": 5,
+        "staff_assigned": 210,
+        "student_count": 3800
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [102.70, 16.35], [102.90, 16.30], [103.05, 16.40], [103.00, 16.55],
+          [102.80, 16.60], [102.65, 16.50], [102.70, 16.35]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "40-02",
+      "properties": {
+        "district_id": "40-02",
+        "district_name_th": "บ้านฝาง",
+        "district_name_en": "Ban Fang",
+        "province_id": "40",
+        "province_name_th": "ขอนแก่น",
+        "zone_code": "KKN-2",
+        "school_count": 3,
+        "staff_assigned": 98,
+        "student_count": 1520
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [102.45, 16.40], [102.65, 16.35], [102.70, 16.50], [102.55, 16.65],
+          [102.40, 16.55], [102.45, 16.40]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "40-03",
+      "properties": {
+        "district_id": "40-03",
+        "district_name_th": "น้ำพอง",
+        "district_name_en": "Nam Phong",
+        "province_id": "40",
+        "province_name_th": "ขอนแก่น",
+        "zone_code": "KKN-1",
+        "school_count": 4,
+        "staff_assigned": 178,
+        "student_count": 3100
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [102.85, 16.55], [103.10, 16.50], [103.20, 16.70], [103.00, 16.80],
+          [102.80, 16.75], [102.85, 16.55]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "20-01",
+      "properties": {
+        "district_id": "20-01",
+        "district_name_th": "เมืองชลบุรี",
+        "district_name_en": "Mueang Chon Buri",
+        "province_id": "20",
+        "province_name_th": "ชลบุรี",
+        "zone_code": "CBI-1",
+        "school_count": 3,
+        "staff_assigned": 160,
+        "student_count": 2800
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [100.90, 13.20], [101.10, 13.15], [101.20, 13.30], [101.05, 13.40],
+          [100.90, 13.35], [100.90, 13.20]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "20-02",
+      "properties": {
+        "district_id": "20-02",
+        "district_name_th": "ศรีราชา",
+        "district_name_en": "Si Racha",
+        "province_id": "20",
+        "province_name_th": "ชลบุรี",
+        "zone_code": "CBI-1",
+        "school_count": 3,
+        "staff_assigned": 152,
+        "student_count": 2410
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [100.90, 12.95], [101.15, 12.90], [101.25, 13.10], [101.10, 13.20],
+          [100.90, 13.15], [100.90, 12.95]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "10-01",
+      "properties": {
+        "district_id": "10-01",
+        "district_name_th": "ปทุมวัน",
+        "district_name_en": "Pathum Wan",
+        "province_id": "10",
+        "province_name_th": "กรุงเทพมหานคร",
+        "zone_code": "BKK-1",
+        "school_count": 2,
+        "staff_assigned": 420,
+        "student_count": 6100
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [100.50, 13.72], [100.58, 13.70], [100.60, 13.76], [100.54, 13.78],
+          [100.50, 13.72]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "50-01",
+      "properties": {
+        "district_id": "50-01",
+        "district_name_th": "เมืองเชียงใหม่",
+        "district_name_en": "Mueang Chiang Mai",
+        "province_id": "50",
+        "province_name_th": "เชียงใหม่",
+        "zone_code": "CNX-1",
+        "school_count": 4,
+        "staff_assigned": 280,
+        "student_count": 4800
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [98.90, 18.70], [99.05, 18.65], [99.15, 18.80], [99.00, 18.90],
+          [98.85, 18.85], [98.90, 18.70]
+        ]]
+      }
+    }
+  ]
+}

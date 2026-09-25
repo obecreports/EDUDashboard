@@ -1,0 +1,206 @@
+{
+  "type": "FeatureCollection",
+  "name": "coned_schools",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "1093340267",
+      "properties": {
+        "school_id": "1093340267",
+        "school_name_th": "โรงเรียนบ้านหนองไผ่",
+        "school_name_en": "Ban Nong Phai School",
+        "province_id": "40",
+        "province_name_th": "ขอนแก่น",
+        "district_id": "40-01",
+        "district_name_th": "เมืองขอนแก่น",
+        "zone_id": "KKN-1",
+        "zone_code": "KKN-1",
+        "area_name": "สพป.ขอนแก่น เขต 1",
+        "organize_domain": "สพป.ขอนแก่น เขต 1",
+        "survey_status": "Active",
+        "assigned_staff_id": "staff-01",
+        "school_size": "กลาง",
+        "staff_assigned": 42,
+        "student_count": 680,
+        "director_name": "นายสมชาย ใจดี"
+      },
+      "geometry": { "type": "Point", "coordinates": [102.836, 16.4419] }
+    },
+    {
+      "type": "Feature",
+      "id": "1093340268",
+      "properties": {
+        "school_id": "1093340268",
+        "school_name_th": "โรงเรียนบ้านโนนสวรรค์",
+        "school_name_en": "Ban Non Sawan School",
+        "province_id": "40",
+        "province_name_th": "ขอนแก่น",
+        "district_id": "40-01",
+        "district_name_th": "เมืองขอนแก่น",
+        "zone_id": "KKN-1",
+        "zone_code": "KKN-1",
+        "survey_status": "Surveyed",
+        "assigned_staff_id": "staff-01",
+        "school_size": "เล็ก",
+        "staff_assigned": 28,
+        "student_count": 310,
+        "director_name": "นางสมศรี แก้วมณี"
+      },
+      "geometry": { "type": "Point", "coordinates": [102.845, 16.4321] }
+    },
+    {
+      "type": "Feature",
+      "id": "1093340269",
+      "properties": {
+        "school_id": "1093340269",
+        "school_name_th": "โรงเรียนชุมชนบ้านท่าพระ",
+        "school_name_en": "Chumchon Ban Tha Phra School",
+        "province_id": "40",
+        "province_name_th": "ขอนแก่น",
+        "district_id": "40-01",
+        "district_name_th": "เมืองขอนแก่น",
+        "zone_id": "KKN-1",
+        "zone_code": "KKN-1",
+        "survey_status": "Pending",
+        "assigned_staff_id": "staff-02",
+        "school_size": "ใหญ่",
+        "staff_assigned": 65,
+        "student_count": 1120,
+        "director_name": "นายวิชัย พรมดี"
+      },
+      "geometry": { "type": "Point", "coordinates": [102.82, 16.40] }
+    },
+    {
+      "type": "Feature",
+      "id": "1093340270",
+      "properties": {
+        "school_id": "1093340270",
+        "school_name_th": "โรงเรียนบ้านฝางวิทยา",
+        "school_name_en": "Ban Fang Wittaya School",
+        "province_id": "40",
+        "province_name_th": "ขอนแก่น",
+        "district_id": "40-02",
+        "district_name_th": "บ้านฝาง",
+        "zone_id": "KKN-2",
+        "zone_code": "KKN-2",
+        "survey_status": "Active",
+        "assigned_staff_id": "staff-03",
+        "school_size": "กลาง",
+        "staff_assigned": 38,
+        "student_count": 540,
+        "director_name": "นางสาวอรุณี สุขใจ"
+      },
+      "geometry": { "type": "Point", "coordinates": [102.52, 16.48] }
+    },
+    {
+      "type": "Feature",
+      "id": "1093340271",
+      "properties": {
+        "school_id": "1093340271",
+        "school_name_th": "โรงเรียนน้ำพองพิทยาคม",
+        "school_name_en": "Nam Phong Pittayakom School",
+        "province_id": "40",
+        "province_name_th": "ขอนแก่น",
+        "district_id": "40-03",
+        "district_name_th": "น้ำพอง",
+        "zone_id": "KKN-1",
+        "zone_code": "KKN-1",
+        "survey_status": "Surveyed",
+        "assigned_staff_id": "staff-01",
+        "school_size": "ใหญ่",
+        "staff_assigned": 72,
+        "student_count": 1450,
+        "director_name": "นายประเสริฐ ทองดี"
+      },
+      "geometry": { "type": "Point", "coordinates": [102.98, 16.68] }
+    },
+    {
+      "type": "Feature",
+      "id": "2093340101",
+      "properties": {
+        "school_id": "2093340101",
+        "school_name_th": "โรงเรียนเมืองชลบุรี",
+        "school_name_en": "Mueang Chon Buri School",
+        "province_id": "20",
+        "province_name_th": "ชลบุรี",
+        "district_id": "20-01",
+        "district_name_th": "เมืองชลบุรี",
+        "zone_id": "CBI-1",
+        "zone_code": "CBI-1",
+        "survey_status": "Active",
+        "assigned_staff_id": "staff-10",
+        "school_size": "ใหญ่",
+        "staff_assigned": 88,
+        "student_count": 1620,
+        "director_name": "นายสมบัติ ทะเลทอง"
+      },
+      "geometry": { "type": "Point", "coordinates": [100.984, 13.361] }
+    },
+    {
+      "type": "Feature",
+      "id": "2093340102",
+      "properties": {
+        "school_id": "2093340102",
+        "school_name_th": "โรงเรียนศรีราชา",
+        "school_name_en": "Si Racha School",
+        "province_id": "20",
+        "province_name_th": "ชลบุรี",
+        "district_id": "20-02",
+        "district_name_th": "ศรีราชา",
+        "zone_id": "CBI-1",
+        "zone_code": "CBI-1",
+        "survey_status": "Pending",
+        "assigned_staff_id": "staff-11",
+        "school_size": "กลาง",
+        "staff_assigned": 54,
+        "student_count": 890,
+        "director_name": "นางมณีรัตน์ ชายทะเล"
+      },
+      "geometry": { "type": "Point", "coordinates": [100.98, 13.10] }
+    },
+    {
+      "type": "Feature",
+      "id": "1093340001",
+      "properties": {
+        "school_id": "1093340001",
+        "school_name_th": "โรงเรียนสาธิตมหาวิทยาลัย",
+        "school_name_en": "University Demonstration School",
+        "province_id": "10",
+        "province_name_th": "กรุงเทพมหานคร",
+        "district_id": "10-01",
+        "district_name_th": "ปทุมวัน",
+        "zone_id": "BKK-1",
+        "zone_code": "BKK-1",
+        "survey_status": "Surveyed",
+        "assigned_staff_id": "staff-20",
+        "school_size": "ใหญ่พิเศษ",
+        "staff_assigned": 210,
+        "student_count": 3200,
+        "director_name": "รศ.ดร.วิทยา ใจกว้าง"
+      },
+      "geometry": { "type": "Point", "coordinates": [100.535, 13.74] }
+    },
+    {
+      "type": "Feature",
+      "id": "5093340001",
+      "properties": {
+        "school_id": "5093340001",
+        "school_name_th": "โรงเรียนวัดสวนดอก",
+        "school_name_en": "Wat Suan Dok School",
+        "province_id": "50",
+        "province_name_th": "เชียงใหม่",
+        "district_id": "50-01",
+        "district_name_th": "เมืองเชียงใหม่",
+        "zone_id": "CNX-1",
+        "zone_code": "CNX-1",
+        "survey_status": "Inactive",
+        "assigned_staff_id": "staff-30",
+        "school_size": "กลาง",
+        "staff_assigned": 48,
+        "student_count": 720,
+        "director_name": "นายคำปัน ดอยสูง"
+      },
+      "geometry": { "type": "Point", "coordinates": [98.968, 18.788] }
+    }
+  ]
+}

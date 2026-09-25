@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ConED · แผนที่ประเทศไทย (MapLibre)</title>
+  <meta name="description" content="Connext ED Thailand school network map — MapLibre" />
+
+  <link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="./css/map.css" rel="stylesheet" />
+</head>
+<body>
+  <script>
+    if (new URLSearchParams(location.search).has('embed')) {
+      document.documentElement.classList.add('coned-ml-embed');
+    }
+  </script>
+  <!-- Root scoped class keeps CSS/JS isolated for side-by-side use with legacy D3 map -->
+  <div class="coned-maplibre-root" id="coned-maplibre-root">
+    <section class="coned-ml-card">
+      <header class="coned-ml-header">
+        <div>
+          <h1 class="coned-ml-title">แผนที่ประเทศไทย</h1>
+          <p class="coned-ml-subtitle">
+            คลิกเลือกจังหวัดเพื่อแสดงตำแหน่งโรงเรียน ข้อมูลระดับเขต และอำเภอ
+          </p>
+        </div>
+        <button type="button" id="coned-ml-btn-reset" class="coned-ml-btn-reset" hidden>
+          ← แสดงแผนที่รวมทั้งประเทศ
+        </button>
+      </header>
+
+      <div class="coned-ml-grid">
+        <!-- Map -->
+        <div class="coned-ml-map-wrap">
+          <div id="coned-maplibre-map" class="coned-ml-map" role="application" aria-label="แผนที่ประเทศไทย"></div>
+          <div id="coned-ml-loading" class="coned-ml-loading">
+            <div class="coned-ml-spinner"></div>
+            <span>กำลังโหลดแผนที่และข้อมูลโรงเรียน…</span>
+          </div>
+        </div>
+
+        <!-- Detail panel (mirrors legacy ThailandMap sidebar) -->
+        <aside class="coned-ml-panel" id="coned-ml-detail-panel">
+          <!-- Filled by app.js -->
+        </aside>
+      </div>
+    </section>
+  </div>
+
+  <!-- School confirm modal -->
+  <div id="coned-ml-modal" class="coned-ml-modal" hidden>
+    <div class="coned-ml-modal-backdrop" data-close-modal></div>
+    <div class="coned-ml-modal-card" role="dialog" aria-modal="true" aria-labelledby="coned-ml-modal-title">
+      <div class="coned-ml-modal-icon">ℹ</div>
+      <h2 id="coned-ml-modal-title" class="coned-ml-modal-heading">ดูรายละเอียดโรงเรียน</h2>
+      <p id="coned-ml-modal-name" class="coned-ml-modal-name"></p>
+      <p class="coned-ml-modal-hint">คุณต้องการดูข้อมูลรายละเอียดของโรงเรียนนี้ใช่หรือไม่?</p>
+      <div class="coned-ml-modal-actions">
+        <button type="button" class="coned-ml-btn-no" data-close-modal>ไม่ใช่</button>
+        <button type="button" class="coned-ml-btn-yes" id="coned-ml-modal-confirm">ใช่</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./js/env.local.js"></script>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
