@@ -8,49 +8,60 @@ import {
   LayoutDashboard,
   Map,
   Briefcase,
-  UserRound,
   CalendarDays,
   ClipboardPen,
   Network,
   Activity,
   Settings,
   Users,
+  UserRound,
   ChevronDown,
   LogIn,
+  LogOut,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { navForRole, ROLE_LABELS, type UserRole } from '@/lib/types';
-import { setDemoRole } from '@/app/actions/role';
+import { DROPDOWN_ONLY_HREFS, STAFF_DROPDOWN_HREFS } from '@/lib/auth/mock-users';
+import { logoutAction } from '@/app/actions/auth';
 
 const ICONS: Record<string, LucideIcon> = {
   '/': LayoutDashboard,
   '/schools': School,
   '/thailand-map': Map,
   '/staff/dashboard': Briefcase,
-  '/staff/profile': UserRound,
   '/staff/calendar': CalendarDays,
   '/staff/update-school': ClipboardPen,
   '/manage-schools': Network,
   '/overseer/progress': Activity,
-  '/admin/settings': Settings,
   '/admin/accounts': Users,
 };
 
 export function AppNavbar({
   role,
   displayName,
-  isDemo,
+  isAuthenticated,
+  mustChangePassword,
 }: {
   role: UserRole;
   displayName: string;
-  isDemo: boolean;
+  isAuthenticated: boolean;
+  mustChangePassword: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
-  const items = navForRole(role);
+
+  const items = navForRole(role).filter((item) => {
+    if (DROPDOWN_ONLY_HREFS.has(item.href)) return false;
+    if (role === 'staff' && STAFF_DROPDOWN_HREFS.has(item.href)) return false;
+    return true;
+  });
+
+  const showProfile = role === 'staff' || role === 'overseer' || role === 'admin';
+  const showSettings = role === 'admin';
+  const showManageSchools = role === 'staff';
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -84,6 +95,7 @@ export function AppNavbar({
             <li key={item.href}>
               <Link
                 href={item.href}
+                prefetch={true}
                 className={`navbar__link ${active ? 'navbar__link--active' : ''}`}
               >
                 <Icon size={16} />
@@ -95,52 +107,104 @@ export function AppNavbar({
       </ul>
 
       <div className="relative" ref={ref} style={{ position: 'relative' }}>
-        <button
-          type="button"
-          className="navbar__login"
-          onClick={() => setOpen((v) => !v)}
-          disabled={pending}
-        >
-          {isDemo ? <LogIn size={16} /> : null}
-          {displayName}
-          <ChevronDown size={14} />
-        </button>
-        {open && (
-          <div className="role-menu" role="menu">
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: '#8a9aab',
-                padding: '8px 12px 4px',
-                textTransform: 'uppercase',
-              }}
+        {isAuthenticated ? (
+          <>
+            <button
+              type="button"
+              className="navbar__login"
+              onClick={() => setOpen((v) => !v)}
+              disabled={pending}
+              aria-expanded={open}
             >
-              {isDemo ? 'สลับบทบาท (Demo)' : 'บทบาทปัจจุบัน'}
-            </div>
-            {(isDemo ? (['global', 'staff', 'overseer', 'admin'] as UserRole[]) : [role]).map(
-              (r) => (
+              <span
+                className="navbar__avatar"
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.25)',
+                  display: 'inline-grid',
+                  placeItems: 'center',
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              >
+                {displayName.slice(0, 1)}
+              </span>
+              {displayName}
+              <ChevronDown size={14} />
+            </button>
+            {open && (
+              <div className="role-menu" role="menu">
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: '#8a9aab',
+                    padding: '8px 12px 4px',
+                  }}
+                >
+                  {ROLE_LABELS[role]}
+                  {mustChangePassword ? ' · ต้องเปลี่ยนรหัสผ่าน' : ''}
+                </div>
+                {showProfile && (
+                  <Link
+                    href="/staff/profile"
+                    className="role-menu__item"
+                    style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                    onClick={() => setOpen(false)}
+                  >
+                    <UserRound size={16} />
+                    โปรไฟล์
+                  </Link>
+                )}
+                {showManageSchools && (
+                  <Link
+                    href="/manage-schools"
+                    className="role-menu__item"
+                    style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                    onClick={() => setOpen(false)}
+                  >
+                    <Network size={16} />
+                    จัดการโรงเรียน
+                  </Link>
+                )}
+                {showSettings && (
+                  <Link
+                    href="/admin/settings"
+                    className="role-menu__item"
+                    style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                    onClick={() => setOpen(false)}
+                  >
+                    <Settings size={16} />
+                    ตั้งค่า
+                  </Link>
+                )}
                 <button
-                  key={r}
                   type="button"
-                  className={`role-menu__item ${role === r ? 'role-menu__item--active' : ''}`}
+                  className="role-menu__item"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
                   onClick={() => {
-                    if (!isDemo) return;
                     startTransition(async () => {
-                      await setDemoRole(r);
+                      await logoutAction();
                       setOpen(false);
                       router.refresh();
                     });
                   }}
                 >
-                  {ROLE_LABELS[r]}
+                  <LogOut size={16} />
+                  ออกจากระบบ
                 </button>
-              )
+              </div>
             )}
-          </div>
+          </>
+        ) : (
+          <Link href="/login" className="navbar__login">
+            <LogIn size={16} />
+            เข้าสู่ระบบ
+          </Link>
         )}
       </div>
     </nav>
   );
 }
-

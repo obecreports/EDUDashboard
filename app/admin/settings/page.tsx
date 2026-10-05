@@ -1,45 +1,58 @@
-import { createClient } from '@/lib/supabase/server';
+import { Suspense } from 'react';
 import { SiteSettingsForm } from '@/components/admin/SiteSettingsForm';
-import { AccountsTable } from '@/components/admin/AccountsTable';
+import { readHeroSettings } from '@/lib/auth/user-store';
+import { createClient } from '@/lib/supabase/server';
+import { PageSkeleton } from '@/components/ui/PageSkeleton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminSettingsPage() {
-  const supabase = await createClient();
+function unwrap(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.replace(/^"|"$/g, '');
+  return String(value);
+}
 
-  const [{ data: settings }, { data: accounts }] = await Promise.all([
-    supabase.from('site_settings').select('*'),
-    supabase.from('user_profiles').select('id, email, full_name, position, role, assigned_zone'),
-  ]);
+async function SettingsBody() {
+  const cookieSettings = readHeroSettings();
+  let map: Record<string, unknown> = {};
+  try {
+    const supabase = await createClient();
+    const { data: settings } = await supabase.from('site_settings').select('*');
+    (settings ?? []).forEach((s) => {
+      map[s.key] = s.value;
+    });
+  } catch {
+    map = {};
+  }
 
-  const map: Record<string, unknown> = {};
-  (settings ?? []).forEach((s) => {
-    map[s.key] = s.value;
-  });
+  const initial = {
+    site_title: unwrap(map.site_title) || cookieSettings.site_title,
+    hero_title: unwrap(map.hero_title) || cookieSettings.hero_title,
+    hero_subtitle:
+      unwrap(map.hero_subtitle) || unwrap(map.hero_text) || cookieSettings.hero_subtitle,
+    hero_bg_url: unwrap(map.hero_bg_url) || cookieSettings.hero_bg_url,
+  };
 
   return (
     <div className="page-shell space-y-8">
       <div>
-        <h1 className="section-heading">ตั้งค่าเว็บไซต์ & บัญชี</h1>
+        <h1 className="section-heading">ตั้งค่าเว็บไซต์</h1>
         <p className="text-slate-500 mt-[-0.5rem]">
-          site_settings + user_profiles (Admin)
+          แก้ไขข้อความและภาพพื้นหลัง Hero แบบไดนามิก (site_settings)
         </p>
       </div>
-
       <section>
-        <h2 className="section-heading text-base">Website Settings</h2>
-        <SiteSettingsForm
-          initial={{
-            site_title: String(map.site_title ?? 'ConED'),
-            hero_text: String(map.hero_text ?? ''),
-          }}
-        />
-      </section>
-
-      <section>
-        <h2 className="section-heading text-base">Manage Accounts</h2>
-        <AccountsTable rows={accounts ?? []} />
+        <h2 className="section-heading text-base">Hero & Site Properties</h2>
+        <SiteSettingsForm initial={initial} />
       </section>
     </div>
+  );
+}
+
+export default function AdminSettingsPage() {
+  return (
+    <Suspense fallback={<PageSkeleton rows={5} />}>
+      <SettingsBody />
+    </Suspense>
   );
 }

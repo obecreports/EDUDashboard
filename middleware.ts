@@ -1,74 +1,65 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
+import {
+  AUTH_SESSION_COOKIE,
+  type AuthSession,
+} from '@/lib/auth/mock-users';
 import { rolesForPath, type UserRole } from '@/lib/types';
 
-const DEMO_ROLE_COOKIE = 'coned-demo-role';
+function readSession(request: NextRequest): AuthSession | null {
+  const raw = request.cookies.get(AUTH_SESSION_COOKIE)?.value;
+  if (!raw) return null;
+  try {
+    return JSON.parse(decodeURIComponent(raw)) as AuthSession;
+  } catch {
+    return null;
+  }
+}
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request: { headers: request.headers },
-  });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request: { headers: request.headers } });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  let role: UserRole = 'global';
-
-  if (user) {
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .maybeSingle();
-    if (profile?.role) role = profile.role as UserRole;
-  } else {
-    const demo = request.cookies.get(DEMO_ROLE_COOKIE)?.value;
-    if (demo === 'staff' || demo === 'overseer' || demo === 'admin' || demo === 'global') {
-      role = demo;
-    }
-  }
-
   const pathname = request.nextUrl.pathname;
-  const allowed = rolesForPath(pathname);
+  const session = readSession(request);
+  const role: UserRole = session?.role ?? 'global';
 
-  if (allowed && !allowed.includes(role)) {
+  // Force password change before any area except change-password / login
+  if (
+    session?.mustChangePassword &&
+    pathname !== '/change-password' &&
+    pathname !== '/login'
+  ) {
     const url = request.nextUrl.clone();
-    url.pathname = '/';
-    url.searchParams.set('denied', '1');
-    url.searchParams.set('need', allowed.join(','));
-    url.searchParams.set('role', role);
+    url.pathname = '/change-password';
     return NextResponse.redirect(url);
   }
 
-  return response;
+  if (pathname === '/change-password' && !session) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    return NextResponse.redirect(url);
+  }
+
+  const allowed = rolesForPath(pathname);
+  if (allowed) {
+    if (!session && pathname !== '/change-password') {
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
+      url.searchParams.set('next', pathname);
+      return NextResponse.redirect(url);
+    }
+    if (session && !allowed.includes(role)) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/';
+      url.searchParams.set('denied', '1');
+      url.searchParams.set('need', allowed.join(','));
+      url.searchParams.set('role', role);
+      return NextResponse.redirect(url);
+    }
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {
   matcher: [
-    '/staff/:path*',
-    '/overseer/:path*',
-    '/admin/:path*',
-    '/manage-schools',
-    '/manage-schools/:path*',
+    '/((?!_next/static|_next/image|favicon.ico|maplibre-dashboard).*)',
   ],
 };

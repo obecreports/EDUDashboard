@@ -40,8 +40,10 @@ function toSchoolFull(raw: Record<string, any>): SchoolFull {
     zipcode: basic.zip_code ?? '',
     phone: basic.phone_number ?? '',
     school_size: basic.school_size ?? '',
+    area_special: basic.area_special ?? null,
     latitude: basic.lat ?? null,
     longitude: basic.long ?? null,
+    director_name: basic.director_name ?? '',
     scores: score,
     pillarScores,
     overallScore: Number.isFinite(overallScore) ? overallScore : 0,
@@ -50,11 +52,48 @@ function toSchoolFull(raw: Record<string, any>): SchoolFull {
     },
     personnelSummary: {
       totalPersonnel: Number(people.actual_teacher ?? 0),
+      teacherDirector: Number(people.teacher_director ?? 0),
     },
     School_Score: score,
     School_People: people,
     Gov_Domain: gov,
   };
+}
+
+/** Normalize Supabase / fetch / TLS errors into a readable string */
+export function formatFetchError(e: unknown): string {
+  if (!e) return 'Unknown error';
+  if (e instanceof Error) {
+    const cause = (e as Error & { cause?: unknown }).cause;
+    if (cause instanceof Error) return `${e.message}: ${cause.message}`;
+    if (cause && typeof cause === 'object' && 'code' in cause) {
+      return `${e.message}: ${(cause as { code?: string }).code}`;
+    }
+    return e.message;
+  }
+  if (typeof e === 'object' && e !== null && 'message' in e) {
+    const msg = String((e as { message: unknown }).message);
+    const code = 'code' in e ? String((e as { code: unknown }).code) : '';
+    return code ? `${msg} (${code})` : msg;
+  }
+  return String(e);
+}
+
+async function fetchByIds(
+  table: string,
+  schoolIds: (string | number)[]
+): Promise<Record<string, unknown>[]> {
+  const supabase = await createClient();
+  const chunkSize = 200;
+  const rows: Record<string, unknown>[] = [];
+
+  for (let i = 0; i < schoolIds.length; i += chunkSize) {
+    const chunk = schoolIds.slice(i, i + chunkSize);
+    const { data, error } = await supabase.from(table).select('*').in('school_id', chunk);
+    if (error) throw error;
+    if (data?.length) rows.push(...data);
+  }
+  return rows;
 }
 
 /**
@@ -66,6 +105,12 @@ export async function fetchSchools(filters?: {
 }): Promise<SchoolFull[]> {
   const supabase = await createClient();
 
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    throw new Error(
+      'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local'
+    );
+  }
+
   let basicQuery = supabase.from('School_Basic').select('*');
   if (filters?.province) basicQuery = basicQuery.eq('province_name', filters.province);
   if (filters?.zone) basicQuery = basicQuery.eq('zone', filters.zone);
@@ -76,12 +121,15 @@ export async function fetchSchools(filters?: {
 
   const schoolIds = basics.map((b) => b.school_id);
 
-  const [scoreRes, peopleRes, govRes, labelRes] = await Promise.all([
-    supabase.from('School_Score').select('*').in('school_id', schoolIds),
-    supabase.from('School_People').select('*').in('school_id', schoolIds),
+  const [scoreRows, peopleRows, govRes, labelRes] = await Promise.all([
+    fetchByIds('School_Score', schoolIds),
+    fetchByIds('School_People', schoolIds),
     supabase.from('Gov_Domain').select('area_id, area_name'),
     supabase.from('Label_Lookup').select('label_code, label_name'),
   ]);
+
+  if (govRes.error) throw govRes.error;
+  if (labelRes.error) throw labelRes.error;
 
   const govMap = new Map<string, { area_id: string; area_name: string }>();
   (govRes.data ?? []).forEach((g) => {
@@ -94,13 +142,13 @@ export async function fetchSchools(filters?: {
   });
 
   const scoreMap = new Map<string | number, Record<string, unknown>>();
-  (scoreRes.data ?? []).forEach((s) => {
-    if (s.school_id != null) scoreMap.set(s.school_id, s);
+  scoreRows.forEach((s) => {
+    if (s.school_id != null) scoreMap.set(s.school_id as string | number, s);
   });
 
   const peopleMap = new Map<string | number, Record<string, unknown>>();
-  (peopleRes.data ?? []).forEach((p) => {
-    if (p.school_id != null) peopleMap.set(p.school_id, p);
+  peopleRows.forEach((p) => {
+    if (p.school_id != null) peopleMap.set(p.school_id as string | number, p);
   });
 
   return basics.map((basic) => {
@@ -132,7 +180,11 @@ export async function fetchSchoolById(schoolId: string | number): Promise<School
     supabase.from('School_Score').select('*').eq('school_id', id).maybeSingle(),
     supabase.from('School_People').select('*').eq('school_id', id).maybeSingle(),
     basic.area_id
-      ? supabase.from('Gov_Domain').select('area_id, area_name').eq('area_id', basic.area_id).maybeSingle()
+      ? supabase
+          .from('Gov_Domain')
+          .select('area_id, area_name')
+          .eq('area_id', basic.area_id)
+          .maybeSingle()
       : Promise.resolve({ data: null }),
     supabase.from('Label_Lookup').select('label_code, label_name'),
   ]);

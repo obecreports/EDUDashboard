@@ -25,6 +25,8 @@ export interface SchoolFull {
   zipcode?: string | number;
   phone?: string;
   school_size?: SchoolSize | string;
+  /** School_Basic.area_special — special area tag */
+  area_special?: string | null;
   latitude?: number | string;
   longitude?: number | string;
   director_name?: string;
@@ -38,6 +40,7 @@ export interface SchoolFull {
   };
   personnelSummary?: {
     totalPersonnel: number;
+    teacherDirector?: number;
   };
   labelLookup?: Record<string, string>;
   School_Score?: Record<string, number | string>;
@@ -89,16 +92,14 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 export const NAV_CATALOG: NavItem[] = [
-  { href: '/', label: 'หน้าหลัก', roles: ['global', 'staff', 'overseer', 'admin'], end: true },
-  { href: '/schools', label: 'โรงเรียน', roles: ['global', 'staff', 'overseer', 'admin'] },
-  { href: '/thailand-map', label: 'แผนที่', roles: ['global', 'staff', 'overseer', 'admin'] },
+  { href: '/', label: 'หน้าหลัก', roles: ['global', 'overseer', 'admin'], end: true },
+  { href: '/schools', label: 'โรงเรียน', roles: ['global', 'overseer', 'admin'] },
+  { href: '/thailand-map', label: 'แผนที่', roles: ['global', 'overseer', 'admin'] },
   { href: '/staff/dashboard', label: 'แดชบอร์ดของฉัน', roles: ['staff'] },
-  { href: '/staff/profile', label: 'โปรไฟล์', roles: ['staff'] },
   { href: '/staff/calendar', label: 'ปฏิทิน', roles: ['staff'] },
   { href: '/staff/update-school', label: 'อัปเดตโรงเรียน', roles: ['staff'] },
   { href: '/manage-schools', label: 'จัดการโรงเรียน', roles: ['staff', 'overseer', 'admin'] },
   { href: '/overseer/progress', label: 'ความคืบหน้าเจ้าหน้าที่', roles: ['overseer'] },
-  { href: '/admin/settings', label: 'ตั้งค่าเว็บไซต์', roles: ['admin'] },
   { href: '/admin/accounts', label: 'จัดการบัญชี', roles: ['admin'] },
 ];
 
@@ -114,14 +115,18 @@ export function navForRole(role: UserRole): NavItem[] {
 
 /** Path prefixes → allowed roles (null = public) */
 export const PROTECTED_ROUTES: { prefix: string; roles: UserRole[] }[] = [
+  { prefix: '/staff/profile', roles: ['staff', 'overseer', 'admin'] },
   { prefix: '/staff', roles: ['staff'] },
   { prefix: '/overseer', roles: ['overseer'] },
   { prefix: '/admin', roles: ['admin'] },
   { prefix: '/manage-schools', roles: ['staff', 'overseer', 'admin'] },
+  { prefix: '/change-password', roles: ['global', 'staff', 'overseer', 'admin'] },
 ];
 
 export function rolesForPath(pathname: string): UserRole[] | null {
-  for (const rule of PROTECTED_ROUTES) {
+  // More specific prefixes first
+  const ordered = [...PROTECTED_ROUTES].sort((a, b) => b.prefix.length - a.prefix.length);
+  for (const rule of ordered) {
     if (pathname === rule.prefix || pathname.startsWith(`${rule.prefix}/`)) {
       return rule.roles;
     }

@@ -1,9 +1,11 @@
+import { Suspense } from 'react';
 import { fetchSchools } from '@/lib/supabase/schools';
 import { ThailandMapClient } from '@/components/map/ThailandMapClient';
+import { PageSkeleton } from '@/components/ui/PageSkeleton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ThailandMapPage() {
+async function MapBody() {
   let schools: Awaited<ReturnType<typeof fetchSchools>> = [];
   let error: string | null = null;
   try {
@@ -16,7 +18,7 @@ export default async function ThailandMapPage() {
     <div className="page-shell" style={{ maxWidth: 1280 }}>
       <h1 className="section-heading">แผนที่ประเทศไทย</h1>
       <p className="text-slate-500 mt-[-0.5rem] mb-4">
-        จุดจาก School_Basic (lat/long) · จัดกลุ่มตามอำเภอหรือเขตพื้นที่ (Gov_Domain)
+        คลิกจังหวัดบนแผนที่หรือจากรายละเอียดด้านข้าง · สลับมุมมองตามอำเภอ/เขตพื้นที่
         {schools.length ? ` · ${schools.length} โรงเรียน` : ''}
       </p>
       {error ? (
@@ -25,5 +27,13 @@ export default async function ThailandMapPage() {
         <ThailandMapClient schools={schools} />
       )}
     </div>
+  );
+}
+
+export default function ThailandMapPage() {
+  return (
+    <Suspense fallback={<PageSkeleton rows={8} />}>
+      <MapBody />
+    </Suspense>
   );
 }

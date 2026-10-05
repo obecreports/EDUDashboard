@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from 'next';
+import { Suspense } from 'react';
 import './globals.css';
 import { AppNavbar } from '@/components/layout/AppNavbar';
+import { HeroGate } from '@/components/layout/HeroGate';
 import { getSessionProfile } from '@/lib/auth/session';
+import { readHeroSettings } from '@/lib/auth/user-store';
 
 export const metadata: Metadata = {
   title: 'ConED · ระบบข้อมูลโรงเรียนในสังกัด',
@@ -13,7 +16,8 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const { role, profile, isDemo } = await getSessionProfile();
+  const [{ role, profile, isAuthenticated, mustChangePassword }, heroSettings] =
+    await Promise.all([getSessionProfile(), Promise.resolve(readHeroSettings())]);
 
   return (
     <html lang="th">
@@ -21,9 +25,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <AppNavbar
           role={role}
           displayName={profile?.full_name ?? 'ผู้เยี่ยมชม'}
-          isDemo={isDemo}
+          isAuthenticated={isAuthenticated}
+          mustChangePassword={mustChangePassword}
         />
-        <main>{children}</main>
+        <HeroGate isAuthenticated={isAuthenticated} settings={heroSettings} />
+        <Suspense fallback={null}>
+          <main>{children}</main>
+        </Suspense>
       </body>
     </html>
   );
