@@ -13,7 +13,7 @@ function unwrap(value: unknown): string {
 }
 
 async function SettingsBody() {
-  const cookieSettings = readHeroSettings();
+  const cookieSettings = await readHeroSettings();
   let map: Record<string, unknown> = {};
   try {
     const supabase = await createClient();

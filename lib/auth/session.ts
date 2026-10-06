@@ -23,8 +23,8 @@ const COOKIE_OPTS = {
   maxAge: 60 * 60 * 24 * 30,
 };
 
-function readCredentials(): CredentialsMap {
-  const jar = cookies();
+async function readCredentials(): Promise<CredentialsMap> {
+  const jar = await cookies();
   const raw = jar.get(AUTH_CREDENTIALS_COOKIE)?.value;
   if (!raw) return seedCredentials();
   try {
@@ -35,12 +35,14 @@ function readCredentials(): CredentialsMap {
   }
 }
 
-function writeCredentials(map: CredentialsMap) {
-  cookies().set(AUTH_CREDENTIALS_COOKIE, encodeURIComponent(JSON.stringify(map)), COOKIE_OPTS);
+async function writeCredentials(map: CredentialsMap) {
+  const jar = await cookies();
+  jar.set(AUTH_CREDENTIALS_COOKIE, encodeURIComponent(JSON.stringify(map)), COOKIE_OPTS);
 }
 
-export function readAuthSession(): AuthSession | null {
-  const raw = cookies().get(AUTH_SESSION_COOKIE)?.value;
+export async function readAuthSession(): Promise<AuthSession | null> {
+  const jar = await cookies();
+  const raw = jar.get(AUTH_SESSION_COOKIE)?.value;
   if (!raw) return null;
   try {
     return JSON.parse(decodeURIComponent(raw)) as AuthSession;
@@ -49,8 +51,8 @@ export function readAuthSession(): AuthSession | null {
   }
 }
 
-function writeAuthSession(session: AuthSession | null) {
-  const jar = cookies();
+async function writeAuthSession(session: AuthSession | null) {
+  const jar = await cookies();
   if (!session) {
     jar.delete(AUTH_SESSION_COOKIE);
     return;
@@ -65,9 +67,9 @@ export async function getSessionProfile(): Promise<{
   mustChangePassword: boolean;
   session: AuthSession | null;
 }> {
-  const session = readAuthSession();
+  const session = await readAuthSession();
   if (session) {
-    const stored = findUserById(session.id);
+    const stored = await findUserById(session.id);
     return {
       profile: {
         id: session.id,
@@ -109,13 +111,13 @@ export type LoginResult =
   | { ok: true; mustChangePassword: boolean; role: UserRole }
   | { ok: false; error: string };
 
-export function loginWithPassword(email: string, password: string): LoginResult {
-  const user = findUserByEmail(email);
+export async function loginWithPassword(email: string, password: string): Promise<LoginResult> {
+  const user = await findUserByEmail(email);
   if (!user) return { ok: false, error: 'ไม่พบบัญชีผู้ใช้นี้' };
   if (user.disabled) return { ok: false, error: 'บัญชีนี้ถูกปิดการใช้งาน' };
 
   const seed = findSeedById(user.id);
-  const creds = readCredentials();
+  const creds = await readCredentials();
   const state = creds[user.id] ?? {
     password: seed?.password ?? null,
     tempPassword: seed?.tempPassword ?? null,
@@ -141,14 +143,14 @@ export function loginWithPassword(email: string, password: string): LoginResult 
     authVia: matchedTemp ? 'temp' : 'password',
   };
 
-  writeAuthSession(session);
+  await writeAuthSession(session);
   return { ok: true, mustChangePassword: session.mustChangePassword, role: user.role };
 }
 
 export type ChangePasswordResult = { ok: true } | { ok: false; error: string };
 
-export function changePasswordForced(nextPassword: string): ChangePasswordResult {
-  const session = readAuthSession();
+export async function changePasswordForced(nextPassword: string): Promise<ChangePasswordResult> {
+  const session = await readAuthSession();
   if (!session) return { ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' };
 
   if (!session.mustChangePassword && session.authVia !== 'temp') {
@@ -159,7 +161,7 @@ export function changePasswordForced(nextPassword: string): ChangePasswordResult
     return { ok: false, error: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร' };
   }
 
-  const creds = readCredentials();
+  const creds = await readCredentials();
   const state = creds[session.id] ?? {
     password: null,
     tempPassword: null,
@@ -176,8 +178,8 @@ export function changePasswordForced(nextPassword: string): ChangePasswordResult
     tempPassword: null,
     mustChangePassword: false,
   };
-  writeCredentials(creds);
-  writeAuthSession({
+  await writeCredentials(creds);
+  await writeAuthSession({
     ...session,
     mustChangePassword: false,
     authVia: 'password',
@@ -186,15 +188,18 @@ export function changePasswordForced(nextPassword: string): ChangePasswordResult
   return { ok: true };
 }
 
-export function changePassword(currentOrTemp: string, nextPassword: string): ChangePasswordResult {
-  const session = readAuthSession();
+export async function changePassword(
+  currentOrTemp: string,
+  nextPassword: string
+): Promise<ChangePasswordResult> {
+  const session = await readAuthSession();
   if (!session) return { ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' };
 
   if (nextPassword.trim().length < 8) {
     return { ok: false, error: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร' };
   }
 
-  const creds = readCredentials();
+  const creds = await readCredentials();
   const state = creds[session.id];
   if (!state) return { ok: false, error: 'ไม่พบข้อมูลบัญชี' };
 
@@ -216,8 +221,8 @@ export function changePassword(currentOrTemp: string, nextPassword: string): Cha
     tempPassword: null,
     mustChangePassword: false,
   };
-  writeCredentials(creds);
-  writeAuthSession({
+  await writeCredentials(creds);
+  await writeAuthSession({
     ...session,
     mustChangePassword: false,
     authVia: 'password',
@@ -227,8 +232,8 @@ export function changePassword(currentOrTemp: string, nextPassword: string): Cha
 }
 
 /** Persist assigned area_ids (Educational Area) as comma-separated on session + user store */
-export function updateAssignedZones(zones: string[]): ChangePasswordResult {
-  const session = readAuthSession();
+export async function updateAssignedZones(zones: string[]): Promise<ChangePasswordResult> {
+  const session = await readAuthSession();
   if (!session) return { ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' };
   if (session.role !== 'staff' && session.role !== 'overseer' && session.role !== 'admin') {
     return { ok: false, error: 'ไม่มีสิทธิ์แก้ไขเขต' };
@@ -236,21 +241,21 @@ export function updateAssignedZones(zones: string[]): ChangePasswordResult {
 
   const cleaned = [...new Set(zones.map((z) => z.trim()).filter(Boolean))];
   const assigned_zone = cleaned.length ? cleaned.join(', ') : null;
-  updateUserProfileFields(session.id, { assigned_zone });
-  writeAuthSession({ ...session, assigned_zone });
+  await updateUserProfileFields(session.id, { assigned_zone });
+  await writeAuthSession({ ...session, assigned_zone });
   return { ok: true };
 }
 
-export function issueTemporaryPassword(
+export async function issueTemporaryPassword(
   userId: string,
   tempPassword: string,
   options?: { clearPermanent?: boolean }
-): ChangePasswordResult {
-  const user = findUserById(userId);
+): Promise<ChangePasswordResult> {
+  const user = await findUserById(userId);
   if (!user) return { ok: false, error: 'ไม่พบผู้ใช้' };
 
   const seed = findSeedById(userId);
-  const creds = readCredentials();
+  const creds = await readCredentials();
   const prev = creds[userId] ?? {
     password: seed?.password ?? null,
     tempPassword: seed?.tempPassword ?? null,
@@ -262,31 +267,29 @@ export function issueTemporaryPassword(
     tempPassword: tempPassword.trim(),
     mustChangePassword: true,
   };
-  writeCredentials(creds);
+  await writeCredentials(creds);
   return { ok: true };
 }
 
 /** Register credentials for a newly created mock user */
-export function registerUserCredentials(
-  userId: string,
-  tempPassword: string
-): void {
-  const creds = readCredentials();
+export async function registerUserCredentials(userId: string, tempPassword: string) {
+  const creds = await readCredentials();
   creds[userId] = {
     password: null,
     tempPassword: tempPassword.trim(),
     mustChangePassword: true,
   };
-  writeCredentials(creds);
+  await writeCredentials(creds);
 }
 
-export function logoutSession() {
-  writeAuthSession(null);
+export async function logoutSession() {
+  await writeAuthSession(null);
 }
 
-export function listMockAccountsForAdmin() {
-  const creds = readCredentials();
-  return readStoredUsers().map((u) => {
+export async function listMockAccountsForAdmin() {
+  const creds = await readCredentials();
+  const users = await readStoredUsers();
+  return users.map((u) => {
     const c = creds[u.id];
     return {
       id: u.id,

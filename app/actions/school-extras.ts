@@ -64,7 +64,7 @@ export async function postSchoolCommentAction(formData: FormData) {
 
   const staffName = gate.profile.full_name || gate.profile.email || 'Staff';
 
-  const cookieComment = addSchoolComment(schoolId, {
+  const cookieComment = await addSchoolComment(schoolId, {
     staff_id: gate.profile.id,
     staff_name: staffName,
     text,
@@ -92,7 +92,7 @@ export async function saveSchoolSwotAction(formData: FormData) {
   if (!schoolId) return { ok: false as const, error: 'ไม่พบรหัสโรงเรียน' };
 
   const swot = readGranularSwot(formData);
-  saveSchoolSwot(schoolId, swot);
+  await saveSchoolSwot(schoolId, swot);
 
   const db = await upsertSchoolSwot({
     schoolId,
@@ -118,7 +118,7 @@ export async function saveSchoolAchievementsAction(formData: FormData) {
     school: String(formData.get('school') || ''),
     student: String(formData.get('student') || ''),
   };
-  saveSchoolAchievements(schoolId, achievements);
+  await saveSchoolAchievements(schoolId, achievements);
   revalidatePath(`/schools/${schoolId}`);
   revalidatePath('/staff/update-school');
   return { ok: true as const };
@@ -132,7 +132,7 @@ export async function saveSchoolUpdateBundleAction(formData: FormData) {
   if (!schoolId) return { ok: false as const, error: 'ไม่พบรหัสโรงเรียน' };
 
   const swot = readGranularSwot(formData);
-  saveSchoolSwot(schoolId, swot);
+  await saveSchoolSwot(schoolId, swot);
 
   const dbSwot = await upsertSchoolSwot({
     schoolId,
@@ -141,12 +141,12 @@ export async function saveSchoolUpdateBundleAction(formData: FormData) {
   });
 
   const commentText = String(formData.get('text') || formData.get('comment') || '').trim();
-  let comment = null as ReturnType<typeof addSchoolComment> | null;
+  let comment = null as Awaited<ReturnType<typeof addSchoolComment>> | null;
   let commentWarning: string | undefined;
 
   if (commentText) {
     const staffName = gate.profile.full_name || gate.profile.email || 'Staff';
-    comment = addSchoolComment(schoolId, {
+    comment = await addSchoolComment(schoolId, {
       staff_id: gate.profile.id,
       staff_name: staffName,
       text: commentText,

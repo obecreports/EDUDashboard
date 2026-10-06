@@ -18,7 +18,7 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [{ role, profile, isAuthenticated, mustChangePassword }, heroSettings] =
-    await Promise.all([getSessionProfile(), Promise.resolve(readHeroSettings())]);
+    await Promise.all([getSessionProfile(), readHeroSettings()]);
 
   return (
     <html lang="th">

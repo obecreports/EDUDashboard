@@ -7,7 +7,6 @@ import { getSessionProfile } from '@/lib/auth/session';
 export const revalidate = 120;
 
 async function SchoolsBody({ q }: { q?: string }) {
-  // Session + school list in parallel (no waterfall)
   const [{ role, profile }, schools] = await Promise.all([
     getSessionProfile(),
     fetchSchools().catch(() => []),
@@ -24,14 +23,15 @@ async function SchoolsBody({ q }: { q?: string }) {
   );
 }
 
-export default function SchoolsPage({
+export default async function SchoolsPage({
   searchParams,
 }: {
-  searchParams: { q?: string };
+  searchParams: Promise<{ q?: string }>;
 }) {
+  const sp = await searchParams;
   return (
     <Suspense fallback={<ManagedSchoolsSkeleton />}>
-      <SchoolsBody q={searchParams.q} />
+      <SchoolsBody q={sp.q} />
     </Suspense>
   );
 }

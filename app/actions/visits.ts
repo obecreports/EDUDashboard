@@ -31,7 +31,7 @@ export async function createVisitLog(formData: FormData) {
     status === 'Surveyed' ? 'สำรวจข้อมูล' : 'เยี่ยมชมโรงเรียน';
   const date = new Date().toISOString().slice(0, 10);
 
-  addCalendarEvent({
+  await addCalendarEvent({
     staff_id: profile.id,
     date,
     activity,
@@ -97,7 +97,7 @@ export async function createCalendarEventAction(formData: FormData) {
   if (!date) return { ok: false, error: 'กรุณาเลือกวันที่' };
   if (!school_id) return { ok: false, error: 'กรุณาเลือกโรงเรียน' };
 
-  const cookieRow = addCalendarEvent({
+  const cookieRow = await addCalendarEvent({
     staff_id: profile.id,
     date,
     activity,
@@ -148,7 +148,7 @@ export async function listMyCalendarEvents(): Promise<StaffCalendarEvent[]> {
   const { profile, isAuthenticated } = await getSessionProfile();
   if (!isAuthenticated || !profile) return [];
 
-  const cookie = readCalendarEvents()
+  const cookie = (await readCalendarEvents())
     .filter((e) => e.staff_id === profile.id)
     .map((e) => ({
       ...e,

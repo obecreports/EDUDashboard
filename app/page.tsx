@@ -1,14 +1,16 @@
 import Link from 'next/link';
 import { ArrowRight, BookOpen, Hexagon, Map, School } from 'lucide-react';
 
-export default function HomePage({
+export default async function HomePage({
   searchParams,
 }: {
-  searchParams: { denied?: string };
+  searchParams: Promise<{ denied?: string }>;
 }) {
+  const sp = await searchParams;
+
   return (
     <div className="home-placeholder">
-      {searchParams?.denied && (
+      {sp?.denied && (
         <div className="page-shell pt-4">
           <div className="ed-card p-3 text-amber-800 bg-amber-50 border-amber-200">
             ไม่มีสิทธิ์เข้าถึงหน้านี้ — กรุณาเข้าสู่ระบบด้วยบทบาทที่เหมาะสม

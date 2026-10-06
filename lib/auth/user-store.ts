@@ -31,8 +31,9 @@ const COOKIE_OPTS = {
   maxAge: 60 * 60 * 24 * 30,
 };
 
-function readJsonCookie<T>(name: string, fallback: T): T {
-  const raw = cookies().get(name)?.value;
+async function readJsonCookie<T>(name: string, fallback: T): Promise<T> {
+  const jar = await cookies();
+  const raw = jar.get(name)?.value;
   if (!raw) return fallback;
   try {
     return JSON.parse(decodeURIComponent(raw)) as T;
@@ -41,12 +42,13 @@ function readJsonCookie<T>(name: string, fallback: T): T {
   }
 }
 
-function writeJsonCookie(name: string, value: unknown) {
-  cookies().set(name, encodeURIComponent(JSON.stringify(value)), COOKIE_OPTS);
+async function writeJsonCookie(name: string, value: unknown) {
+  const jar = await cookies();
+  jar.set(name, encodeURIComponent(JSON.stringify(value)), COOKIE_OPTS);
 }
 
-export function readStoredUsers(): StoredUserProfile[] {
-  const extras = readJsonCookie<StoredUserProfile[]>(AUTH_USERS_COOKIE, []);
+export async function readStoredUsers(): Promise<StoredUserProfile[]> {
+  const extras = await readJsonCookie<StoredUserProfile[]>(AUTH_USERS_COOKIE, []);
   const byId = new Map<string, StoredUserProfile>();
 
   for (const u of MOCK_USER_SEEDS) {
@@ -66,26 +68,30 @@ export function readStoredUsers(): StoredUserProfile[] {
   return [...byId.values()];
 }
 
-function writeStoredUsers(users: StoredUserProfile[]) {
+async function writeStoredUsers(users: StoredUserProfile[]) {
   // Persist overrides + custom users (include seed overrides so disable/edit sticks)
-  writeJsonCookie(AUTH_USERS_COOKIE, users);
+  await writeJsonCookie(AUTH_USERS_COOKIE, users);
 }
 
-export function findUserByEmail(email: string): StoredUserProfile | undefined {
+export async function findUserByEmail(email: string): Promise<StoredUserProfile | undefined> {
   const normalized = email.trim().toLowerCase();
-  return readStoredUsers().find((u) => u.email.toLowerCase() === normalized);
+  const users = await readStoredUsers();
+  return users.find((u) => u.email.toLowerCase() === normalized);
 }
 
-export function findUserById(id: string): StoredUserProfile | undefined {
-  return readStoredUsers().find((u) => u.id === id);
+export async function findUserById(id: string): Promise<StoredUserProfile | undefined> {
+  const users = await readStoredUsers();
+  return users.find((u) => u.id === id);
 }
 
-export function createMockUser(input: {
+export async function createMockUser(input: {
   full_name: string;
   position: string;
   role: UserRole;
   email?: string;
-}): { ok: true; user: StoredUserProfile; tempPassword: string } | { ok: false; error: string } {
+}): Promise<
+  { ok: true; user: StoredUserProfile; tempPassword: string } | { ok: false; error: string }
+> {
   const role = input.role;
   if (!['staff', 'overseer', 'admin'].includes(role)) {
     return { ok: false, error: 'บทบาทต้องเป็น staff, overseer หรือ admin' };
@@ -98,7 +104,7 @@ export function createMockUser(input: {
   const email =
     input.email?.trim().toLowerCase() ||
     `${full_name.replace(/\s+/g, '.').toLowerCase()}@coned.local`;
-  if (findUserByEmail(email)) return { ok: false, error: 'อีเมลนี้มีอยู่แล้ว' };
+  if (await findUserByEmail(email)) return { ok: false, error: 'อีเมลนี้มีอยู่แล้ว' };
 
   const tempPassword = `Temp${Math.random().toString(36).slice(2, 8)}`;
   const user: StoredUserProfile = {
@@ -111,66 +117,66 @@ export function createMockUser(input: {
     disabled: false,
   };
 
-  const users = readStoredUsers();
+  const users = await readStoredUsers();
   users.push(user);
-  writeStoredUsers(users);
+  await writeStoredUsers(users);
 
   return { ok: true, user, tempPassword };
 }
 
-export function setUserDisabled(
+export async function setUserDisabled(
   userId: string,
   disabled: boolean
-): { ok: true } | { ok: false; error: string } {
-  const users = readStoredUsers();
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const users = await readStoredUsers();
   const idx = users.findIndex((u) => u.id === userId);
   if (idx < 0) return { ok: false, error: 'ไม่พบผู้ใช้' };
   users[idx] = { ...users[idx], disabled };
-  writeStoredUsers(users);
+  await writeStoredUsers(users);
   return { ok: true };
 }
 
-export function updateUserProfileFields(
+export async function updateUserProfileFields(
   userId: string,
   patch: Partial<Pick<StoredUserProfile, 'full_name' | 'position' | 'role' | 'assigned_zone'>>
-): { ok: true } | { ok: false; error: string } {
-  const users = readStoredUsers();
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const users = await readStoredUsers();
   const idx = users.findIndex((u) => u.id === userId);
   if (idx < 0) return { ok: false, error: 'ไม่พบผู้ใช้' };
   users[idx] = { ...users[idx], ...patch };
-  writeStoredUsers(users);
+  await writeStoredUsers(users);
   return { ok: true };
 }
 
-export function readHeroSettings(): HeroSiteSettings {
-  const stored = readJsonCookie<Partial<HeroSiteSettings>>(SITE_SETTINGS_COOKIE, {});
+export async function readHeroSettings(): Promise<HeroSiteSettings> {
+  const stored = await readJsonCookie<Partial<HeroSiteSettings>>(SITE_SETTINGS_COOKIE, {});
   return { ...DEFAULT_HERO_SETTINGS, ...stored };
 }
 
-export function writeHeroSettings(next: Partial<HeroSiteSettings>) {
-  const current = readHeroSettings();
-  writeJsonCookie(SITE_SETTINGS_COOKIE, { ...current, ...next });
+export async function writeHeroSettings(next: Partial<HeroSiteSettings>) {
+  const current = await readHeroSettings();
+  await writeJsonCookie(SITE_SETTINGS_COOKIE, { ...current, ...next });
 }
 
-export function readCalendarEvents(): StaffCalendarEvent[] {
+export async function readCalendarEvents(): Promise<StaffCalendarEvent[]> {
   return readJsonCookie<StaffCalendarEvent[]>(CALENDAR_EVENTS_COOKIE, []);
 }
 
-export function writeCalendarEvents(events: StaffCalendarEvent[]) {
-  writeJsonCookie(CALENDAR_EVENTS_COOKIE, events);
+export async function writeCalendarEvents(events: StaffCalendarEvent[]) {
+  await writeJsonCookie(CALENDAR_EVENTS_COOKIE, events);
 }
 
-export function addCalendarEvent(
+export async function addCalendarEvent(
   event: Omit<StaffCalendarEvent, 'id' | 'created_at'>
-): StaffCalendarEvent {
-  const events = readCalendarEvents();
+): Promise<StaffCalendarEvent> {
+  const events = await readCalendarEvents();
   const row: StaffCalendarEvent = {
     ...event,
     id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     created_at: new Date().toISOString(),
   };
   events.push(row);
-  writeCalendarEvents(events);
+  await writeCalendarEvents(events);
   return row;
 }
 
@@ -205,16 +211,16 @@ function emptyExtras(): SchoolExtras {
 
 type SchoolExtrasMap = Record<string, SchoolExtras>;
 
-function readExtrasMap(): SchoolExtrasMap {
+async function readExtrasMap(): Promise<SchoolExtrasMap> {
   return readJsonCookie<SchoolExtrasMap>(SCHOOL_EXTRAS_COOKIE, {});
 }
 
-function writeExtrasMap(map: SchoolExtrasMap) {
-  writeJsonCookie(SCHOOL_EXTRAS_COOKIE, map);
+async function writeExtrasMap(map: SchoolExtrasMap) {
+  await writeJsonCookie(SCHOOL_EXTRAS_COOKIE, map);
 }
 
-export function readSchoolExtras(schoolId: string | number): SchoolExtras {
-  const map = readExtrasMap();
+export async function readSchoolExtras(schoolId: string | number): Promise<SchoolExtras> {
+  const map = await readExtrasMap();
   const key = String(schoolId);
   const row = map[key];
   if (!row) return emptyExtras();
@@ -225,13 +231,13 @@ export function readSchoolExtras(schoolId: string | number): SchoolExtras {
   };
 }
 
-export function addSchoolComment(
+export async function addSchoolComment(
   schoolId: string | number,
   input: { staff_id: string; staff_name: string; text: string }
-): SchoolComment {
-  const map = readExtrasMap();
+): Promise<SchoolComment> {
+  const map = await readExtrasMap();
   const key = String(schoolId);
-  const current = readSchoolExtras(key);
+  const current = await readSchoolExtras(key);
   const comment: SchoolComment = {
     id: `cmt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     staff_id: input.staff_id,
@@ -241,33 +247,33 @@ export function addSchoolComment(
   };
   current.comments = [comment, ...current.comments];
   map[key] = current;
-  writeExtrasMap(map);
+  await writeExtrasMap(map);
   return comment;
 }
 
-export function saveSchoolSwot(
+export async function saveSchoolSwot(
   schoolId: string | number,
   swot: Partial<SchoolSwot> | SchoolSwot
-): SchoolExtras {
-  const map = readExtrasMap();
+): Promise<SchoolExtras> {
+  const map = await readExtrasMap();
   const key = String(schoolId);
-  const current = readSchoolExtras(key);
+  const current = await readSchoolExtras(key);
   current.swot = normalizeSchoolSwot({ ...current.swot, ...swot });
   map[key] = current;
-  writeExtrasMap(map);
+  await writeExtrasMap(map);
   return current;
 }
 
-export function saveSchoolAchievements(
+export async function saveSchoolAchievements(
   schoolId: string | number,
   achievements: Partial<SchoolAchievements>
-): SchoolExtras {
-  const map = readExtrasMap();
+): Promise<SchoolExtras> {
+  const map = await readExtrasMap();
   const key = String(schoolId);
-  const current = readSchoolExtras(key);
+  const current = await readSchoolExtras(key);
   current.achievements = { ...current.achievements, ...achievements };
   map[key] = current;
-  writeExtrasMap(map);
+  await writeExtrasMap(map);
   return current;
 }
 

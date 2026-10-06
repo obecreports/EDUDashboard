@@ -34,22 +34,24 @@ async function UpdateSchoolBody({ schoolId }: { schoolId?: string }) {
   const extrasBySchool: Record<
     string,
     {
-      swot: ReturnType<typeof readSchoolExtras>['swot'];
-      comments: ReturnType<typeof readSchoolExtras>['comments'];
+      swot: Awaited<ReturnType<typeof readSchoolExtras>>['swot'];
+      comments: Awaited<ReturnType<typeof readSchoolExtras>>['comments'];
     }
   > = {};
 
-  editable.forEach((s) => {
-    const key = String(s.id);
-    const cookie = readSchoolExtras(s.id);
-    const db = dbBundle[key];
-    const dbSwot = db?.swot ? normalizeSchoolSwot(db.swot) : null;
+  await Promise.all(
+    editable.map(async (s) => {
+      const key = String(s.id);
+      const cookie = await readSchoolExtras(s.id);
+      const db = dbBundle[key];
+      const dbSwot = db?.swot ? normalizeSchoolSwot(db.swot) : null;
 
-    extrasBySchool[key] = {
-      swot: dbSwot && swotHasContent(dbSwot) ? dbSwot : normalizeSchoolSwot(cookie.swot),
-      comments: db?.comments?.length ? db.comments : cookie.comments,
-    };
-  });
+      extrasBySchool[key] = {
+        swot: dbSwot && swotHasContent(dbSwot) ? dbSwot : normalizeSchoolSwot(cookie.swot),
+        comments: db?.comments?.length ? db.comments : cookie.comments,
+      };
+    })
+  );
 
   return (
     <div className="page-shell" style={{ maxWidth: 760 }}>
@@ -67,14 +69,15 @@ async function UpdateSchoolBody({ schoolId }: { schoolId?: string }) {
   );
 }
 
-export default function UpdateSchoolPage({
+export default async function UpdateSchoolPage({
   searchParams,
 }: {
-  searchParams?: { id?: string };
+  searchParams: Promise<{ id?: string }>;
 }) {
+  const sp = await searchParams;
   return (
     <Suspense fallback={<PageSkeleton rows={5} />}>
-      <UpdateSchoolBody schoolId={searchParams?.id} />
+      <UpdateSchoolBody schoolId={sp?.id} />
     </Suspense>
   );
 }

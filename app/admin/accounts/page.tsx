@@ -6,7 +6,7 @@ import { PageSkeleton } from '@/components/ui/PageSkeleton';
 export const dynamic = 'force-dynamic';
 
 async function AccountsBody() {
-  const accounts = listMockAccountsForAdmin();
+  const accounts = await listMockAccountsForAdmin();
 
   return (
     <div className="page-shell space-y-4">

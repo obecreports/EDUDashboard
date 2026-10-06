@@ -36,7 +36,7 @@ export async function saveSiteSettings(formData: FormData) {
   };
 
   // Cookie store so mock admin can update hero without Supabase Auth
-  writeHeroSettings(next);
+  await writeHeroSettings(next);
 
   try {
     const supabase = await createClient();
@@ -73,7 +73,7 @@ export async function updateAccountRole(formData: FormData) {
 
   if (id.startsWith('mock-') || id.startsWith('mock-user-')) {
     const { updateUserProfileFields } = await import('@/lib/auth/user-store');
-    const result = updateUserProfileFields(id, { role });
+    const result = await updateUserProfileFields(id, { role });
     if (!result.ok) return result;
     revalidatePath('/admin/accounts');
     revalidatePath('/admin/settings');
@@ -97,10 +97,10 @@ export async function createAccountAction(formData: FormData) {
   const role = String(formData.get('role') || 'staff') as UserRole;
   const email = String(formData.get('email') || '') || undefined;
 
-  const created = createMockUser({ full_name, position, role, email });
+  const created = await createMockUser({ full_name, position, role, email });
   if (!created.ok) return created;
 
-  registerUserCredentials(created.user.id, created.tempPassword);
+  await registerUserCredentials(created.user.id, created.tempPassword);
   revalidatePath('/admin/accounts');
   return {
     ok: true as const,
@@ -115,7 +115,7 @@ export async function toggleAccountStatusAction(formData: FormData) {
 
   const id = String(formData.get('id') || '');
   const disabled = String(formData.get('disabled') || '') === '1';
-  const result = setUserDisabled(id, disabled);
+  const result = await setUserDisabled(id, disabled);
   if (!result.ok) return result;
   revalidatePath('/admin/accounts');
   return { ok: true };
@@ -130,7 +130,7 @@ export async function generateOtpForUserAction(formData: FormData) {
     String(formData.get('tempPassword') || '').trim() ||
     `Temp${Math.random().toString(36).slice(2, 8)}`;
   const clearPermanent = formData.get('clearPermanent') === '1';
-  const result = issueTemporaryPassword(userId, temp, { clearPermanent });
+  const result = await issueTemporaryPassword(userId, temp, { clearPermanent });
   if (!result.ok) return result;
   revalidatePath('/admin/accounts');
   revalidatePath('/admin/settings');
@@ -138,5 +138,5 @@ export async function generateOtpForUserAction(formData: FormData) {
 }
 
 export async function getHeroSettingsAction() {
-  return readHeroSettings();
+  return await readHeroSettings();
 }

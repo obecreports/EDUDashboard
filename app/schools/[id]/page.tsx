@@ -30,7 +30,7 @@ async function SchoolDetailBody({ id }: { id: string }) {
     isAuthenticated && (role === 'staff' || role === 'overseer');
   const canComment = canViewComments;
 
-  const cookieExtras = readSchoolExtras(school.school_id);
+  const cookieExtras = await readSchoolExtras(school.school_id);
 
   // Parallelize secondary reads (was sequential → extra 1–2s)
   const [dbSwot, dbComments] = await Promise.all([
@@ -63,10 +63,15 @@ async function SchoolDetailBody({ id }: { id: string }) {
   );
 }
 
-export default function SchoolDetailPage({ params }: { params: { id: string } }) {
+export default async function SchoolDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
   return (
     <Suspense fallback={<SchoolDetailSkeleton />}>
-      <SchoolDetailBody id={params.id} />
+      <SchoolDetailBody id={id} />
     </Suspense>
   );
 }
