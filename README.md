@@ -1,13 +1,14 @@
-# ConED — Next.js 14 (App Router)
+# ConED — Next.js (App Router)
 
 ThaiMOOC-styled school network dashboard with MapLibre, Supabase, and 4-level RBAC.
 
 ## Stack
 
-- **Next.js 14+** App Router · TypeScript · Tailwind · Lucide
+- **Next.js 15** App Router · TypeScript · Tailwind · Lucide
 - **Supabase** (`School_Basic`, `School_People`, `School_Score`, `Gov_Domain`, `Label_Lookup`)
 - **RBAC tables** (see `supabase/migrations/001_rbac_visits_settings.sql`)
 - **MapLibre GL** client map at `/thailand-map`
+- **Host:** [Vercel](https://vercel.com) (standard Next.js)
 
 ## Quick start
 
@@ -20,6 +21,18 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+## Deploy on Vercel
+
+1. Push this repo to GitHub.
+2. Go to [vercel.com/new](https://vercel.com/new) → **Import** the repo.
+3. Framework preset: **Next.js** (auto-detected). Leave Build Command as `next build`.
+4. Add Environment Variables (Production + Preview):
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+5. Click **Deploy**.
+
+Do **not** set `CONED_RELAX_TLS` on Vercel.
 
 ### Supabase SQL
 

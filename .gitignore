@@ -10,6 +10,7 @@ build
 dist
 .open-next
 .wrangler
+.vercel
 
 # Env / secrets
 .env
