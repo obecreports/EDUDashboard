@@ -8,11 +8,11 @@ if (process.env.NODE_ENV !== 'production' || process.env.CONED_RELAX_TLS === '1'
 const nextConfig = {
   reactStrictMode: true,
   images: {
+    unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: '**.supabase.co' },
     ],
   },
-  // Keep soft-navigation RSC payloads warm so hover-prefetched pages feel instant
   experimental: {
     staleTimes: {
       dynamic: 30,
@@ -22,3 +22,12 @@ const nextConfig = {
 };
 
 module.exports = nextConfig;
+
+// OpenNext Cloudflare local-dev bindings (safe no-op outside CF tooling)
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { initOpenNextCloudflareForDev } = require('@opennextjs/cloudflare');
+  initOpenNextCloudflareForDev();
+} catch {
+  /* optional during plain next build */
+}
