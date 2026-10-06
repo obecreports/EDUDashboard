@@ -1,27 +1,37 @@
 import { Suspense } from 'react';
-import { fetchGovDomains, fetchSchools } from '@/lib/supabase/schools';
-import { SchoolListClient } from '@/components/schools/SchoolListClient';
-import { PageSkeleton } from '@/components/ui/PageSkeleton';
+import { fetchSchools } from '@/lib/supabase/schools';
+import { ManagedSchoolsClient } from '@/components/schools/ManagedSchoolsClient';
+import { ManagedSchoolsSkeleton } from '@/components/ui/PageSkeleton';
+import { getSessionProfile } from '@/lib/auth/session';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 120;
 
-async function SchoolsBody() {
-  const [schools, areas] = await Promise.all([fetchSchools(), fetchGovDomains()]);
+async function SchoolsBody({ q }: { q?: string }) {
+  // Session + school list in parallel (no waterfall)
+  const [{ role, profile }, schools] = await Promise.all([
+    getSessionProfile(),
+    fetchSchools().catch(() => []),
+  ]);
+  const mode = role === 'staff' ? 'staff' : 'guest';
+
   return (
-    <div className="page-shell">
-      <h1 className="section-heading">รายชื่อโรงเรียน</h1>
-      <p className="text-slate-500 mt-[-0.5rem] mb-4">
-        ค้นหาและกรองจาก School_Basic / Gov_Domain · แสดงหน้าละ 20 โรงเรียน
-      </p>
-      <SchoolListClient schools={schools} areas={areas} />
-    </div>
+    <ManagedSchoolsClient
+      schools={schools}
+      mode={mode}
+      staffName={profile?.full_name ?? undefined}
+      initialQuery={q ?? ''}
+    />
   );
 }
 
-export default function SchoolsPage() {
+export default function SchoolsPage({
+  searchParams,
+}: {
+  searchParams: { q?: string };
+}) {
   return (
-    <Suspense fallback={<PageSkeleton rows={10} />}>
-      <SchoolsBody />
+    <Suspense fallback={<ManagedSchoolsSkeleton />}>
+      <SchoolsBody q={searchParams.q} />
     </Suspense>
   );
 }

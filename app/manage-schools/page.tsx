@@ -1,17 +1,23 @@
 import { fetchSchools } from '@/lib/supabase/schools';
 import { createClient } from '@/lib/supabase/server';
 import { getSessionProfile } from '@/lib/auth/session';
+import { parseAreaIds } from '@/lib/auth/mock-users';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ManageSchoolsPage() {
-  const { role, profile } = await getSessionProfile();
-  const schools = await fetchSchools(
-    role === 'staff' && profile?.assigned_zone
-      ? { zone: profile.assigned_zone }
-      : undefined
-  );
-  const supabase = await createClient();
+  const [{ role, profile }, allSchools, supabase] = await Promise.all([
+    getSessionProfile(),
+    fetchSchools().catch(() => []),
+    createClient(),
+  ]);
+
+  const assigned = new Set(parseAreaIds(profile?.assigned_zone));
+  const schools =
+    role === 'staff' && assigned.size > 0
+      ? allSchools.filter((s) => assigned.has(String(s.area_id || '')) || assigned.has(String(s.zone || '')))
+      : allSchools;
+
   const { data: staff } = await supabase
     .from('user_profiles')
     .select('id, full_name, assigned_zone, role')

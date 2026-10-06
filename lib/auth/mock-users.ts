@@ -167,10 +167,8 @@ export function findSeedById(id: string): MockUserSeed | undefined {
 }
 
 /** Hero is shown ONLY on landing, school list, and map */
-export function shouldShowHero(pathname: string): boolean {
-  if (pathname === '/') return true;
-  if (pathname === '/schools') return true;
-  if (pathname === '/thailand-map') return true;
+export function shouldShowHero(_pathname: string): boolean {
+  // Redesigned pages use page-level heroes instead of the global HeroGate
   return false;
 }
 

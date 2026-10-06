@@ -7,9 +7,9 @@ import { readSchoolExtras } from '@/lib/auth/user-store';
 import { fetchSchoolComments, fetchSchoolSwot, swotHasContent } from '@/lib/supabase/school-swot';
 import { normalizeSchoolSwot } from '@/lib/swot/schema';
 import { SchoolDetailClient } from '@/components/schools/SchoolDetailClient';
-import { PageSkeleton } from '@/components/ui/PageSkeleton';
+import { SchoolDetailSkeleton } from '@/components/ui/PageSkeleton';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 
 async function SchoolDetailBody({ id }: { id: string }) {
   const [school, { profile, role, isAuthenticated }] = await Promise.all([
@@ -31,10 +31,12 @@ async function SchoolDetailBody({ id }: { id: string }) {
   const canComment = canViewComments;
 
   const cookieExtras = readSchoolExtras(school.school_id);
-  const dbSwot = await fetchSchoolSwot(school.school_id);
-  const dbComments = canViewComments
-    ? await fetchSchoolComments(school.school_id)
-    : [];
+
+  // Parallelize secondary reads (was sequential → extra 1–2s)
+  const [dbSwot, dbComments] = await Promise.all([
+    fetchSchoolSwot(school.school_id),
+    canViewComments ? fetchSchoolComments(school.school_id) : Promise.resolve([]),
+  ]);
 
   const initialSwot = swotHasContent(dbSwot)
     ? dbSwot
@@ -63,7 +65,7 @@ async function SchoolDetailBody({ id }: { id: string }) {
 
 export default function SchoolDetailPage({ params }: { params: { id: string } }) {
   return (
-    <Suspense fallback={<PageSkeleton rows={10} />}>
+    <Suspense fallback={<SchoolDetailSkeleton />}>
       <SchoolDetailBody id={params.id} />
     </Suspense>
   );

@@ -13,7 +13,6 @@ export interface PillarScores {
 export interface SchoolFull {
   school_id: string | number;
   school_name_th: string;
-  school_name_en?: string;
   subdistrict?: string;
   district?: string;
   province?: string;
@@ -91,17 +90,29 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'ผู้ดูแลระบบ (Admin)',
 };
 
+/** Guest (global) + shared public menus; staff-only items gated by role */
 export const NAV_CATALOG: NavItem[] = [
-  { href: '/', label: 'หน้าหลัก', roles: ['global', 'overseer', 'admin'], end: true },
-  { href: '/schools', label: 'โรงเรียน', roles: ['global', 'overseer', 'admin'] },
-  { href: '/thailand-map', label: 'แผนที่', roles: ['global', 'overseer', 'admin'] },
-  { href: '/staff/dashboard', label: 'แดชบอร์ดของฉัน', roles: ['staff'] },
-  { href: '/staff/calendar', label: 'ปฏิทิน', roles: ['staff'] },
+  { href: '/', label: 'หน้าหลัก', roles: ['global', 'staff', 'overseer', 'admin'], end: true },
+  { href: '/about', label: 'เกี่ยวกับโครงการ', roles: ['global', 'staff', 'overseer', 'admin'] },
+  { href: '/strategy', label: 'ภาพรวม 5 กลยุทธ์', roles: ['global', 'staff', 'overseer', 'admin'] },
+  { href: '/thailand-map', label: 'แผนที่', roles: ['global', 'staff', 'overseer', 'admin'] },
+  { href: '/schools', label: 'โรงเรียนในความดูแล', roles: ['global', 'staff', 'overseer', 'admin'] },
+  /** Staff-only (hidden from guests) */
+  { href: '/staff/calendar', label: 'การลงพื้นที่', roles: ['staff'] },
+  { href: '/staff/reports', label: 'รายงาน', roles: ['staff'] },
+  { href: '/staff/dashboard', label: 'แดชบอร์ดเจ้าหน้าที่', roles: ['staff'] },
   { href: '/staff/update-school', label: 'อัปเดตโรงเรียน', roles: ['staff'] },
   { href: '/manage-schools', label: 'จัดการโรงเรียน', roles: ['staff', 'overseer', 'admin'] },
   { href: '/overseer/progress', label: 'ความคืบหน้าเจ้าหน้าที่', roles: ['overseer'] },
   { href: '/admin/accounts', label: 'จัดการบัญชี', roles: ['admin'] },
 ];
+
+/** Public banner assets under /public/images/banners/ (~1920×400) */
+export const PAGE_BANNERS = {
+  about: '/images/banners/banner_about.jpg',
+  strategy: '/images/banners/banner_strategy.jpg',
+  schools: '/images/banners/banner_schools.jpg',
+} as const;
 
 export function navForRole(role: UserRole): NavItem[] {
   const seen = new Set<string>();

@@ -3,7 +3,7 @@ import { fetchSchools } from '@/lib/supabase/schools';
 import { ThailandMapClient } from '@/components/map/ThailandMapClient';
 import { PageSkeleton } from '@/components/ui/PageSkeleton';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 
 async function MapBody() {
   let schools: Awaited<ReturnType<typeof fetchSchools>> = [];

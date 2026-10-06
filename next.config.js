@@ -12,6 +12,13 @@ const nextConfig = {
       { protocol: 'https', hostname: '**.supabase.co' },
     ],
   },
+  // Keep soft-navigation RSC payloads warm so hover-prefetched pages feel instant
+  experimental: {
+    staleTimes: {
+      dynamic: 30,
+      static: 180,
+    },
+  },
 };
 
 module.exports = nextConfig;

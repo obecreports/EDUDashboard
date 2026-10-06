@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { getSessionProfile } from '@/lib/auth/session';
 import {
   addSchoolComment,
@@ -168,6 +168,8 @@ export async function saveSchoolUpdateBundleAction(formData: FormData) {
   revalidatePath(`/schools/${schoolId}`);
   revalidatePath('/staff/update-school');
   revalidatePath('/staff/dashboard');
+  revalidateTag('schools');
+  revalidateTag(`school-${schoolId}`);
 
   const warnings = [!dbSwot.ok ? dbSwot.error : null, commentWarning].filter(Boolean);
   return {

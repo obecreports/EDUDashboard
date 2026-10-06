@@ -297,7 +297,6 @@ export function normalizeDbRow(row) {
     school_id: id,
     school_name: row.school_name || row.school_name_th || 'ไม่ระบุชื่อ',
     school_name_th: row.school_name_th || row.school_name || 'ไม่ระบุชื่อ',
-    school_name_en: row.school_name_en || '',
     lat,
     lng,
     zone_id: areaId,
