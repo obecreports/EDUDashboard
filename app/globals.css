@@ -1536,18 +1536,10 @@ a {
 /* ===== Education Fund redesign utilities ===== */
 .ed-main { min-height: calc(100vh - var(--navbar-height) - 72px); }
 
-.navbar__brand-seal {
+.navbar__brand-seal.navbar__brand-logo {
   width: 46px;
   height: 46px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 0.85rem;
-  color: #7c2d12;
-  background: radial-gradient(circle at 35% 30%, #fde68a, #f59e0b 55%, #d97706);
-  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.35);
+  object-fit: contain;
   flex-shrink: 0;
 }
 

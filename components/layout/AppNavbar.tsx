@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
@@ -101,9 +102,14 @@ export function AppNavbar({
   return (
     <nav className="navbar ed-navbar" aria-label="หลัก">
       <Link href="/" prefetch className="navbar__brand">
-        <div className="navbar__brand-seal" aria-hidden>
-          <span>กศ</span>
-        </div>
+        <Image
+          src="/images/Logo/EDU_Logo.png"
+          alt=""
+          width={46}
+          height={46}
+          className="navbar__brand-seal navbar__brand-logo"
+          priority
+        />
         <div>
           <div className="navbar__brand-name">โครงการกองทุนการศึกษา</div>
           <div className="navbar__brand-subtitle">สร้างโอกาส สร้างคนดี สู่อนาคตที่ยั่งยืน</div>
