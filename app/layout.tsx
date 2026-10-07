@@ -21,7 +21,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     await Promise.all([getSessionProfile(), readHeroSettings()]);
 
   return (
-    <html lang="th">
+    <html lang="th" data-scroll-behavior="smooth">
       <body>
         <AppNavbar
           role={role}
