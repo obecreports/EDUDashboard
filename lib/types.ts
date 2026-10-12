@@ -1,4 +1,13 @@
-export type UserRole = 'global' | 'staff' | 'overseer' | 'admin';
+export type UserRole =
+  | 'guest'
+  | 'staff'
+  | 'overseer'
+  | 'super_overseer'
+  | 'admin'
+  | 'super_admin';
+
+/** @deprecated use guest — kept for old cookie sessions */
+export type LegacyUserRole = UserRole | 'global';
 
 export type SchoolSize = 'เล็ก' | 'กลาง' | 'ใหญ่' | 'ใหญ่พิเศษ';
 
@@ -8,6 +17,14 @@ export interface PillarScores {
   teacherAdmin: number;
   curriculum: number;
   infrastructure: number;
+}
+
+/** 3-pillar scores 0–100 from school_pillar_scores */
+export interface ThreePillarScores {
+  qualitySchool: number;
+  qualityGraduation: number;
+  disciplineMorality: number;
+  overall: number;
 }
 
 export interface SchoolFull {
@@ -24,14 +41,22 @@ export interface SchoolFull {
   zipcode?: string | number;
   phone?: string;
   school_size?: SchoolSize | string;
-  /** School_Basic.area_special — special area tag */
   area_special?: string | null;
   latitude?: number | string;
   longitude?: number | string;
   director_name?: string;
   scores?: Record<string, number | string>;
   pillarScores?: PillarScores;
+  threePillarScores?: ThreePillarScores;
   overallScore?: number;
+  lastActivityAt?: string | null;
+  /** Derived from calendar bookings / last activity */
+  visitStatus?: 'never' | 'planned' | 'visited';
+  /**
+   * Optional uploaded cover (Supabase Storage public URL or path).
+   * When empty, UI uses `/images/school_default.jpg`.
+   */
+  coverImageUrl?: string | null;
   studentSummary?: {
     totalStudents: number;
     totalMale?: number;
@@ -51,10 +76,23 @@ export interface UserProfile {
   id: string;
   email: string | null;
   full_name: string | null;
+  /** Honorific / prefix for greetings; blank → "คุณ" */
+  name_prefix?: string | null;
   position: string | null;
   role: UserRole;
+  /** @deprecated legacy educational area ids */
   assigned_zone: string | null;
+  assigned_provinces: string[];
+  /**
+   * Staff scope keys:
+   * - preferred: Gov_Domain `area_id` (เขตพื้นที่การศึกษา)
+   * - legacy: `province|district`
+   */
+  assigned_districts: string[];
+  reports_to: string | null;
   avatar_url: string | null;
+  /** ISO date `YYYY-MM-DD` for birthday flower on dashboard */
+  birthday?: string | null;
   updated_at?: string;
 }
 
@@ -83,59 +121,114 @@ export interface NavItem {
   end?: boolean;
 }
 
-export const ROLE_LABELS: Record<UserRole, string> = {
-  global: 'ผู้เยี่ยมชม (Global)',
-  staff: 'เจ้าหน้าที่ (Staff)',
-  overseer: 'ผู้กำกับดูแล (Overseer)',
-  admin: 'ผู้ดูแลระบบ (Admin)',
-};
-
-/** Guest (global) + shared public menus; staff-only items gated by role */
-export const NAV_CATALOG: NavItem[] = [
-  { href: '/', label: 'หน้าหลัก', roles: ['global', 'staff', 'overseer', 'admin'], end: true },
-  { href: '/about', label: 'เกี่ยวกับโครงการ', roles: ['global', 'staff', 'overseer', 'admin'] },
-  { href: '/strategy', label: 'ภาพรวม 5 กลยุทธ์', roles: ['global', 'staff', 'overseer', 'admin'] },
-  { href: '/thailand-map', label: 'แผนที่', roles: ['global', 'staff', 'overseer', 'admin'] },
-  { href: '/schools', label: 'โรงเรียนในความดูแล', roles: ['global', 'staff', 'overseer', 'admin'] },
-  /** Staff-only (hidden from guests) */
-  { href: '/staff/calendar', label: 'การลงพื้นที่', roles: ['staff'] },
-  { href: '/staff/reports', label: 'รายงาน', roles: ['staff'] },
-  { href: '/staff/dashboard', label: 'แดชบอร์ดเจ้าหน้าที่', roles: ['staff'] },
-  { href: '/staff/update-school', label: 'อัปเดตโรงเรียน', roles: ['staff'] },
-  { href: '/manage-schools', label: 'จัดการโรงเรียน', roles: ['staff', 'overseer', 'admin'] },
-  { href: '/overseer/progress', label: 'ความคืบหน้าเจ้าหน้าที่', roles: ['overseer'] },
-  { href: '/admin/accounts', label: 'จัดการบัญชี', roles: ['admin'] },
+export const ALL_ROLES: UserRole[] = [
+  'guest',
+  'staff',
+  'overseer',
+  'super_overseer',
+  'admin',
+  'super_admin',
 ];
 
-/** Public banner assets under /public/images/banners/ (~1920×400) */
+export const FIELD_ROLES: UserRole[] = ['staff', 'overseer', 'super_overseer'];
+export const ADMIN_ROLES: UserRole[] = ['admin', 'super_admin'];
+export const PUBLIC_ROLES: UserRole[] = [
+  'guest',
+  'staff',
+  'overseer',
+  'super_overseer',
+  'admin',
+  'super_admin',
+];
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+  guest: 'ผู้เยี่ยมชม (Guest)',
+  staff: 'เจ้าหน้าที่ (Staff)',
+  overseer: 'ผู้กำกับดูแล (Overseer)',
+  super_overseer: 'ผู้กำกับดูแลสูงสุด (Super Overseer)',
+  admin: 'ผู้ดูแลระบบ (Admin)',
+  super_admin: 'ผู้ดูแลระบบสูงสุด (Super Admin)',
+};
+
+export function normalizeRole(role: string | null | undefined): UserRole {
+  if (role === 'global') return 'guest';
+  if (role && (ALL_ROLES as string[]).includes(role)) return role as UserRole;
+  return 'guest';
+}
+
+export function districtKey(province: string, district: string): string {
+  return `${province.trim()}|${district.trim()}`;
+}
+
+export function parseDistrictKey(key: string): { province: string; district: string } {
+  const [province = '', district = ''] = key.split('|');
+  return { province, district };
+}
+
+export const NAV_CATALOG: NavItem[] = [
+  { href: '/', label: 'หน้าหลัก', roles: PUBLIC_ROLES, end: true },
+  { href: '/about', label: 'เกี่ยวกับโครงการ', roles: PUBLIC_ROLES },
+  { href: '/pillars', label: 'ภาพรวม 3 เสาหลัก', roles: PUBLIC_ROLES },
+  { href: '/strategy', label: 'ภาพรวม 5 กลยุทธ์', roles: PUBLIC_ROLES },
+  { href: '/thailand-map', label: 'แผนที่', roles: PUBLIC_ROLES },
+  { href: '/schools', label: 'โรงเรียนในโครงการ', roles: PUBLIC_ROLES },
+  { href: '/dashboard', label: 'แดชบอร์ด', roles: FIELD_ROLES },
+  { href: '/calendar', label: 'ปฏิทินกิจกรรม', roles: FIELD_ROLES },
+  { href: '/reports', label: 'รายงาน', roles: FIELD_ROLES },
+  { href: '/tickets', label: 'คำขอแก้ไขข้อมูล', roles: FIELD_ROLES },
+  { href: '/admin/accounts', label: 'จัดการบัญชี', roles: ADMIN_ROLES },
+  { href: '/admin/domain', label: 'มอบหมายพื้นที่จัดการ', roles: ADMIN_ROLES },
+  { href: '/admin/schools', label: 'แก้ไขข้อมูลโรงเรียน', roles: ADMIN_ROLES },
+  { href: '/admin/tickets', label: 'จัดการคำขอ', roles: ADMIN_ROLES },
+  { href: '/admin/settings', label: 'ตั้งค่าระบบ', roles: ['super_admin'] },
+];
+
 export const PAGE_BANNERS = {
+  landing: '/images/banners/banner_landing.jpg',
   about: '/images/banners/banner_about.jpg',
   strategy: '/images/banners/banner_strategy.jpg',
   schools: '/images/banners/banner_schools.jpg',
+  pillars: '/images/banners/banner_strategy.jpg',
+  calendar: '/images/banners/banner_schools.jpg',
+  reports: '/images/banners/banner_schools.jpg',
 } as const;
 
+/** Report comment category hashtags */
+export const REPORT_HASHTAGS = [
+  'ส่วนที่ดี',
+  'ส่วนที่ต้องปรับปรุง',
+  'ข้อเสนอแนะ',
+  'ชื่นชม',
+] as const;
+
+/** Default school photo (individual uploads override via `coverImageUrl`) */
+export const SCHOOL_DEFAULT_IMAGE = '/images/school_default.jpg';
+
 export function navForRole(role: UserRole): NavItem[] {
+  const r = normalizeRole(role);
   const seen = new Set<string>();
   return NAV_CATALOG.filter((item) => {
-    if (!item.roles.includes(role)) return false;
+    if (!item.roles.includes(r)) return false;
     if (seen.has(item.href)) return false;
     seen.add(item.href);
     return true;
   });
 }
 
-/** Path prefixes → allowed roles (null = public) */
 export const PROTECTED_ROUTES: { prefix: string; roles: UserRole[] }[] = [
-  { prefix: '/staff/profile', roles: ['staff', 'overseer', 'admin'] },
-  { prefix: '/staff', roles: ['staff'] },
-  { prefix: '/overseer', roles: ['overseer'] },
-  { prefix: '/admin', roles: ['admin'] },
-  { prefix: '/manage-schools', roles: ['staff', 'overseer', 'admin'] },
-  { prefix: '/change-password', roles: ['global', 'staff', 'overseer', 'admin'] },
+  { prefix: '/staff/profile', roles: [...FIELD_ROLES, ...ADMIN_ROLES] },
+  { prefix: '/staff', roles: FIELD_ROLES },
+  { prefix: '/dashboard', roles: FIELD_ROLES },
+  { prefix: '/calendar', roles: FIELD_ROLES },
+  { prefix: '/reports', roles: FIELD_ROLES },
+  { prefix: '/tickets', roles: [...FIELD_ROLES, ...ADMIN_ROLES] },
+  { prefix: '/overseer', roles: ['overseer', 'super_overseer'] },
+  { prefix: '/admin', roles: ADMIN_ROLES },
+  { prefix: '/manage-schools', roles: ADMIN_ROLES },
+  { prefix: '/change-password', roles: ALL_ROLES },
 ];
 
 export function rolesForPath(pathname: string): UserRole[] | null {
-  // More specific prefixes first
   const ordered = [...PROTECTED_ROUTES].sort((a, b) => b.prefix.length - a.prefix.length);
   for (const rule of ordered) {
     if (pathname === rule.prefix || pathname.startsWith(`${rule.prefix}/`)) {

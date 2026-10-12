@@ -1,9 +1,30 @@
-/** Per-category SWOT pair */
+/**
+ * SWOT — long-text blocks (4 DB columns)
+ * 1 สภาพแวดล้อมภายใน
+ *   1.1 จุดแข็ง (Strengths)  → internal_strengths
+ *   1.2 จุดอ่อน (Weaknesses) → internal_weaknesses
+ * 2 สภาพแวดล้อมภายนอก
+ *   2.1 จุดแข็ง (Strengths)  → external_strengths
+ *   2.2 อุปสรรค (Threats)   → external_threats
+ */
+export type SchoolSwot = {
+  internal: {
+    strengths: string;
+    weaknesses: string;
+  };
+  external: {
+    strengths: string;
+    threats: string;
+  };
+};
+
+/** @deprecated kept for gradual migration of old granular keys */
 export type SwotPair = {
   strengths: string;
   weaknesses: string;
 };
 
+/** @deprecated */
 export type SchoolSwotInternalKey =
   | 'students'
   | 'management'
@@ -11,132 +32,141 @@ export type SchoolSwotInternalKey =
   | 'curriculum'
   | 'infrastructure';
 
+/** @deprecated */
 export type SchoolSwotExternalKey = 'social' | 'economic' | 'environmental';
 
-/** Granular SWOT — every sub-category has Strengths + Weaknesses */
-export type SchoolSwot = {
-  internal: Record<SchoolSwotInternalKey, SwotPair>;
-  external: Record<SchoolSwotExternalKey, SwotPair>;
-};
-
-export const SWOT_INTERNAL_FIELDS: { key: SchoolSwotInternalKey; label: string }[] = [
-  { key: 'students', label: 'ผู้เรียน' },
-  { key: 'management', label: 'การบริหารจัดการ' },
-  { key: 'personnel', label: 'บุคลากร' },
-  { key: 'curriculum', label: 'หลักสูตรและการสอน' },
-  { key: 'infrastructure', label: 'โครงสร้างพื้นฐาน' },
-];
-
-export const SWOT_EXTERNAL_FIELDS: { key: SchoolSwotExternalKey; label: string }[] = [
-  { key: 'social', label: 'ด้านสังคม' },
-  { key: 'economic', label: 'ด้านเศรษฐกิจ' },
-  { key: 'environmental', label: 'ด้านสิ่งแวดล้อม' },
-];
-
-function emptyPair(): SwotPair {
-  return { strengths: '', weaknesses: '' };
-}
+export const SWOT_SECTIONS = [
+  {
+    group: 'สภาพแวดล้อมภายใน',
+    items: [
+      { key: 'internal.strengths' as const, code: '1.1', label: 'จุดแข็ง (Strengths)' },
+      { key: 'internal.weaknesses' as const, code: '1.2', label: 'จุดอ่อน (Weaknesses)' },
+    ],
+  },
+  {
+    group: 'สภาพแวดล้อมภายนอก',
+    items: [
+      { key: 'external.strengths' as const, code: '2.1', label: 'จุดแข็ง (Strengths)' },
+      { key: 'external.threats' as const, code: '2.2', label: 'อุปสรรค (Threats)' },
+    ],
+  },
+] as const;
 
 export function emptySchoolSwot(): SchoolSwot {
   return {
-    internal: {
-      students: emptyPair(),
-      management: emptyPair(),
-      personnel: emptyPair(),
-      curriculum: emptyPair(),
-      infrastructure: emptyPair(),
-    },
-    external: {
-      social: emptyPair(),
-      economic: emptyPair(),
-      environmental: emptyPair(),
-    },
+    internal: { strengths: '', weaknesses: '' },
+    external: { strengths: '', threats: '' },
   };
 }
 
-function asPair(v: unknown): SwotPair {
-  if (v && typeof v === 'object') {
-    const o = v as Record<string, unknown>;
-    return {
-      strengths: String(o.strengths ?? ''),
-      weaknesses: String(o.weaknesses ?? ''),
-    };
-  }
-  return emptyPair();
+function asText(v: unknown): string {
+  return typeof v === 'string' ? v : v == null ? '' : String(v);
 }
 
-/** Normalize cookie/DB payloads (including legacy flat S/W/O/T) into granular SWOT */
+function joinCategoryPairs(
+  obj: Record<string, unknown> | undefined,
+  side: 'strengths' | 'weaknesses'
+): string {
+  if (!obj) return '';
+  const parts: string[] = [];
+  for (const [label, raw] of Object.entries(obj)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const text = asText((raw as Record<string, unknown>)[side]).trim();
+    if (text) parts.push(`${label}: ${text}`);
+  }
+  return parts.join('\n\n');
+}
+
+/** Normalize cookie/DB payloads (including legacy column names) */
 export function normalizeSchoolSwot(raw: unknown): SchoolSwot {
   const base = emptySchoolSwot();
   if (!raw || typeof raw !== 'object') return base;
   const row = raw as Record<string, unknown>;
 
-  // New shape
+  // Nested app shape
   if (row.internal && typeof row.internal === 'object') {
     const inn = row.internal as Record<string, unknown>;
-    for (const f of SWOT_INTERNAL_FIELDS) {
-      base.internal[f.key] = asPair(inn[f.key]);
+    if (typeof inn.strengths === 'string' || typeof inn.weaknesses === 'string') {
+      base.internal.strengths = asText(inn.strengths);
+      base.internal.weaknesses = asText(inn.weaknesses);
+    } else {
+      base.internal.strengths = joinCategoryPairs(inn, 'strengths');
+      base.internal.weaknesses = joinCategoryPairs(inn, 'weaknesses');
     }
   }
   if (row.external && typeof row.external === 'object') {
     const ext = row.external as Record<string, unknown>;
-    for (const f of SWOT_EXTERNAL_FIELDS) {
-      base.external[f.key] = asPair(ext[f.key]);
+    if (typeof ext.strengths === 'string' || typeof ext.threats === 'string') {
+      base.external.strengths = asText(ext.strengths);
+      base.external.threats = asText(ext.threats);
+    } else if (typeof ext.weaknesses === 'string') {
+      base.external.strengths = asText(ext.strengths);
+      base.external.threats = asText(ext.weaknesses);
+    } else {
+      base.external.strengths = joinCategoryPairs(ext, 'strengths');
+      base.external.threats = joinCategoryPairs(ext, 'weaknesses');
     }
   }
 
-  // Legacy flat columns → park under first internal/external buckets for visibility
-  if (typeof row.internal_strengths === 'string' && row.internal_strengths && !base.internal.students.strengths) {
-    base.internal.students.strengths = row.internal_strengths;
+  // Canonical DB columns (long text)
+  if (row.internal_strengths) base.internal.strengths = asText(row.internal_strengths);
+  if (row.internal_weaknesses) base.internal.weaknesses = asText(row.internal_weaknesses);
+  if (row.external_strengths) base.external.strengths = asText(row.external_strengths);
+  if (row.external_threats) base.external.threats = asText(row.external_threats);
+
+  // Legacy names (pre-006)
+  if (!base.external.strengths && typeof row.external_opportunities === 'string') {
+    base.external.strengths = row.external_opportunities;
   }
-  if (typeof row.internal_weaknesses === 'string' && row.internal_weaknesses && !base.internal.students.weaknesses) {
-    base.internal.students.weaknesses = row.internal_weaknesses;
+  if (!base.internal.strengths && row.internal_strengths_text) {
+    base.internal.strengths = asText(row.internal_strengths_text);
   }
-  if (typeof row.external_opportunities === 'string' && row.external_opportunities && !base.external.social.strengths) {
-    base.external.social.strengths = row.external_opportunities;
+  if (!base.internal.weaknesses && row.internal_weaknesses_text) {
+    base.internal.weaknesses = asText(row.internal_weaknesses_text);
   }
-  if (typeof row.external_threats === 'string' && row.external_threats && !base.external.social.weaknesses) {
-    base.external.social.weaknesses = row.external_threats;
+  if (!base.external.strengths && row.external_strengths_text) {
+    base.external.strengths = asText(row.external_strengths_text);
+  }
+  if (!base.external.threats && row.external_threats_text) {
+    base.external.threats = asText(row.external_threats_text);
   }
 
   return base;
 }
 
 export function swotHasContent(swot: SchoolSwot): boolean {
-  const pairs = [
-    ...Object.values(swot.internal),
-    ...Object.values(swot.external),
-  ];
-  return pairs.some((p) => p.strengths.trim() || p.weaknesses.trim());
+  return Boolean(
+    swot.internal.strengths.trim() ||
+      swot.internal.weaknesses.trim() ||
+      swot.external.strengths.trim() ||
+      swot.external.threats.trim()
+  );
 }
 
-/** Flatten for legacy text columns (summary) */
-export function flattenSwotLegacy(swot: SchoolSwot): {
+/** Flatten to the 4 canonical DB long-text columns */
+export function flattenSwotForDb(swot: SchoolSwot): {
   internal_strengths: string;
   internal_weaknesses: string;
-  external_opportunities: string;
+  external_strengths: string;
   external_threats: string;
 } {
-  const joinInternal = (side: 'strengths' | 'weaknesses') =>
-    SWOT_INTERNAL_FIELDS.map((f) => {
-      const text = swot.internal[f.key][side].trim();
-      return text ? `${f.label}: ${text}` : '';
-    })
-      .filter(Boolean)
-      .join('\n');
-
-  const joinExternal = (side: 'strengths' | 'weaknesses') =>
-    SWOT_EXTERNAL_FIELDS.map((f) => {
-      const text = swot.external[f.key][side].trim();
-      return text ? `${f.label}: ${text}` : '';
-    })
-      .filter(Boolean)
-      .join('\n');
-
   return {
-    internal_strengths: joinInternal('strengths'),
-    internal_weaknesses: joinInternal('weaknesses'),
-    external_opportunities: joinExternal('strengths'),
-    external_threats: joinExternal('weaknesses'),
+    internal_strengths: swot.internal.strengths,
+    internal_weaknesses: swot.internal.weaknesses,
+    external_strengths: swot.external.strengths,
+    external_threats: swot.external.threats,
   };
 }
+
+/** @deprecated — use flattenSwotForDb */
+export function flattenSwotLegacy(swot: SchoolSwot) {
+  const row = flattenSwotForDb(swot);
+  return {
+    ...row,
+    external_opportunities: row.external_strengths,
+  };
+}
+
+/** @deprecated — empty stubs so old imports compile during migration */
+export const SWOT_INTERNAL_FIELDS: { key: SchoolSwotInternalKey; label: string }[] = [];
+export const SWOT_EXTERNAL_FIELDS: { key: SchoolSwotExternalKey; label: string }[] = [];

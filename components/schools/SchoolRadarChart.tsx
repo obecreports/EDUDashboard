@@ -22,12 +22,20 @@ export function DualRadarChart({
   nationalScores = NATIONAL_PILLAR_AVG,
   schoolLabel = 'โรงเรียนนี้',
   nationalLabel = 'ค่าเฉลี่ยประเทศ / ภูมิภาค',
+  showNational = true,
+  maxScale = 5,
+  /** Explicit tick values (e.g. [0, 50, 100]) — avoids overlapping labels */
+  tickValues,
 }: {
   labels: string[];
   schoolScores: number[];
   nationalScores?: number[];
   schoolLabel?: string;
   nationalLabel?: string;
+  /** When false, only the average / school series is drawn */
+  showNational?: boolean;
+  maxScale?: number;
+  tickValues?: number[];
 }) {
   const data = {
     labels,
@@ -40,15 +48,19 @@ export function DualRadarChart({
         borderWidth: 2.5,
         pointBackgroundColor: '#00c6a0',
       },
-      {
-        label: nationalLabel,
-        data: nationalScores.map((n) => Number(n.toFixed(2))),
-        backgroundColor: 'rgba(41, 86, 143, 0.12)',
-        borderColor: '#29568f',
-        borderWidth: 2,
-        borderDash: [5, 4],
-        pointBackgroundColor: '#29568f',
-      },
+      ...(showNational
+        ? [
+            {
+              label: nationalLabel,
+              data: nationalScores.map((n) => Number(n.toFixed(2))),
+              backgroundColor: 'rgba(41, 86, 143, 0.12)',
+              borderColor: '#29568f',
+              borderWidth: 2,
+              borderDash: [5, 4],
+              pointBackgroundColor: '#29568f',
+            },
+          ]
+        : []),
     ],
   };
 
@@ -59,9 +71,18 @@ export function DualRadarChart({
         options={{
           scales: {
             r: {
-              suggestedMin: 0,
-              suggestedMax: 5,
-              ticks: { stepSize: 1 },
+              min: 0,
+              max: maxScale,
+              ticks: tickValues
+                ? {
+                    stepSize: tickValues.length > 1 ? tickValues[1]! - tickValues[0]! : maxScale / 2,
+                    count: tickValues.length,
+                    callback: (value) => {
+                      const n = typeof value === 'number' ? value : Number(value);
+                      return tickValues.includes(n) ? String(n) : '';
+                    },
+                  }
+                : { stepSize: maxScale <= 5 ? 1 : 20 },
               pointLabels: { font: { size: 11 } },
             },
           },

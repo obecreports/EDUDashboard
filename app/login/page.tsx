@@ -10,8 +10,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  // Global is public-only — hide guest credentials from login tips
-  const tips = MOCK_USER_SEEDS.filter((u) => u.role !== 'global');
+  const tips = MOCK_USER_SEEDS;
 
   return (
     <div className="page-shell" style={{ maxWidth: 480 }}>
@@ -71,7 +70,7 @@ export default function LoginPage() {
           ))}
         </ul>
         <p className="text-xs text-slate-400 mt-3 mb-0">
-          ผู้เยี่ยมชม (Global) ใช้งานสาธารณะได้โดยไม่ต้องเข้าสู่ระบบ ·{' '}
+          ผู้เยี่ยมชม (Guest) ใช้งานสาธารณะได้โดยไม่ต้องเข้าสู่ระบบ ·{' '}
           <Link href="/" className="text-tm-blue">
             ← กลับหน้าหลัก
           </Link>

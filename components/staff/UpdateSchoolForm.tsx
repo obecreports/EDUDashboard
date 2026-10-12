@@ -3,12 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import type { SchoolSwot } from '@/lib/auth/user-store';
 import { saveSchoolUpdateBundleAction } from '@/app/actions/school-extras';
-import {
-  SWOT_EXTERNAL_FIELDS,
-  SWOT_INTERNAL_FIELDS,
-  emptySchoolSwot,
-  normalizeSchoolSwot,
-} from '@/lib/swot/schema';
+import { emptySchoolSwot, normalizeSchoolSwot } from '@/lib/swot/schema';
 
 type SchoolOption = {
   id: number;
@@ -24,43 +19,32 @@ type ExtrasPayload = {
   comments: { id: string; staff_name: string; text: string; created_at: string }[];
 };
 
-function SwotCategoryBlock({
+function SwotLongField({
+  code,
   title,
-  strengths,
-  weaknesses,
-  onStrengths,
-  onWeaknesses,
+  value,
+  onChange,
+  placeholder,
 }: {
+  code: string;
   title: string;
-  strengths: string;
-  weaknesses: string;
-  onStrengths: (v: string) => void;
-  onWeaknesses: (v: string) => void;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 p-3 space-y-3 bg-slate-50/60">
-      <h4 className="m-0 text-sm font-bold text-tm-blue">{title}</h4>
-      <label className="block text-sm">
-        จุดแข็ง (Strengths)
-        <textarea
-          className="form-input"
-          rows={3}
-          value={strengths}
-          onChange={(e) => onStrengths(e.target.value)}
-          placeholder={`จุดแข็งด้าน${title}…`}
-        />
-      </label>
-      <label className="block text-sm">
-        จุดอ่อน (Weaknesses)
-        <textarea
-          className="form-input"
-          rows={3}
-          value={weaknesses}
-          onChange={(e) => onWeaknesses(e.target.value)}
-          placeholder={`จุดอ่อนด้าน${title}…`}
-        />
-      </label>
-    </div>
+    <label className="block text-sm font-semibold space-y-1">
+      <span>
+        {code} {title}
+      </span>
+      <textarea
+        className="form-input"
+        rows={5}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
   );
 }
 
@@ -212,63 +196,59 @@ export function UpdateSchoolForm({
 
             <section className="space-y-4">
               <h2 className="section-heading text-base">การวิเคราะห์ SWOT</h2>
-              <h3 className="font-bold text-tm-blue text-sm m-0">สภาพแวดล้อมภายใน</h3>
+              <h3 className="font-bold text-tm-blue text-sm m-0">1 สภาพแวดล้อมภายใน</h3>
               <div className="space-y-3">
-                {SWOT_INTERNAL_FIELDS.map((f) => (
-                  <SwotCategoryBlock
-                    key={f.key}
-                    title={f.label}
-                    strengths={swot.internal[f.key].strengths}
-                    weaknesses={swot.internal[f.key].weaknesses}
-                    onStrengths={(v) =>
-                      setSwot((prev) => ({
-                        ...prev,
-                        internal: {
-                          ...prev.internal,
-                          [f.key]: { ...prev.internal[f.key], strengths: v },
-                        },
-                      }))
-                    }
-                    onWeaknesses={(v) =>
-                      setSwot((prev) => ({
-                        ...prev,
-                        internal: {
-                          ...prev.internal,
-                          [f.key]: { ...prev.internal[f.key], weaknesses: v },
-                        },
-                      }))
-                    }
-                  />
-                ))}
+                <SwotLongField
+                  code="1.1"
+                  title="จุดแข็ง (Strengths)"
+                  value={swot.internal.strengths}
+                  onChange={(v) =>
+                    setSwot((prev) => ({
+                      ...prev,
+                      internal: { ...prev.internal, strengths: v },
+                    }))
+                  }
+                  placeholder="อธิบายจุดแข็งภายในเป็นข้อความยาว…"
+                />
+                <SwotLongField
+                  code="1.2"
+                  title="จุดอ่อน (Weaknesses)"
+                  value={swot.internal.weaknesses}
+                  onChange={(v) =>
+                    setSwot((prev) => ({
+                      ...prev,
+                      internal: { ...prev.internal, weaknesses: v },
+                    }))
+                  }
+                  placeholder="อธิบายจุดอ่อนภายในเป็นข้อความยาว…"
+                />
               </div>
-              <h3 className="font-bold text-tm-blue text-sm m-0 pt-2">สภาพแวดล้อมภายนอก</h3>
+              <h3 className="font-bold text-tm-blue text-sm m-0 pt-2">2 สภาพแวดล้อมภายนอก</h3>
               <div className="space-y-3">
-                {SWOT_EXTERNAL_FIELDS.map((f) => (
-                  <SwotCategoryBlock
-                    key={f.key}
-                    title={f.label}
-                    strengths={swot.external[f.key].strengths}
-                    weaknesses={swot.external[f.key].weaknesses}
-                    onStrengths={(v) =>
-                      setSwot((prev) => ({
-                        ...prev,
-                        external: {
-                          ...prev.external,
-                          [f.key]: { ...prev.external[f.key], strengths: v },
-                        },
-                      }))
-                    }
-                    onWeaknesses={(v) =>
-                      setSwot((prev) => ({
-                        ...prev,
-                        external: {
-                          ...prev.external,
-                          [f.key]: { ...prev.external[f.key], weaknesses: v },
-                        },
-                      }))
-                    }
-                  />
-                ))}
+                <SwotLongField
+                  code="2.1"
+                  title="จุดแข็ง (Strengths)"
+                  value={swot.external.strengths}
+                  onChange={(v) =>
+                    setSwot((prev) => ({
+                      ...prev,
+                      external: { ...prev.external, strengths: v },
+                    }))
+                  }
+                  placeholder="อธิบายจุดแข็งภายนอกเป็นข้อความยาว…"
+                />
+                <SwotLongField
+                  code="2.2"
+                  title="อุปสรรค (Threats)"
+                  value={swot.external.threats}
+                  onChange={(v) =>
+                    setSwot((prev) => ({
+                      ...prev,
+                      external: { ...prev.external, threats: v },
+                    }))
+                  }
+                  placeholder="อธิบายอุปสรรคภายนอกเป็นข้อความยาว…"
+                />
               </div>
             </section>
 

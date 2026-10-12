@@ -41,9 +41,11 @@ export const DEV_STATUS: Record<DevStatusKey, DevStatusMeta> = {
   },
 };
 
-/** Map overall score (0–5) → development status */
+/** Map overall score (0–5 strategy or 0–100 pillars) → development status */
 export function statusFromScore(score: number | undefined | null): DevStatusMeta {
-  const s = score ?? 0;
+  const raw = score ?? 0;
+  // Normalize 0–100 pillar scores onto the 0–5 scale used by thresholds
+  const s = raw > 5 ? raw / 20 : raw;
   if (s < 2.5) return DEV_STATUS.urgent;
   if (s < 3.2) return DEV_STATUS.accelerate;
   if (s < 4) return DEV_STATUS.progressing;

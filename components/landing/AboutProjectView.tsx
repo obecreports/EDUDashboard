@@ -53,41 +53,24 @@ export function AboutProjectView({
         </div>
       )}
 
-      {/* Hero */}
-      <section className="about-hero" aria-label="แบนเนอร์โครงการ">
+      {/* Hero — Banner_Landingpage (text baked into image) */}
+      <section className="about-hero about-hero--banner" aria-label="แบนเนอร์โครงการ">
         <div className="about-hero__bg" aria-hidden>
           <div
             className="about-hero__photo about-hero__photo--full"
-            style={{ backgroundImage: `url(${PAGE_BANNERS.about})` }}
+            style={{ backgroundImage: `url(${PAGE_BANNERS.landing})` }}
           />
-          <div className="about-hero__wash" />
         </div>
-
-        <p className="about-hero__side about-hero__side--left" aria-hidden>
-          เด็กไทย · โรงเรียนดี · สังคมดี · อนาคตดี
-        </p>
-        <p className="about-hero__side about-hero__side--right" aria-hidden>
-          โอกาส · เริ่มต้นได้ที่นี่ · โรงเรียน คือ ความหวังของชุมชน
-        </p>
-
-        <div className="about-hero__content">
-          <h1>โครงการกองทุนการศึกษา</h1>
-          <p className="about-hero__tagline">“สร้างคนดีให้บ้านเมือง”</p>
-          <p className="about-hero__sub">
-            พัฒนาคุณภาพการศึกษาอย่างเป็นระบบและยั่งยืน
-            <br />
-            ร่วมกันสร้างโอกาสทางการศึกษา เพื่อเด็กไทยทุกคน
-          </p>
-          <div className="about-hero__cta">
-            <a href="#history" className="ed-btn ed-btn--primary">
-              รู้จักโครงการ <ArrowRight size={18} />
-            </a>
-            <Link href="/schools" className="ed-btn ed-btn--outline">
-              ดูโรงเรียนในโครงการ <ArrowRight size={18} />
-            </Link>
-          </div>
-        </div>
+        <h1 className="sr-only">โครงการกองทุนการศึกษา</h1>
       </section>
+      <div className="landing-cta-bar">
+        <Link href="/about" className="ed-btn ed-btn--primary ed-btn--sm">
+          เกี่ยวกับโครงการ <ArrowRight size={16} />
+        </Link>
+        <Link href="/schools" className="ed-btn ed-btn--outline ed-btn--sm">
+          ดูโรงเรียนในโครงการ <ArrowRight size={16} />
+        </Link>
+      </div>
 
       {/* Metrics */}
       <section className="page-shell about-metrics" aria-label="สรุปตัวเลขโครงการ">
@@ -243,8 +226,8 @@ export function AboutProjectView({
               return (
                 <div key={s.key} className="about-strategy">
                   <span className="about-strategy__badge" style={{ background: s.color }}>
-                    <em>{i + 1}</em>
-                    <Icon size={14} />
+                    {/* <em>{i + 1}</em> */}
+                    <Icon size={14} /> 
                   </span>
                   <span className="about-strategy__label">{short}</span>
                 </div>

@@ -4,6 +4,7 @@ import './globals.css';
 import { AppNavbar } from '@/components/layout/AppNavbar';
 import { AppFooter } from '@/components/layout/AppFooter';
 import { HeroGate } from '@/components/layout/HeroGate';
+import { PendingNav } from '@/components/layout/PendingNav';
 import { getSessionProfile } from '@/lib/auth/session';
 import { readHeroSettings } from '@/lib/auth/user-store';
 
@@ -23,6 +24,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="th" data-scroll-behavior="smooth">
       <body>
+        <PendingNav />
         <AppNavbar
           role={role}
           displayName={profile?.full_name ?? 'ผู้เยี่ยมชม'}

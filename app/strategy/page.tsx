@@ -6,7 +6,7 @@ import { DualRadarChart } from '@/components/schools/SchoolRadarChart';
 import { PageBanner } from '@/components/layout/PageBanner';
 import { StrategySkeleton } from '@/components/ui/PageSkeleton';
 import { PAGE_BANNERS, type SchoolFull } from '@/lib/types';
-import { statusFromScore, STRATEGY_LABELS, DEV_STATUS } from '@/lib/theme/status';
+import { statusFromScore, STRATEGY_LABELS } from '@/lib/theme/status';
 
 export const revalidate = 120;
 
@@ -120,12 +120,16 @@ async function StrategyBody() {
         <div className="ed-analytics-row">
           <section className="ed-card p-4">
             <h2 className="ed-section-title text-base">คะแนนเฉลี่ย 5 กลยุทธ์</h2>
+            <p className="text-sm text-slate-600 m-0 mb-2">
+              คะแนนเฉลี่ยรวม 5 กลยุทธ์{' '}
+              <strong className="text-tm-blue">{overallAvg.toFixed(2)}</strong>
+              <span className="text-slate-400"> / 5.00</span>
+            </p>
             <DualRadarChart
               labels={labels}
               schoolScores={avgs}
-              nationalScores={[5, 5, 5, 5, 5]}
               schoolLabel="ค่าเฉลี่ยโครงการ"
-              nationalLabel="คะแนนเต็ม"
+              showNational={false}
             />
           </section>
 
@@ -134,25 +138,29 @@ async function StrategyBody() {
             {STRATEGY_LABELS.map((s) => {
               const t = tierCounts(schools, s.key);
               const total = Math.max(1, t.strong + t.progressing + t.accelerate + t.urgent);
+              const tiers = [
+                { key: 'strong', count: t.strong, color: '#4ade80', label: 'เข้มแข็ง' },
+                { key: 'progressing', count: t.progressing, color: '#fde047', label: 'พัฒนาได้' },
+                { key: 'accelerate', count: t.accelerate, color: '#fb923c', label: 'ควรเร่งพัฒนา' },
+                {
+                  key: 'urgent',
+                  count: t.urgent,
+                  color: '#f87171',
+                  label: 'ต้องได้รับการสนับสนุน',
+                },
+              ] as const;
               return (
                 <div key={s.key}>
                   <div className="text-xs font-semibold mb-1 text-slate-600">{s.label}</div>
                   <div className="ed-stack-bar ed-stack-bar--labeled">
-                    {(
-                      [
-                        ['strong', t.strong],
-                        ['progressing', t.progressing],
-                        ['accelerate', t.accelerate],
-                        ['urgent', t.urgent],
-                      ] as const
-                    ).map(([key, count]) =>
-                      count > 0 ? (
+                    {tiers.map((row) =>
+                      row.count > 0 ? (
                         <span
-                          key={key}
-                          style={{ flex: count / total, background: DEV_STATUS[key].color }}
-                          title={`${DEV_STATUS[key].label}: ${count}`}
+                          key={row.key}
+                          style={{ flex: row.count / total, background: row.color }}
+                          title={`${row.label}: ${row.count}`}
                         >
-                          {count}
+                          {row.count}
                         </span>
                       ) : null
                     )}
@@ -161,12 +169,22 @@ async function StrategyBody() {
               );
             })}
             <div className="strategy-legend">
-              {(Object.keys(DEV_STATUS) as (keyof typeof DEV_STATUS)[]).map((k) => (
-                <span key={k}>
-                  <i style={{ background: DEV_STATUS[k].color }} />
-                  {DEV_STATUS[k].label}
-                </span>
-              ))}
+              <span>
+                <i style={{ background: '#4ade80' }} />
+                เข้มแข็ง
+              </span>
+              <span>
+                <i style={{ background: '#fde047' }} />
+                พัฒนาได้
+              </span>
+              <span>
+                <i style={{ background: '#fb923c' }} />
+                ควรเร่งพัฒนา
+              </span>
+              <span>
+                <i style={{ background: '#f87171' }} />
+                ต้องได้รับการสนับสนุน
+              </span>
             </div>
           </section>
 

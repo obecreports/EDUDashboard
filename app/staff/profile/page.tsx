@@ -1,59 +1,69 @@
 import { Suspense } from 'react';
-import { getSessionProfile } from '@/lib/auth/session';
-import { fetchGovDomains } from '@/lib/supabase/schools';
-import { ZoneBasket } from '@/components/profile/ZoneBasket';
-import { parseAreaIds } from '@/lib/auth/mock-users';
+import { getSessionProfile, listMockAccountsForAdmin } from '@/lib/auth/session';
 import { PageSkeleton } from '@/components/ui/PageSkeleton';
+import { normalizeRole } from '@/lib/types';
+import { ProfileSettingsClient } from '@/components/staff/ProfileSettingsClient';
+import { fetchGovDomains } from '@/lib/supabase/schools';
 
 export const dynamic = 'force-dynamic';
 
 async function ProfileBody() {
   const { profile, isAuthenticated } = await getSessionProfile();
+  const [accounts, govRows] = await Promise.all([
+    isAuthenticated ? listMockAccountsForAdmin() : Promise.resolve([]),
+    fetchGovDomains().catch(() => []),
+  ]);
+  const boss = profile?.reports_to
+    ? accounts.find((a) => a.id === profile.reports_to)
+    : null;
+  const role = normalizeRole(profile?.role);
 
-  let areaOptions: { area_id: string; area_name: string }[] = [];
-  try {
-    const areas = await fetchGovDomains();
-    areaOptions = (areas ?? []).map((a: { area_id: string; area_name: string }) => ({
-      area_id: String(a.area_id),
-      area_name: a.area_name || String(a.area_id),
-    }));
-  } catch {
-    areaOptions = [];
+  const areaNameById = new Map(
+    govRows
+      .filter((g) => g.area_id != null)
+      .map((g) => [String(g.area_id), String(g.area_name || g.area_id)])
+  );
+
+  const domainLines: string[] = [];
+  if (role === 'overseer') {
+    domainLines.push(`จังหวัด: ${(profile?.assigned_provinces ?? []).join(', ') || '—'}`);
+  } else if (role === 'staff') {
+    const areas = profile?.assigned_districts ?? [];
+    const labels = areas.map((d) => {
+      const id = String(d).trim();
+      if (!id) return '';
+      return areaNameById.get(id) || id.replace('|', ' / ');
+    }).filter(Boolean);
+    domainLines.push(`เขตพื้นที่การศึกษา: ${labels.join(', ') || '—'}`);
+  } else if (role === 'super_overseer' || role === 'admin' || role === 'super_admin') {
+    domainLines.push('ขอบเขต: ทั้งหมด / ตามสิทธิ์ระบบ');
+  } else {
+    domainLines.push('ขอบเขต: —');
   }
 
-  // Keep any already-assigned area_ids even if missing from Gov_Domain
-  const assigned = parseAreaIds(profile?.assigned_zone);
-  const known = new Set(areaOptions.map((a) => a.area_id));
-  assigned.forEach((id) => {
-    if (!known.has(id)) areaOptions.push({ area_id: id, area_name: id });
-  });
-  areaOptions.sort((a, b) => a.area_name.localeCompare(b.area_name, 'th'));
+  if (!isAuthenticated || !profile) {
+    return (
+      <div className="page-shell" style={{ maxWidth: 640 }}>
+        <h1 className="section-heading">ตั้งค่าโปรไฟล์</h1>
+        <p className="text-sm text-amber-700 bg-amber-50 rounded-lg p-3">
+          กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="page-shell" style={{ maxWidth: 640 }}>
       <h1 className="section-heading">ตั้งค่าโปรไฟล์</h1>
-      <div className="panel-card space-y-4">
-        <label className="block text-sm">
-          ชื่อ–นามสกุล
-          <input className="form-input" defaultValue={profile?.full_name ?? ''} readOnly />
-        </label>
-        <label className="block text-sm">
-          ตำแหน่ง
-          <input className="form-input" defaultValue={profile?.position ?? ''} readOnly />
-        </label>
-        <label className="block text-sm">
-          อีเมล
-          <input className="form-input" defaultValue={profile?.email ?? ''} readOnly />
-        </label>
-
-        {isAuthenticated ? (
-          <ZoneBasket initialZones={profile?.assigned_zone ?? null} options={areaOptions} />
-        ) : (
-          <p className="text-sm text-amber-700 bg-amber-50 rounded-lg p-3">
-            กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์
-          </p>
-        )}
-      </div>
+      <ProfileSettingsClient
+        fullName={profile.full_name ?? ''}
+        namePrefix={profile.name_prefix ?? ''}
+        position={profile.position ?? ''}
+        email={profile.email ?? ''}
+        role={role}
+        domainLines={domainLines}
+        bossName={boss?.full_name ?? ''}
+      />
     </div>
   );
 }

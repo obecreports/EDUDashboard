@@ -5,6 +5,7 @@ export const VISIT_ACTIVITIES = [
   'สำรวจข้อมูล',
   'ติดตามผล',
   'ประชุม',
+  'อื่นๆ',
 ] as const;
 
 export type VisitActivityType = (typeof VISIT_ACTIVITIES)[number];

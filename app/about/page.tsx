@@ -1,5 +1,5 @@
 import { fetchSchools, formatFetchError } from '@/lib/supabase/schools';
-import { AboutProjectView } from '@/components/landing/AboutProjectView';
+import { AboutProjectMockup } from '@/components/landing/AboutProjectMockup';
 
 export const revalidate = 60;
 
@@ -12,18 +12,24 @@ export default async function AboutPage() {
     errorMsg = formatFetchError(e);
   }
 
-  const totalSchools = schools.length || 143;
-  const totalStudents =
-    schools.reduce((s, x) => s + (x.studentSummary?.totalStudents ?? 0), 0) || 48732;
-  const provinces = new Set(schools.map((s) => s.province).filter(Boolean)).size || 56;
+  const generalSchools = schools.length || 143;
+  const provinces = new Set(schools.map((s) => s.province).filter(Boolean)).size || 35;
+  const vocationalSchools = 10;
 
   return (
-    <AboutProjectView
-      totalSchools={totalSchools}
-      provinces={provinces}
-      volunteers={312}
-      totalStudents={totalStudents}
-      errorMsg={errorMsg}
-    />
+    <>
+      {errorMsg && (
+        <div className="page-shell pt-4">
+          <div className="ed-card p-3 text-amber-800 bg-amber-50 text-sm">
+            ใช้ตัวเลขประมาณการบางส่วน — {errorMsg}
+          </div>
+        </div>
+      )}
+      <AboutProjectMockup
+        generalSchools={generalSchools}
+        vocationalSchools={vocationalSchools}
+        provinces={provinces}
+      />
+    </>
   );
 }

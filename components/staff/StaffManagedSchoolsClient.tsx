@@ -232,11 +232,11 @@ export function StaffManagedSchoolsClient({ schools, staffName }: Props) {
             </button>
           </aside>
 
-          <section className="space-y-3">
+          <section className="space-y-3 ed-card p-4">
+            <h2 className="ed-section-title m-0 text-base">
+              รายชื่อโรงเรียน ({filtered.length} แห่ง)
+            </h2>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="ed-section-title m-0 text-base">
-                รายชื่อโรงเรียน ({filtered.length} แห่ง)
-              </h2>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -252,17 +252,17 @@ export function StaffManagedSchoolsClient({ schools, staffName }: Props) {
                 >
                   <List size={14} /> รายการ
                 </button>
-                <select
-                  className="form-input"
-                  style={{ width: 'auto', minHeight: '2.4rem' }}
-                  value={sort}
-                  onChange={(e) => setSort(e.target.value as typeof sort)}
-                >
-                  <option value="score-asc">คะแนนต่ำ → สูง</option>
-                  <option value="score-desc">คะแนนสูง → ต่ำ</option>
-                  <option value="name">ชื่อโรงเรียน</option>
-                </select>
               </div>
+              <select
+                className="form-input ml-auto"
+                style={{ width: 'auto', minHeight: '2.4rem' }}
+                value={sort}
+                onChange={(e) => setSort(e.target.value as typeof sort)}
+              >
+                <option value="score-asc">คะแนนต่ำ → สูง</option>
+                <option value="score-desc">คะแนนสูง → ต่ำ</option>
+                <option value="name">ชื่อโรงเรียน</option>
+              </select>
             </div>
 
             {filtered.length === 0 ? (
@@ -293,6 +293,11 @@ export function StaffManagedSchoolsClient({ schools, staffName }: Props) {
                             {s.province || '—'}
                             {s.district ? ` · ${s.district}` : ''}
                           </div>
+                          {(s.area_name || s.Gov_Domain?.area_name) && (
+                            <div className="text-xs text-slate-500 mt-1">
+                              เขตพื้นที่การศึกษา: {s.area_name || s.Gov_Domain?.area_name}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-end justify-between gap-2">
                           <div>
@@ -326,7 +331,7 @@ export function StaffManagedSchoolsClient({ schools, staffName }: Props) {
                             ดูข้อมูลโรงเรียน
                           </Link>
                           <Link
-                            href={`/staff/calendar`}
+                            href={`/calendar/new?school_id=${encodeURIComponent(String(s.school_id))}`}
                             className="ed-btn ed-btn--primary ed-btn--sm"
                           >
                             เตรียมลงพื้นที่

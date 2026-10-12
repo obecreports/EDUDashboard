@@ -1,21 +1,22 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   AlertTriangle,
   MapPin,
+  MessageSquarePlus,
   Phone,
-  Printer,
   UserRound,
 } from 'lucide-react';
-import { createCalendarEventAction } from '@/app/actions/visits';
 import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
-import { VISIT_ACTIVITIES, normalizeActivity, normalizeStatus } from '@/lib/visits/labels';
+import type { UserRole } from '@/lib/types';
+import { normalizeActivity, normalizeStatus } from '@/lib/visits/labels';
 import { statusFromScore } from '@/lib/theme/status';
 
 type SchoolOpt = {
@@ -33,8 +34,31 @@ type SchoolOpt = {
   director?: string;
 };
 
+type PersonOpt = {
+  id: string;
+  full_name: string;
+  role: UserRole;
+  role_label: string;
+};
+
+type RangePreset = 'today' | 'this-week' | 'next-week' | 'this-month' | 'next-month' | 'custom';
+
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function startOfWeek(d: Date) {
+  const x = new Date(d);
+  const day = (x.getDay() + 6) % 7;
+  x.setDate(x.getDate() - day);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
 }
 
 function formatThaiShort(dateStr: string) {
@@ -45,38 +69,161 @@ function formatThaiShort(dateStr: string) {
   });
 }
 
+function rangeForPreset(preset: RangePreset, anchor: Date): { from: string; to: string } {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (preset === 'today') return { from: ymd(today), to: ymd(today) };
+  if (preset === 'this-week') {
+    const start = startOfWeek(today);
+    return { from: ymd(start), to: ymd(addDays(start, 6)) };
+  }
+  if (preset === 'next-week') {
+    const start = addDays(startOfWeek(today), 7);
+    return { from: ymd(start), to: ymd(addDays(start, 6)) };
+  }
+  if (preset === 'this-month') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    return { from: ymd(start), to: ymd(end) };
+  }
+  if (preset === 'next-month') {
+    const start = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+    return { from: ymd(start), to: ymd(end) };
+  }
+  const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+  return { from: ymd(start), to: ymd(end) };
+}
+
+const PRESETS: { key: RangePreset; label: string }[] = [
+  { key: 'today', label: 'วันนี้' },
+  { key: 'this-week', label: 'สัปดาห์นี้' },
+  { key: 'next-week', label: 'สัปดาห์หน้า' },
+  { key: 'this-month', label: 'เดือนนี้' },
+  { key: 'next-month', label: 'เดือนหน้า' },
+];
+
+const SCHEDULE_PAGE_SIZE = 10;
+
 export function StaffVisitHubClient({
   events: initial,
   schools,
   managedCount,
+  currentUserId,
+  people = [],
+  focusDate = '',
 }: {
   events: StaffCalendarEvent[];
   schools: SchoolOpt[];
   managedCount: number;
+  currentUserId: string;
+  people?: PersonOpt[];
+  /** Optional YYYY-MM-DD to focus after creating a schedule */
+  focusDate?: string;
 }) {
   const today = ymd(new Date());
   const [events, setEvents] = useState(initial);
-  const [cursor, setCursor] = useState(() => new Date());
-  const [selectedId, setSelectedId] = useState<string | null>(initial[0]?.id ?? null);
-  const [pending, start] = useTransition();
-  const [showCreate, setShowCreate] = useState(false);
+  const [cursor, setCursor] = useState(() => {
+    if (focusDate && /^\d{4}-\d{2}-\d{2}$/.test(focusDate)) {
+      const d = new Date(focusDate + 'T12:00:00');
+      if (!Number.isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), 1);
+    }
+    return new Date();
+  });
+  const [preset, setPreset] = useState<RangePreset>(
+    focusDate && /^\d{4}-\d{2}-\d{2}$/.test(focusDate) ? 'custom' : 'this-month'
+  );
+  const [range, setRange] = useState(() =>
+    focusDate && /^\d{4}-\d{2}-\d{2}$/.test(focusDate)
+      ? { from: focusDate, to: focusDate }
+      : rangeForPreset('this-month', new Date())
+  );
+  const [scopeView, setScopeView] = useState<'mine' | 'chain'>('chain');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [listPage, setListPage] = useState(1);
 
-  const waiting = events.filter((e) => normalizeStatus(e.status_th ?? e.status) === 'นัดหมายแล้ว').length;
-  const done = events.filter((e) => normalizeStatus(e.status_th ?? e.status) === 'เยี่ยมชมเสร็จสิ้น').length;
-  const progress = managedCount ? Math.min(100, Math.round(((done || waiting) / managedCount) * 100)) : 0;
+  useEffect(() => {
+    setEvents(initial);
+  }, [initial]);
+
+  useEffect(() => {
+    if (!focusDate || !/^\d{4}-\d{2}-\d{2}$/.test(focusDate)) return;
+    setPreset('custom');
+    setRange({ from: focusDate, to: focusDate });
+    const d = new Date(focusDate + 'T12:00:00');
+    if (!Number.isNaN(d.getTime())) {
+      setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+  }, [focusDate]);
+
+  const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+
+  const scopedEvents = useMemo(
+    () =>
+      scopeView === 'mine' ? events.filter((e) => e.staff_id === currentUserId) : events,
+    [events, scopeView, currentUserId]
+  );
+
+  const waiting = scopedEvents.filter((e) => normalizeStatus(e.status_th ?? e.status) === 'นัดหมายแล้ว').length;
+  const done = scopedEvents.filter((e) => normalizeStatus(e.status_th ?? e.status) === 'เยี่ยมชมเสร็จสิ้น').length;
+
+  const personLabel = (staffId: string) => {
+    const p = peopleById.get(staffId);
+    if (!p) return { name: staffId === currentUserId ? 'ฉัน' : 'ไม่ระบุ', role: '', isMe: staffId === currentUserId };
+    return {
+      name: staffId === currentUserId ? `${p.full_name} (ฉัน)` : p.full_name,
+      role: p.role_label,
+      isMe: staffId === currentUserId,
+    };
+  };
+
+  const applyPreset = (key: RangePreset) => {
+    setPreset(key);
+    // Always anchor presets to "today" so month/week switches don't stick to an old cursor
+    const next = rangeForPreset(key, new Date());
+    setRange(next);
+    const d = new Date(next.from + 'T12:00:00');
+    if (!Number.isNaN(d.getTime())) {
+      setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+  };
 
   const upcoming = useMemo(
     () =>
-      [...events]
+      [...scopedEvents]
         .filter((e) => e.date >= today)
         .sort((a, b) => a.date.localeCompare(b.date))
         .slice(0, 8),
-    [events, today]
+    [scopedEvents, today]
   );
 
-  const selected = events.find((e) => e.id === selectedId) ?? upcoming[0] ?? events[0] ?? null;
-  const selectedSchool = schools.find((s) => s.id === selected?.school_id);
-  const schoolStatus = statusFromScore(selectedSchool?.overallScore);
+  const rangedEvents = useMemo(
+    () =>
+      [...scopedEvents]
+        .filter((e) => e.date >= range.from && e.date <= range.to)
+        .sort(
+          (a, b) =>
+            a.date.localeCompare(b.date) ||
+            (a.created_at || '').localeCompare(b.created_at || '') ||
+            (a.school_name || '').localeCompare(b.school_name || '', 'th')
+        ),
+    [scopedEvents, range]
+  );
+
+  const totalListPages = Math.max(1, Math.ceil(rangedEvents.length / SCHEDULE_PAGE_SIZE));
+  const pagedEvents = rangedEvents.slice(
+    (listPage - 1) * SCHEDULE_PAGE_SIZE,
+    listPage * SCHEDULE_PAGE_SIZE
+  );
+
+  useEffect(() => {
+    setListPage(1);
+  }, [range.from, range.to, scopeView, preset]);
+
+  useEffect(() => {
+    if (listPage > totalListPages) setListPage(totalListPages);
+  }, [listPage, totalListPages]);
 
   const monthLabel = cursor.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
   const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
@@ -84,28 +231,25 @@ export function StaffVisitHubClient({
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, StaffCalendarEvent[]>();
-    events.forEach((e) => {
+    scopedEvents.forEach((e) => {
       const list = map.get(e.date) ?? [];
       list.push(e);
       map.set(e.date, list);
     });
     return map;
-  }, [events]);
+  }, [scopedEvents]);
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div>
-      <header className="ed-page-hero">
-        <div className="ed-page-hero__inner">
-          <div>
-            <h1>การลงพื้นที่</h1>
-            <p>วางแผน ติดตาม และบันทึกผลการเยี่ยมชมโรงเรียนในความดูแล</p>
-          </div>
-          <p className="ed-card p-3 max-w-sm text-sm text-slate-600 m-0">
-            ทุกการลงพื้นที่ คือก้าวสำคัญของการพัฒนาคุณภาพการศึกษา
-          </p>
-        </div>
-      </header>
-
       <div className="page-shell py-5 space-y-5">
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
           <div className="status-card">
@@ -148,13 +292,76 @@ export function StaffVisitHubClient({
           </div>
         </div>
 
-        <div className="ed-card p-4">
-          <div className="flex justify-between text-sm font-semibold mb-2">
-            <span>ความก้าวหน้าการลงพื้นที่</span>
-            <span className="text-tm-blue">{progress}%</span>
+        <div className="ed-card p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong className="text-sm">มุมมอง</strong>
+            <div className="score-mode-switch" role="group" aria-label="ขอบเขตตารางนัด">
+              <button
+                type="button"
+                className={scopeView === 'mine' ? 'is-active' : ''}
+                onClick={() => setScopeView('mine')}
+              >
+                นัดของฉัน
+              </button>
+              <button
+                type="button"
+                className={scopeView === 'chain' ? 'is-active' : ''}
+                onClick={() => setScopeView('chain')}
+              >
+                นัดทั้งหมด
+              </button>
+            </div>
           </div>
-          <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
-            <div className="h-full rounded-full bg-emerald-500" style={{ width: `${progress}%` }} />
+          <div className="flex flex-wrap items-center gap-2">
+            <strong className="text-sm">ช่วงวันที่</strong>
+            {PRESETS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                className={`navbar__link ${preset === p.key ? 'navbar__link--active' : ''}`}
+                onClick={() => applyPreset(p.key)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-3 items-end">
+            <label className="text-sm font-semibold grid gap-1">
+              จาก
+              <input
+                type="date"
+                className="form-input"
+                value={range.from}
+                onChange={(e) => {
+                  setPreset('custom');
+                  setRange((r) => ({ ...r, from: e.target.value }));
+                  const d = new Date(e.target.value + 'T12:00:00');
+                  if (!Number.isNaN(d.getTime())) setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+                }}
+              />
+            </label>
+            <label className="text-sm font-semibold grid gap-1">
+              ถึง
+              <input
+                type="date"
+                className="form-input"
+                value={range.to}
+                onChange={(e) => {
+                  setPreset('custom');
+                  setRange((r) => ({ ...r, to: e.target.value }));
+                }}
+              />
+            </label>
+            <Link
+              href={
+                range.from === range.to
+                  ? `/calendar/new?date=${encodeURIComponent(range.from)}`
+                  : '/calendar/new'
+              }
+              className="ed-btn ed-btn--primary ed-btn--sm"
+            >
+              <CalendarDays size={14} /> เพิ่มนัดหมาย
+            </Link>
           </div>
         </div>
 
@@ -167,14 +374,24 @@ export function StaffVisitHubClient({
                   <button
                     type="button"
                     className="navbar__link"
-                    onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
+                    onClick={() => {
+                      const next = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+                      setCursor(next);
+                      setPreset('custom');
+                      setRange(rangeForPreset('custom', next));
+                    }}
                   >
                     ‹
                   </button>
                   <button
                     type="button"
                     className="navbar__link"
-                    onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
+                    onClick={() => {
+                      const next = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+                      setCursor(next);
+                      setPreset('custom');
+                      setRange(rangeForPreset('custom', next));
+                    }}
                   >
                     ›
                   </button>
@@ -194,46 +411,85 @@ export function StaffVisitHubClient({
                   const dateStr = ymd(new Date(cursor.getFullYear(), cursor.getMonth(), day));
                   const dayEvents = eventsByDate.get(dateStr) ?? [];
                   const isToday = dateStr === today;
+                  const inRange = dateStr >= range.from && dateStr <= range.to;
+                  const hasMine = dayEvents.some((e) => e.staff_id === currentUserId);
+                  const hasOther = dayEvents.some((e) => e.staff_id !== currentUserId);
+                  const ownerClass =
+                    hasMine && hasOther
+                      ? 'ed-mini-cal__day--has-both'
+                      : hasMine
+                        ? 'ed-mini-cal__day--has-mine'
+                        : hasOther
+                          ? 'ed-mini-cal__day--has-other'
+                          : '';
                   return (
                     <button
                       key={dateStr}
                       type="button"
-                      className={`ed-mini-cal__day ${isToday ? 'ed-mini-cal__day--today' : ''}`}
+                      className={`ed-mini-cal__day ${isToday ? 'ed-mini-cal__day--today' : ''} ${
+                        inRange ? 'ed-mini-cal__day--range' : ''
+                      } ${ownerClass}`}
                       onClick={() => {
-                        if (dayEvents[0]) setSelectedId(dayEvents[0].id);
+                        setPreset('custom');
+                        setRange({ from: dateStr, to: dateStr });
+                        if (dayEvents.length) {
+                          setExpandedIds(new Set(dayEvents.map((e) => e.id)));
+                        }
                       }}
                     >
-                      {day}
-                      {dayEvents.length > 0 && <span className="ed-mini-cal__dot" />}
+                      <span className="ed-mini-cal__day-num">{day}</span>
+                      {dayEvents.length > 1 ? (
+                        <span className="ed-mini-cal__day-count" aria-label={`${dayEvents.length} นัด`}>
+                          {dayEvents.length}
+                        </span>
+                      ) : null}
                     </button>
                   );
                 })}
+              </div>
+              <div className="cal-owner-legend mt-3">
+                <span>
+                  <i style={{ background: '#166534' }} /> นัดของฉัน
+                </span>
+                <span>
+                  <i style={{ background: '#991b1b' }} /> นัดของผู้อื่น
+                </span>
               </div>
             </section>
 
             <section className="ed-card p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="ed-section-title text-base m-0">รายการลงพื้นที่ (เร็วๆ นี้)</h2>
-                <button type="button" className="ed-btn ed-btn--primary ed-btn--sm" onClick={() => setShowCreate(true)}>
-                  <CalendarDays size={14} /> เพิ่ม
-                </button>
               </div>
               {upcoming.length === 0 ? (
                 <p className="text-sm text-slate-500 m-0">ยังไม่มีนัดหมาย</p>
               ) : (
                 upcoming.map((e) => {
                   const st = normalizeStatus(e.status_th ?? e.status);
+                  const mine = e.staff_id === currentUserId;
                   return (
                     <button
                       key={e.id}
                       type="button"
-                      className={`ed-visit-item ${selected?.id === e.id ? 'ed-visit-item--on' : ''}`}
-                      onClick={() => setSelectedId(e.id)}
+                      className={`ed-visit-item ${mine ? 'ed-visit-item--mine' : 'ed-visit-item--other'}`}
+                      onClick={() => {
+                        setPreset('custom');
+                        setRange({ from: e.date, to: e.date });
+                        setExpandedIds(new Set([e.id]));
+                        const d = new Date(e.date + 'T12:00:00');
+                        setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+                      }}
                     >
                       <div className="ed-visit-item__date">{formatThaiShort(e.date)}</div>
                       <div className="min-w-0 text-left">
                         <div className="font-semibold truncate">{e.school_name || 'ไม่ระบุโรงเรียน'}</div>
-                        <div className="text-xs text-slate-500">{normalizeActivity(String(e.activity))}</div>
+                        <div className="text-xs text-slate-500">
+                          {normalizeActivity(String(e.activity))}
+                          {' · '}
+                          <span className={mine ? 'owner-name--mine' : 'owner-name--other'}>
+                            {mine ? 'ของฉัน' : 'ผู้อื่น'}
+                          </span>
+                        </div>
                       </div>
                       <span className={`cal-badge ${st === 'เยี่ยมชมเสร็จสิ้น' ? 'cal-badge--done' : 'cal-badge--sched'}`}>
                         {st}
@@ -245,173 +501,174 @@ export function StaffVisitHubClient({
             </section>
           </aside>
 
-          <section className="ed-card p-5 space-y-4">
-            {!selected ? (
-              <p className="text-slate-500 m-0">เลือกนัดหมายจากรายการทางซ้าย เพื่อดูรายละเอียด</p>
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="ed-section-title text-base m-0">
+                นัดหมายในช่วงที่เลือก ({rangedEvents.length})
+              </h2>
+              <span className="text-xs text-slate-500">
+                {formatThaiShort(range.from)} – {formatThaiShort(range.to)} · คลิกการ์ดเพื่อขยาย
+              </span>
+            </div>
+
+            {rangedEvents.length === 0 ? (
+              <div className="ed-card p-5 text-slate-500">ไม่มีนัดหมายในช่วงวันที่นี้</div>
             ) : (
               <>
-                <div className="flex flex-wrap gap-4 justify-between">
-                  <div>
-                    <h2 className="text-xl font-extrabold text-tm-blue m-0">
-                      {selected.school_name || selectedSchool?.name || 'โรงเรียน'}
-                    </h2>
-                    <div className="text-sm text-slate-500 mt-1 flex items-center gap-1">
-                      <MapPin size={14} />
-                      {selectedSchool?.province || selected.province || '—'}
-                      {selectedSchool?.district ? ` · ${selectedSchool.district}` : ''}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      ขนาด {selectedSchool?.size || '—'} · นักเรียน{' '}
-                      {(selectedSchool?.students ?? 0).toLocaleString()} · ครู{' '}
-                      {(selectedSchool?.teachers ?? 0).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-extrabold text-tm-blue">
-                      {(selectedSchool?.overallScore ?? 0).toFixed(2)}
-                      <span className="text-sm text-slate-400"> / 5.00</span>
-                    </div>
-                    <span className="ed-badge" style={{ background: schoolStatus.bg, color: schoolStatus.color }}>
-                      {schoolStatus.label}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="ed-visit-steps">
-                  {['เตรียมลงพื้นที่', 'ระหว่างลงพื้นที่', 'สรุปผลและข้อเสนอแนะ', 'ติดตามผล'].map(
-                    (label, i) => (
-                      <div key={label} className={`ed-visit-step ${i === 0 ? 'ed-visit-step--on' : ''}`}>
-                        <span>{i + 1}</span>
-                        {label}
+              {pagedEvents.map((e) => {
+                const open = expandedIds.has(e.id);
+                const st = normalizeStatus(e.status_th ?? e.status);
+                const school = schools.find((s) => s.id === e.school_id);
+                const schoolStatus = statusFromScore(school?.overallScore);
+                const booker = personLabel(e.staff_id);
+                return (
+                  <article
+                    key={e.id}
+                    className={`ed-card visit-booking-card ${open ? 'is-open' : ''} ${
+                      booker.isMe ? 'visit-booking-card--mine' : 'visit-booking-card--other'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      className="visit-booking-card__head"
+                      aria-expanded={open}
+                      onClick={() => toggleExpand(e.id)}
+                    >
+                      <div className="visit-booking-card__date">{formatThaiShort(e.date)}</div>
+                      <div className="min-w-0 text-left flex-1">
+                        <div className="font-bold text-tm-blue truncate">
+                          {e.school_name || school?.name || 'โรงเรียน'}
+                        </div>
+                        <div className="text-xs text-slate-500 truncate">
+                          {normalizeActivity(String(e.activity))}
+                          {' · '}
+                          <span className={booker.isMe ? 'owner-name--mine' : 'owner-name--other'}>
+                            {booker.name}
+                          </span>
+                          {booker.role ? ` · ${booker.role}` : ''}
+                        </div>
                       </div>
-                    )
-                  )}
-                </div>
-
-                <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-                  <div className="space-y-3">
-                    <h3 className="font-bold text-tm-blue m-0">ข้อมูลก่อนลงพื้นที่</h3>
-                    <div className="rounded-xl border border-slate-100 p-3 text-sm space-y-2">
-                      <div className="flex items-center gap-2">
-                        <UserRound size={16} className="text-tm-blue" />
-                        ผู้อำนวยการ: {selectedSchool?.director || '—'}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Phone size={16} className="text-tm-blue" />
-                        โทร: {selectedSchool?.phone || '—'}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <MapPin size={16} className="text-tm-blue" />
-                        {selectedSchool?.province || '—'}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-slate-100 p-3 text-sm">
-                      <strong>กำหนดการ</strong>
-                      <div className="mt-1 text-slate-600">
-                        {formatThaiShort(selected.date)} · {normalizeActivity(String(selected.activity))}
-                      </div>
-                      {selected.notes && <div className="mt-1 text-slate-500">{selected.notes}</div>}
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <h3 className="font-bold text-tm-blue m-0">เอกสารและทรัพยากร</h3>
-                    <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                      {['สรุปโรงเรียน (PDF)', 'รายงาน KPI & SWOT', 'คำแนะนำการเยี่ยม', 'Google Map'].map(
-                        (t) => (
-                          <div key={t} className="rounded-xl bg-slate-50 border border-slate-100 p-3 text-xs font-semibold text-tm-blue">
-                            {t}
+                      <span className={`cal-badge ${st === 'เยี่ยมชมเสร็จสิ้น' ? 'cal-badge--done' : 'cal-badge--sched'}`}>
+                        {st}
+                      </span>
+                      <ChevronDown
+                        size={16}
+                        className={`visit-booking-card__chevron ${open ? 'is-open' : ''}`}
+                      />
+                    </button>
+                    {open && (
+                      <div className="visit-booking-card__body space-y-3">
+                        <div className="flex flex-wrap gap-4 justify-between">
+                          <div className="text-sm text-slate-600 space-y-1">
+                            <div className="flex items-center gap-1">
+                              <UserRound size={14} />
+                              ผู้จอง:{' '}
+                              <strong className={booker.isMe ? 'owner-name--mine' : 'owner-name--other'}>
+                                {booker.name}
+                              </strong>
+                              {booker.role ? ` (${booker.role})` : ''}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <MapPin size={14} />
+                              {[school?.district, school?.province || e.province].filter(Boolean).join(' · ') || '—'}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Phone size={14} />
+                              {school?.phone || '—'}
+                            </div>
                           </div>
-                        )
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2 pt-2">
-                      <Link
-                        href={selected.school_id ? `/schools/${selected.school_id}` : '/schools'}
-                        className="ed-btn ed-btn--primary"
-                      >
-                        เริ่มบันทึกการลงพื้นที่
-                      </Link>
-                      <button type="button" className="ed-btn ed-btn--outline">
-                        <Printer size={16} /> พิมพ์เอกสารเตรียมลงพื้นที่
-                      </button>
-                    </div>
+                          <div className="text-right">
+                            <div className="text-xl font-extrabold text-tm-blue">
+                              {(school?.overallScore ?? 0).toFixed(2)}
+                              <span className="text-sm text-slate-400"> / 5</span>
+                            </div>
+                            <span
+                              className="ed-badge"
+                              style={{ background: schoolStatus.bg, color: schoolStatus.color }}
+                            >
+                              {schoolStatus.label}
+                            </span>
+                          </div>
+                        </div>
+                        {e.notes && (
+                          <p className="text-sm m-0 rounded-xl bg-slate-50 border border-slate-100 p-3">
+                            {e.notes}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <Link
+                            href={e.school_id ? `/schools/${e.school_id}` : '/schools'}
+                            className="ed-btn ed-btn--primary ed-btn--sm"
+                          >
+                            ดูรายละเอียดโรงเรียน
+                          </Link>
+                          <Link
+                            href={
+                              e.school_id
+                                ? `/reports/new?school_id=${encodeURIComponent(e.school_id)}`
+                                : '/reports/new'
+                            }
+                            className="ed-btn ed-btn--outline ed-btn--sm"
+                          >
+                            <MessageSquarePlus size={14} /> เพิ่มความคิดเห็น
+                          </Link>
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+              {rangedEvents.length > SCHEDULE_PAGE_SIZE ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <span className="text-xs text-slate-500">
+                    แสดง {(listPage - 1) * SCHEDULE_PAGE_SIZE + 1}–
+                    {Math.min(listPage * SCHEDULE_PAGE_SIZE, rangedEvents.length)} จาก{' '}
+                    {rangedEvents.length} รายการ
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      className="ed-btn ed-btn--outline ed-btn--sm"
+                      disabled={listPage <= 1}
+                      onClick={() => setListPage((p) => Math.max(1, p - 1))}
+                    >
+                      ก่อนหน้า
+                    </button>
+                    {Array.from({ length: totalListPages }, (_, i) => i + 1)
+                      .filter((n) => {
+                        if (totalListPages <= 5) return true;
+                        const start = Math.max(1, Math.min(listPage - 2, totalListPages - 4));
+                        return n >= start && n < start + 5;
+                      })
+                      .map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          className={`ed-btn ed-btn--sm ${
+                            n === listPage ? 'ed-btn--primary' : 'ed-btn--outline'
+                          }`}
+                          onClick={() => setListPage(n)}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    <button
+                      type="button"
+                      className="ed-btn ed-btn--outline ed-btn--sm"
+                      disabled={listPage >= totalListPages}
+                      onClick={() => setListPage((p) => Math.min(totalListPages, p + 1))}
+                    >
+                      ถัดไป
+                    </button>
                   </div>
                 </div>
+              ) : null}
               </>
             )}
           </section>
         </div>
       </div>
 
-      {showCreate && (
-        <div className="senior-cal__modal" role="dialog" aria-modal>
-          <div className="senior-cal__modal-card">
-            <h3 className="senior-cal__modal-title">เพิ่มวันลงพื้นที่</h3>
-            <form
-              className="space-y-4 mt-4"
-              action={(fd) => {
-                start(async () => {
-                  const schoolId = String(fd.get('school_id') || '');
-                  const s = schools.find((x) => x.id === schoolId);
-                  if (s) {
-                    fd.set('school_name', s.name);
-                    fd.set('area_id', s.area_id);
-                    fd.set('area_name', s.area_name);
-                    fd.set('province', s.province);
-                  }
-                  fd.set('status', 'นัดหมายแล้ว');
-                  const res = await createCalendarEventAction(fd);
-                  if (res.ok && res.event) {
-                    setEvents((prev) => [...prev, res.event!]);
-                    setSelectedId(res.event.id);
-                  }
-                  setShowCreate(false);
-                });
-              }}
-            >
-              <label className="senior-cal__field">
-                เลือกโรงเรียน
-                <select name="school_id" className="form-input senior-cal__input" required defaultValue="">
-                  <option value="" disabled>
-                    — เลือก —
-                  </option>
-                  {schools.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="senior-cal__field">
-                วันที่
-                <input name="date" type="date" className="form-input senior-cal__input" required defaultValue={today} />
-              </label>
-              <label className="senior-cal__field">
-                ประเภทกิจกรรม
-                <select name="activity" className="form-input senior-cal__input" defaultValue={VISIT_ACTIVITIES[0]}>
-                  {VISIT_ACTIVITIES.map((a) => (
-                    <option key={a} value={a}>
-                      {a}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="senior-cal__field">
-                หมายเหตุ
-                <textarea name="notes" className="form-input senior-cal__input" rows={2} />
-              </label>
-              <div className="flex gap-2">
-                <button type="submit" className="ed-btn ed-btn--primary" disabled={pending}>
-                  บันทึกข้อมูล
-                </button>
-                <button type="button" className="ed-btn ed-btn--outline" onClick={() => setShowCreate(false)}>
-                  ยกเลิก
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

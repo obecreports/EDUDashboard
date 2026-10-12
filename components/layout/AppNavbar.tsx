@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
 import {
   Home,
@@ -14,7 +14,6 @@ import {
   CalendarDays,
   ClipboardPen,
   Network,
-  Activity,
   Settings,
   Users,
   UserRound,
@@ -24,38 +23,83 @@ import {
   FileText,
   Menu,
   X,
+  Layers,
+  Database,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { navForRole, ROLE_LABELS, type UserRole } from '@/lib/types';
-import { DROPDOWN_ONLY_HREFS, STAFF_DROPDOWN_HREFS } from '@/lib/auth/mock-users';
+import {
+  NAV_CATALOG,
+  navForRole,
+  ROLE_LABELS,
+  normalizeRole,
+  type NavItem,
+  type UserRole,
+} from '@/lib/types';
+import { DROPDOWN_ONLY_HREFS } from '@/lib/auth/mock-users';
+import { isAdminRole, isFieldRole } from '@/lib/auth/scope';
 import { logoutAction } from '@/app/actions/auth';
 
 const ICONS: Record<string, LucideIcon> = {
   '/': Home,
   '/about': Info,
+  '/pillars': Hexagon,
   '/strategy': Hexagon,
-  '/overview': Hexagon,
   '/schools': School,
+  '/schools/public': School,
   '/thailand-map': Map,
-  '/staff/calendar': CalendarDays,
-  '/staff/reports': FileText,
+  '/calendar': CalendarDays,
   '/reports': FileText,
-  '/staff/dashboard': Briefcase,
-  '/staff/update-school': ClipboardPen,
-  '/manage-schools': Network,
-  '/overseer/progress': Activity,
+  '/dashboard': Briefcase,
+  '/tickets': ClipboardPen,
   '/admin/accounts': Users,
+  '/admin/domain': Network,
+  '/admin/schools': School,
+  '/admin/tickets': ClipboardPen,
+  '/admin/settings': Settings,
 };
 
-const MAIN_BAR_HREFS = new Set([
-  '/',
-  '/about',
-  '/strategy',
-  '/thailand-map',
-  '/schools',
-  '/staff/calendar',
-  '/staff/reports',
-]);
+/** ภาพรวมด้านต่างๆ — 3 pillars + 5 strategies */
+const OVERVIEW_GROUP: NavItem[] = [
+  { href: '/pillars', label: 'ภาพรวม 3 เสาหลัก', roles: [] },
+  { href: '/strategy', label: 'ภาพรวม 5 กลยุทธ์', roles: [] },
+];
+
+/** ข้อมูลรายละเอียด — map + school list */
+const DETAIL_GROUP_GUEST: NavItem[] = [
+  { href: '/thailand-map', label: 'แผนที่', roles: [] },
+  { href: '/schools', label: 'โรงเรียนในโครงการ', roles: [] },
+];
+
+const DETAIL_GROUP_AUTH: NavItem[] = [
+  { href: '/thailand-map', label: 'แผนที่', roles: [] },
+  { href: '/schools/public', label: 'โรงเรียนในโครงการ (สาธารณะ)', roles: [] },
+];
+
+/** Extra public links for logged-in users (under overview group) */
+const OVERVIEW_GROUP_AUTH: NavItem[] = [
+  { href: '/', label: 'หน้าหลัก', roles: [], end: true },
+  { href: '/about', label: 'เกี่ยวกับโครงการ', roles: [] },
+  ...OVERVIEW_GROUP,
+];
+
+/** Main bar before/after จัดการโรงเรียน group (field roles) */
+const AUTH_MAIN_BEFORE = ['/dashboard'] as const;
+const AUTH_MAIN_AFTER = ['/tickets'] as const;
+
+/** จัดการโรงเรียน — domain schools + calendar + reports (logged-in field roles) */
+const MANAGE_SCHOOLS_HREFS = ['/schools', '/calendar', '/reports'] as const;
+
+/** Admin main bar around groups — settings only for super_admin */
+const ADMIN_MAIN_BEFORE = ['/schools'] as const;
+const ADMIN_MAIN_AFTER = ['/admin/settings'] as const;
+
+/** จัดการข้อมูล — school detail edit + tickets */
+const MANAGE_DATA_HREFS = ['/admin/schools', '/admin/tickets'] as const;
+
+/** จัดการผู้ใช้งาน — assign domain + manage accounts */
+const MANAGE_USERS_HREFS = ['/admin/domain', '/admin/accounts'] as const;
+
+type OpenMenu = 'overview' | 'detail' | 'manage' | 'data' | 'users' | null;
 
 export function AppNavbar({
   role,
@@ -69,42 +113,116 @@ export function AppNavbar({
   mustChangePassword: boolean;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [accountOpen, setAccountOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [fontScale, setFontScale] = useState(100);
   const accountRef = useRef<HTMLDivElement>(null);
+  const overviewRef = useRef<HTMLLIElement>(null);
+  const detailRef = useRef<HTMLLIElement>(null);
+  const manageRef = useRef<HTMLLIElement>(null);
+  const dataRef = useRef<HTMLLIElement>(null);
+  const usersRef = useRef<HTMLLIElement>(null);
   const drawerId = useId();
 
-  const items = navForRole(role).filter((item) => {
-    if (DROPDOWN_ONLY_HREFS.has(item.href)) return false;
-    if (role === 'staff' && STAFF_DROPDOWN_HREFS.has(item.href)) return false;
-    if (!MAIN_BAR_HREFS.has(item.href)) return false;
-    if (!isAuthenticated && (item.href.startsWith('/staff/') || item.href === '/reports')) {
-      return false;
+  const normalizedRole = normalizeRole(role);
+  const catalog = navForRole(normalizedRole).filter((item) => !DROPDOWN_ONLY_HREFS.has(item.href));
+
+  const byHref = (href: string) => {
+    const item = catalog.find((i) => i.href === href) ?? NAV_CATALOG.find((i) => i.href === href);
+    if (!item) return undefined;
+    if (href === '/schools' && isAuthenticated && isFieldRole(normalizedRole)) {
+      return { ...item, label: 'โรงเรียนภายใต้ขอบเขต' };
     }
+    return item;
+  };
+
+  let mainBefore: NavItem[] = [];
+  let mainAfter: NavItem[] = [];
+  let showPublicGroups = false;
+  let showManageGroup = false;
+  let showDataGroup = false;
+  let showUsersGroup = false;
+  let overviewGroup: NavItem[] = OVERVIEW_GROUP;
+  let detailGroup: NavItem[] = DETAIL_GROUP_GUEST;
+  let manageGroup: NavItem[] = [];
+  let dataGroup: NavItem[] = [];
+  let usersGroup: NavItem[] = [];
+
+  const filterAdminSettings = (item: NavItem | undefined) => {
+    if (!item) return false;
+    if (item.href === '/admin/settings') return normalizedRole === 'super_admin';
     return true;
-  });
+  };
 
-  const showProfile = role === 'staff' || role === 'overseer' || role === 'admin';
-  const showSettings = role === 'admin';
-  const showManageSchools = role === 'staff';
+  if (isAuthenticated && isFieldRole(normalizedRole)) {
+    mainBefore = AUTH_MAIN_BEFORE.map((h) => byHref(h)).filter(Boolean) as NavItem[];
+    mainAfter = AUTH_MAIN_AFTER.map((h) => byHref(h)).filter(Boolean) as NavItem[];
+    manageGroup = MANAGE_SCHOOLS_HREFS.map((h) => byHref(h)).filter(Boolean) as NavItem[];
+    showManageGroup = manageGroup.length > 0;
+    showPublicGroups = true;
+    overviewGroup = OVERVIEW_GROUP_AUTH;
+    detailGroup = DETAIL_GROUP_AUTH;
+  } else if (isAuthenticated && isAdminRole(normalizedRole)) {
+    mainBefore = ADMIN_MAIN_BEFORE.map((h) => byHref(h)).filter(Boolean) as NavItem[];
+    mainAfter = ADMIN_MAIN_AFTER.map((h) => byHref(h)).filter(filterAdminSettings) as NavItem[];
+    dataGroup = MANAGE_DATA_HREFS.map((h) => byHref(h)).filter(Boolean) as NavItem[];
+    showDataGroup = dataGroup.length > 0;
+    usersGroup = MANAGE_USERS_HREFS.map((h) => byHref(h)).filter(Boolean) as NavItem[];
+    showUsersGroup = usersGroup.length > 0;
+    showPublicGroups = true;
+    overviewGroup = OVERVIEW_GROUP_AUTH;
+    detailGroup = DETAIL_GROUP_AUTH;
+  } else {
+    mainBefore = [
+      byHref('/') ?? { href: '/', label: 'หน้าหลัก', roles: [], end: true },
+      byHref('/about') ?? { href: '/about', label: 'เกี่ยวกับโครงการ', roles: [] },
+    ];
+    showPublicGroups = true;
+    overviewGroup = OVERVIEW_GROUP;
+    detailGroup = DETAIL_GROUP_GUEST;
+  }
 
-  const isActive = (href: string, end?: boolean) =>
-    end
-      ? pathname === '/'
-      : pathname === href ||
-        pathname.startsWith(`${href}/`) ||
-        (href === '/strategy' && pathname.startsWith('/overview'));
+  const showProfile = isFieldRole(normalizedRole) || isAdminRole(normalizedRole);
+
+  const isActive = (href: string, end?: boolean) => {
+    if (end) return pathname === '/';
+    // /schools must not match /schools/public (domain list vs all-schools catalog)
+    if (href === '/schools') {
+      if (pathname === '/schools') return true;
+      if (pathname.startsWith('/schools/public')) return false;
+      return pathname.startsWith('/schools/');
+    }
+    if (href === '/schools/public') {
+      return pathname === '/schools/public' || pathname.startsWith('/schools/public/');
+    }
+    return (
+      pathname === href ||
+      pathname.startsWith(`${href}/`) ||
+      (href === '/strategy' && pathname.startsWith('/overview'))
+    );
+  };
+
+  const overviewActive = overviewGroup.some((i) => isActive(i.href, i.end));
+  const detailActive = detailGroup.some((i) => isActive(i.href, i.end));
+  const manageActive = manageGroup.some((i) => isActive(i.href, i.end));
+  const dataActive = dataGroup.some((i) => isActive(i.href, i.end));
+  const usersActive = usersGroup.some((i) => isActive(i.href, i.end));
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontScale}%`;
   }, [fontScale]);
 
   useEffect(() => {
+    document.documentElement.classList.remove('dark');
+    window.localStorage.removeItem('coned-theme');
+  }, []);
+
+  useEffect(() => {
     setDrawerOpen(false);
     setAccountOpen(false);
+    setOpenMenu(null);
   }, [pathname]);
 
   useEffect(() => {
@@ -115,6 +233,15 @@ export function AppNavbar({
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       if (!accountRef.current?.contains(e.target as Node)) setAccountOpen(false);
+      if (
+        !overviewRef.current?.contains(e.target as Node) &&
+        !detailRef.current?.contains(e.target as Node) &&
+        !manageRef.current?.contains(e.target as Node) &&
+        !dataRef.current?.contains(e.target as Node) &&
+        !usersRef.current?.contains(e.target as Node)
+      ) {
+        setOpenMenu(null);
+      }
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
@@ -148,28 +275,16 @@ export function AppNavbar({
   const accountMenuLinks = (
     <>
       {showProfile && (
-        <Link href="/staff/profile" prefetch className="role-menu__item" onClick={() => { setAccountOpen(false); closeDrawer(); }}>
-          <UserRound size={16} /> โปรไฟล์
-        </Link>
-      )}
-      {showManageSchools && (
-        <Link href="/manage-schools" prefetch className="role-menu__item" onClick={() => { setAccountOpen(false); closeDrawer(); }}>
-          <Network size={16} /> จัดการโรงเรียน
-        </Link>
-      )}
-      {role === 'staff' && (
-        <Link href="/staff/update-school" prefetch className="role-menu__item" onClick={() => { setAccountOpen(false); closeDrawer(); }}>
-          <ClipboardPen size={16} /> อัปเดตโรงเรียน
-        </Link>
-      )}
-      {role === 'staff' && (
-        <Link href="/staff/dashboard" prefetch className="role-menu__item" onClick={() => { setAccountOpen(false); closeDrawer(); }}>
-          <Briefcase size={16} /> แดชบอร์ดเจ้าหน้าที่
-        </Link>
-      )}
-      {showSettings && (
-        <Link href="/admin/settings" prefetch className="role-menu__item" onClick={() => { setAccountOpen(false); closeDrawer(); }}>
-          <Settings size={16} /> ตั้งค่า
+        <Link
+          href="/staff/profile"
+          prefetch
+          className="role-menu__item"
+          onClick={() => {
+            setAccountOpen(false);
+            closeDrawer();
+          }}
+        >
+          <UserRound size={16} /> แก้ไขโปรไฟล์
         </Link>
       )}
       <button
@@ -177,10 +292,14 @@ export function AppNavbar({
         className="role-menu__item"
         onClick={() => {
           startTransition(async () => {
-            await logoutAction();
+            try {
+              await logoutAction();
+            } catch {
+              // redirect() throws; full navigation recovers from bloated cookies
+            }
             setAccountOpen(false);
             closeDrawer();
-            router.refresh();
+            window.location.assign('/');
           });
         }}
       >
@@ -189,28 +308,149 @@ export function AppNavbar({
     </>
   );
 
-  const navLinks = (variant: 'bar' | 'drawer') =>
-    items.map((item) => {
-      const Icon = ICONS[item.href] ?? Home;
-      const active = isActive(item.href, item.end);
-      return (
-        <li key={`${variant}-${item.href}`}>
-          <Link
-            href={item.href}
-            prefetch
-            className={`navbar__link ${active ? 'navbar__link--active' : ''}`}
-            onClick={variant === 'drawer' ? closeDrawer : undefined}
-          >
-            <Icon size={variant === 'drawer' ? 18 : 15} />
-            {item.label}
-          </Link>
-        </li>
-      );
-    });
+  const renderLink = (item: NavItem, variant: 'bar' | 'drawer' | 'dropdown') => {
+    const Icon = ICONS[item.href] ?? Home;
+    const active = isActive(item.href, item.end);
+    const className =
+      variant === 'dropdown'
+        ? `role-menu__item ${active ? 'role-menu__item--active' : ''}`
+        : `navbar__link ${active ? 'navbar__link--active' : ''}`;
+    return (
+      <Link
+        key={`${variant}-${item.href}`}
+        href={item.href}
+        prefetch
+        className={className}
+        onClick={() => {
+          setOpenMenu(null);
+          if (variant === 'drawer') closeDrawer();
+        }}
+      >
+        <Icon size={variant === 'drawer' ? 18 : 15} />
+        {item.label}
+      </Link>
+    );
+  };
+
+  const renderGroup = (
+    key: Exclude<OpenMenu, null>,
+    label: string,
+    Icon: LucideIcon,
+    items: NavItem[],
+    active: boolean,
+    ref: React.RefObject<HTMLLIElement | null>
+  ) => (
+    <li className="ed-nav-explore relative" ref={ref}>
+      <button
+        type="button"
+        className={`navbar__link ed-nav-explore__btn ${active || openMenu === key ? 'navbar__link--active' : ''}`}
+        aria-expanded={openMenu === key}
+        onClick={() => setOpenMenu((v) => (v === key ? null : key))}
+      >
+        <Icon size={15} />
+        {label}
+        <ChevronDown size={14} />
+      </button>
+      {openMenu === key && (
+        <div className="role-menu ed-nav-explore__menu" role="menu">
+          {items.map((item) => renderLink(item, 'dropdown'))}
+        </div>
+      )}
+    </li>
+  );
+
+  const desktopNav = (
+    <ul className="navbar__nav">
+      {mainBefore.map((item) => (
+        <li key={`bar-${item.href}`}>{renderLink(item, 'bar')}</li>
+      ))}
+      {showManageGroup &&
+        renderGroup(
+          'manage',
+          'จัดการโรงเรียน',
+          School,
+          manageGroup,
+          manageActive,
+          manageRef
+        )}
+      {showDataGroup &&
+        renderGroup(
+          'data',
+          'จัดการข้อมูล',
+          ClipboardPen,
+          dataGroup,
+          dataActive,
+          dataRef
+        )}
+      {showUsersGroup &&
+        renderGroup(
+          'users',
+          'จัดการผู้ใช้งาน',
+          Users,
+          usersGroup,
+          usersActive,
+          usersRef
+        )}
+      {mainAfter.map((item) => (
+        <li key={`bar-${item.href}`}>{renderLink(item, 'bar')}</li>
+      ))}
+      {showPublicGroups &&
+        renderGroup('overview', 'ภาพรวมด้านต่างๆ', Layers, overviewGroup, overviewActive, overviewRef)}
+      {showPublicGroups &&
+        renderGroup('detail', 'ข้อมูลรายละเอียด', Database, detailGroup, detailActive, detailRef)}
+    </ul>
+  );
+
+  const drawerNav = (
+    <ul className="ed-nav-drawer__nav">
+      {mainBefore.map((item) => (
+        <li key={`drawer-${item.href}`}>{renderLink(item, 'drawer')}</li>
+      ))}
+      {showManageGroup && (
+        <>
+          <li className="ed-nav-drawer__group-label">จัดการโรงเรียน</li>
+          {manageGroup.map((item) => (
+            <li key={`drawer-mg-${item.href}`}>{renderLink(item, 'drawer')}</li>
+          ))}
+        </>
+      )}
+      {showDataGroup && (
+        <>
+          <li className="ed-nav-drawer__group-label">จัดการข้อมูล</li>
+          {dataGroup.map((item) => (
+            <li key={`drawer-data-${item.href}`}>{renderLink(item, 'drawer')}</li>
+          ))}
+        </>
+      )}
+      {showUsersGroup && (
+        <>
+          <li className="ed-nav-drawer__group-label">จัดการผู้ใช้งาน</li>
+          {usersGroup.map((item) => (
+            <li key={`drawer-us-${item.href}`}>{renderLink(item, 'drawer')}</li>
+          ))}
+        </>
+      )}
+      {mainAfter.map((item) => (
+        <li key={`drawer-${item.href}`}>{renderLink(item, 'drawer')}</li>
+      ))}
+      {showPublicGroups && (
+        <>
+          <li className="ed-nav-drawer__group-label">ภาพรวมด้านต่างๆ</li>
+          {overviewGroup.map((item) => (
+            <li key={`drawer-ov-${item.href}`}>{renderLink(item, 'drawer')}</li>
+          ))}
+          <li className="ed-nav-drawer__group-label">ข้อมูลรายละเอียด</li>
+          {detailGroup.map((item) => (
+            <li key={`drawer-dt-${item.href}`}>{renderLink(item, 'drawer')}</li>
+          ))}
+        </>
+      )}
+    </ul>
+  );
 
   return (
     <>
-      <nav className="navbar ed-navbar" aria-label="หลัก">
+      <nav className={`navbar ed-navbar ${isAuthenticated ? 'ed-navbar--auth' : ''}`} aria-label="หลัก">
         <button
           type="button"
           className="ed-navbar__menu-btn"
@@ -222,24 +462,27 @@ export function AppNavbar({
           {drawerOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
 
-        <Link href="/" prefetch className="navbar__brand" onClick={closeDrawer}>
+        <Link
+          href={isAuthenticated && isFieldRole(normalizedRole) ? '/dashboard' : '/'}
+          prefetch
+          className="navbar__brand"
+          onClick={closeDrawer}
+        >
           <Image
             src="/images/Logo/EDU_Logo.png"
             alt=""
-            width={46}
-            height={46}
+            width={34}
+            height={34}
             className="navbar__brand-seal navbar__brand-logo"
             priority
           />
           <div className="navbar__brand-text">
             <div className="navbar__brand-name">โครงการกองทุนการศึกษา</div>
-            <div className="navbar__brand-subtitle">สร้างโอกาส สร้างคนดี สู่อนาคตที่ยั่งยืน</div>
+            <div className="navbar__brand-subtitle">สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน</div>
           </div>
         </Link>
 
-        <div className="ed-navbar__inline ed-navbar__inline--desktop">
-          <ul className="navbar__nav">{navLinks('bar')}</ul>
-        </div>
+        <div className="ed-navbar__inline ed-navbar__inline--desktop">{desktopNav}</div>
 
         <div className="ed-navbar__utils">
           <div className="ed-navbar__utils-desktop">{fontControls}</div>
@@ -260,7 +503,7 @@ export function AppNavbar({
                 </button>
                 {accountOpen && (
                   <div className="role-menu" role="menu">
-                    <div className="role-menu__meta">{ROLE_LABELS[role]}</div>
+                    <div className="role-menu__meta">{ROLE_LABELS[normalizedRole]}</div>
                     {accountMenuLinks}
                   </div>
                 )}
@@ -298,7 +541,7 @@ export function AppNavbar({
             />
             <div>
               <div className="navbar__brand-name">โครงการกองทุนการศึกษา</div>
-              <div className="navbar__brand-subtitle">เมนูหลัก</div>
+              <div className="navbar__brand-subtitle">สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน</div>
             </div>
           </div>
           <button type="button" className="ed-navbar__menu-btn" aria-label="ปิดเมนู" onClick={closeDrawer}>
@@ -306,7 +549,7 @@ export function AppNavbar({
           </button>
         </div>
 
-        <ul className="ed-nav-drawer__nav">{navLinks('drawer')}</ul>
+        {drawerNav}
 
         <div className="ed-nav-drawer__footer">
           {fontControls}
@@ -316,7 +559,7 @@ export function AppNavbar({
                 <span className="ed-profile-btn__avatar">{displayName.slice(0, 1)}</span>
                 <div>
                   <strong>{displayName}</strong>
-                  <span>{ROLE_LABELS[role]}</span>
+                  <span>{ROLE_LABELS[normalizedRole]}</span>
                 </div>
               </div>
               <div className="ed-nav-drawer__account-links">{accountMenuLinks}</div>

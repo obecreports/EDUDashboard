@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import maplibregl, { type Map as MapLibreMap, type GeoJSONSource } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { SchoolFull } from '@/lib/types';
@@ -20,7 +21,128 @@ const MAX_BOUNDS: [[number, number], [number, number]] = [
 ];
 
 type GroupMode = 'district' | 'area';
+type MapViewMode = 'normal' | 'heatmap';
+/** Heatmap metric — school density, 3 pillars, or 5 strategy angles */
+type HeatMetric =
+  | 'schools'
+  | 'pillarOverall'
+  | 'pillar1'
+  | 'pillar2'
+  | 'pillar3'
+  | 'strategyOverall'
+  | 'learner'
+  | 'participation'
+  | 'teacherAdmin'
+  | 'curriculum'
+  | 'infrastructure';
 type ProvinceFC = GeoJSON.FeatureCollection;
+
+type ProvinceMeta = {
+  schools: number;
+  districts: number;
+  areas: number;
+  /** Raw metric values used for heatmap density (normalized later) */
+  scores: Record<HeatMetric, number>;
+};
+type DistrictMeta = { schools: number };
+
+const HEAT_METRIC_LABELS: Record<HeatMetric, string> = {
+  schools: 'จำนวนโรงเรียน',
+  pillarOverall: '3 เสาหลัก (รวม)',
+  pillar1: 'เสาหลักที่ 1',
+  pillar2: 'เสาหลักที่ 2',
+  pillar3: 'เสาหลักที่ 3',
+  strategyOverall: '5 กลยุทธ์ (รวม)',
+  learner: 'ด้านผู้เรียน',
+  participation: 'ด้านการมีส่วนร่วม',
+  teacherAdmin: 'ด้านครูและผู้บริหาร',
+  curriculum: 'ด้านหลักสูตร',
+  infrastructure: 'ด้านโครงสร้างพื้นฐาน',
+};
+
+function schoolHeatValue(s: SchoolFull, metric: HeatMetric): number {
+  if (metric === 'schools') return 1;
+  const t = s.threePillarScores;
+  const p = s.pillarScores;
+  switch (metric) {
+    case 'pillarOverall':
+      return t?.overall ?? 0;
+    case 'pillar1':
+      return t?.qualitySchool ?? 0;
+    case 'pillar2':
+      return t?.qualityGraduation ?? 0;
+    case 'pillar3':
+      return t?.disciplineMorality ?? 0;
+    case 'strategyOverall':
+      return s.overallScore ?? 0;
+    case 'learner':
+      return p?.learner ?? 0;
+    case 'participation':
+      return p?.participation ?? 0;
+    case 'teacherAdmin':
+      return p?.teacherAdmin ?? 0;
+    case 'curriculum':
+      return p?.curriculum ?? 0;
+    case 'infrastructure':
+      return p?.infrastructure ?? 0;
+    default:
+      return 0;
+  }
+}
+
+/** Max scale for normalizing heatmap density (pillars 0–100, strategies ~0–5) */
+function heatScaleMax(metric: HeatMetric): number {
+  if (metric === 'schools') return 1;
+  if (
+    metric === 'pillarOverall' ||
+    metric === 'pillar1' ||
+    metric === 'pillar2' ||
+    metric === 'pillar3'
+  ) {
+    return 100;
+  }
+  return 5;
+}
+
+const NORMAL_FILL_COLOR: maplibregl.ExpressionSpecification = [
+  'case',
+  ['boolean', ['feature-state', 'hover'], false],
+  '#0ea5e9',
+  ['boolean', ['feature-state', 'selected'], false],
+  '#0284c7',
+  ['boolean', ['feature-state', 'hasSchools'], false],
+  '#0369a1',
+  '#bae6fd',
+];
+
+const HEATMAP_FILL_COLOR: maplibregl.ExpressionSpecification = [
+  'case',
+  ['boolean', ['feature-state', 'hover'], false],
+  '#f97316',
+  ['boolean', ['feature-state', 'selected'], false],
+  '#ea580c',
+  [
+    'interpolate',
+    ['linear'],
+    ['coalesce', ['feature-state', 'density'], 0],
+    0,
+    '#e2e8f0',
+    0.15,
+    '#fde68a',
+    0.35,
+    '#fb923c',
+    0.55,
+    '#f97316',
+    0.75,
+    '#ea580c',
+    1,
+    '#9a3412',
+  ],
+];
+
+function popupHtml(title: string, lines: string[]) {
+  return `<div class="map-popup"><div class="map-popup__title">${title}</div><p class="map-popup__meta">${lines.join('<br/>')}</p></div>`;
+}
 
 function provinceName(f: GeoJSON.Feature): string {
   return String(f.properties?.pro_th || f.properties?.name_th || f.properties?.name || '');
@@ -92,19 +214,34 @@ function schoolsToGeoJSON(schools: SchoolFull[]) {
   };
 }
 
+function provinceDensity(meta: ProvinceMeta | undefined, metric: HeatMetric, maxSchools: number) {
+  if (!meta) return 0;
+  if (metric === 'schools') return meta.schools / Math.max(1, maxSchools);
+  const raw = meta.scores[metric] ?? 0;
+  return Math.max(0, Math.min(1, raw / heatScaleMax(metric)));
+}
+
 function applyProvinceBaseStates(
   map: MapLibreMap,
   provinces: ProvinceFC,
-  schoolProvinceNames: Set<string>
+  schoolProvinceNames: Set<string>,
+  provinceMeta: Map<string, ProvinceMeta>,
+  maxSchools: number,
+  heatMetric: HeatMetric = 'schools'
 ) {
   for (const pf of provinces.features) {
     const id = provinceId(pf);
     if (id == null) continue;
     const name = provinceName(pf);
+    const meta = provinceMeta.get(name);
+    const count = meta?.schools ?? 0;
     map.setFeatureState(
       { source: 'provinces', id },
       {
         hasSchools: schoolProvinceNames.has(name),
+        schoolCount: count,
+        density: provinceDensity(meta, heatMetric, maxSchools),
+        heatValue: heatMetric === 'schools' ? count : (meta?.scores[heatMetric] ?? 0),
         selected: false,
         dimmed: false,
         hover: false,
@@ -113,15 +250,27 @@ function applyProvinceBaseStates(
   }
 }
 
-function clearProvinceInteractionStates(map: MapLibreMap, provinces: ProvinceFC) {
+function clearProvinceInteractionStates(
+  map: MapLibreMap,
+  provinces: ProvinceFC,
+  provinceMeta: Map<string, ProvinceMeta>,
+  maxSchools: number,
+  heatMetric: HeatMetric = 'schools'
+) {
   for (const pf of provinces.features) {
     const id = provinceId(pf);
     if (id == null) continue;
+    const name = provinceName(pf);
     const prev = map.getFeatureState({ source: 'provinces', id });
+    const meta = provinceMeta.get(name);
+    const count = meta?.schools ?? Number(prev?.schoolCount ?? 0);
     map.setFeatureState(
       { source: 'provinces', id },
       {
         hasSchools: Boolean(prev?.hasSchools),
+        schoolCount: count,
+        density: provinceDensity(meta, heatMetric, maxSchools),
+        heatValue: heatMetric === 'schools' ? count : (meta?.scores[heatMetric] ?? 0),
         selected: false,
         dimmed: false,
         hover: false,
@@ -163,6 +312,7 @@ function sortSchoolsForMode(list: SchoolFull[], mode: GroupMode): SchoolFull[] {
 }
 
 export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
+  const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const provincesRef = useRef<ProvinceFC | null>(null);
@@ -171,6 +321,10 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
   const listRefs = useRef<Map<string, HTMLElement>>(new Map());
   const hoverFromPanelRef = useRef(false);
   const selectedProvinceRef = useRef<string | null>(null);
+  const askSchoolRef = useRef<(schoolId: string) => void>(() => {});
+  const popupRef = useRef<maplibregl.Popup | null>(null);
+  const provinceMetaRef = useRef<Map<string, ProvinceMeta>>(new Map());
+  const districtMetaRef = useRef<Map<string, DistrictMeta>>(new Map());
 
   const [ready, setReady] = useState(false);
   const [groupMode, setGroupMode] = useState<GroupMode>('district');
@@ -181,8 +335,18 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
   const [hoverDistrict, setHoverDistrict] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [viewMode, setViewMode] = useState<MapViewMode>('normal');
+  const [heatMetric, setHeatMetric] = useState<HeatMetric>('schools');
+  const [confirmSchool, setConfirmSchool] = useState<SchoolFull | null>(null);
+  const heatMetricRef = useRef<HeatMetric>('schools');
+  heatMetricRef.current = heatMetric;
 
   selectedProvinceRef.current = selectedProvince;
+  askSchoolRef.current = (schoolId: string) => {
+    const found = schools.find((s) => String(s.school_id) === String(schoolId));
+    if (found) setConfirmSchool(found);
+  };
 
   const geojson = useMemo(() => schoolsToGeoJSON(schools), [schools]);
 
@@ -194,17 +358,95 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     return set;
   }, [schools]);
 
-  const provinceStats = useMemo(() => {
-    const map = new Map<string, number>();
+  const { provinceMeta, districtMeta, maxProvinceSchools, provinceStats } = useMemo(() => {
+    type Acc = {
+      schools: number;
+      districts: Set<string>;
+      areas: Set<string>;
+      scoreSums: Record<HeatMetric, number>;
+      scoreCounts: Record<HeatMetric, number>;
+    };
+    const emptyScores = (): Record<HeatMetric, number> => ({
+      schools: 0,
+      pillarOverall: 0,
+      pillar1: 0,
+      pillar2: 0,
+      pillar3: 0,
+      strategyOverall: 0,
+      learner: 0,
+      participation: 0,
+      teacherAdmin: 0,
+      curriculum: 0,
+      infrastructure: 0,
+    });
+    const pMap = new Map<string, Acc>();
+    const dMap = new Map<string, number>();
     schools.forEach((s) => {
       const p = s.province?.trim();
-      if (!p) return;
-      map.set(p, (map.get(p) ?? 0) + 1);
+      const d = s.district?.trim();
+      const area = (s.area_name || s.area_id || '').trim();
+      if (p) {
+        const row =
+          pMap.get(p) ??
+          ({
+            schools: 0,
+            districts: new Set<string>(),
+            areas: new Set<string>(),
+            scoreSums: emptyScores(),
+            scoreCounts: emptyScores(),
+          } satisfies Acc);
+        row.schools += 1;
+        if (d) row.districts.add(d);
+        if (area) row.areas.add(area);
+        (Object.keys(row.scoreSums) as HeatMetric[]).forEach((m) => {
+          if (m === 'schools') return;
+          const v = schoolHeatValue(s, m);
+          if (v > 0) {
+            row.scoreSums[m] += v;
+            row.scoreCounts[m] += 1;
+          }
+        });
+        pMap.set(p, row);
+      }
+      if (p && d) {
+        const key = `${p}|${normalizeDistrictLabel(d)}`;
+        dMap.set(key, (dMap.get(key) ?? 0) + 1);
+      }
     });
-    return [...map.entries()]
-      .map(([name, count]) => ({ name, count }))
+    const provinceMeta = new Map<string, ProvinceMeta>();
+    let max = 0;
+    for (const [name, row] of pMap) {
+      const scores = emptyScores();
+      scores.schools = row.schools;
+      (Object.keys(scores) as HeatMetric[]).forEach((m) => {
+        if (m === 'schools') return;
+        scores[m] = row.scoreCounts[m] ? row.scoreSums[m] / row.scoreCounts[m] : 0;
+      });
+      provinceMeta.set(name, {
+        schools: row.schools,
+        districts: row.districts.size,
+        areas: row.areas.size,
+        scores,
+      });
+      if (row.schools > max) max = row.schools;
+    }
+    const districtMeta = new Map<string, DistrictMeta>();
+    for (const [name, schoolsCount] of dMap) {
+      districtMeta.set(name, { schools: schoolsCount });
+    }
+    const provinceStats = [...provinceMeta.entries()]
+      .map(([name, meta]) => ({
+        name,
+        count: meta.schools,
+        districts: meta.districts,
+        areas: meta.areas,
+      }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'th'));
+    return { provinceMeta, districtMeta, maxProvinceSchools: max, provinceStats };
   }, [schools]);
+
+  provinceMetaRef.current = provinceMeta;
+  districtMetaRef.current = districtMeta;
 
   const groups = useMemo(() => {
     const scoped = selectedProvince
@@ -215,7 +457,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
       const key =
         groupMode === 'district'
           ? s.district || 'ไม่ระบุอำเภอ'
-          : s.area_name || s.area_id || 'ไม่ระบุเขต';
+          : s.area_name || s.area_id || 'ไม่ระบุเขตการศึกษา';
       const row = map.get(key) ?? { name: key, schools: [], students: 0 };
       row.schools.push(s);
       row.students += s.studentSummary?.totalStudents ?? 0;
@@ -246,6 +488,13 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    popupRef.current = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 14,
+      maxWidth: '240px',
+      className: 'map-hover-popup',
+    });
 
     map.on('load', async () => {
       sanitizeBasemap(map);
@@ -300,16 +549,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
         source: 'provinces',
         paint: {
           'fill-antialias': true,
-          'fill-color': [
-            'case',
-            ['boolean', ['feature-state', 'hover'], false],
-            '#0ea5e9',
-            ['boolean', ['feature-state', 'selected'], false],
-            '#0284c7',
-            ['boolean', ['feature-state', 'hasSchools'], false],
-            '#0369a1',
-            '#bae6fd',
-          ],
+          'fill-color': NORMAL_FILL_COLOR,
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'hover'], false],
@@ -331,7 +571,18 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
         paint: { 'line-color': '#fff', 'line-width': 0.8 },
       });
 
-      applyProvinceBaseStates(map, provinces, schoolProvinceNames);
+      applyProvinceBaseStates(
+        map,
+        provinces,
+        schoolProvinceNames,
+        provinceMetaRef.current,
+        Math.max(
+          1,
+          ...[...provinceMetaRef.current.values()].map((m) => m.schools),
+          1
+        ),
+        heatMetricRef.current
+      );
 
       map.addSource('districts', {
         type: 'geojson',
@@ -440,9 +691,27 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
         const cur = map.getFeatureState({ source: 'provinces', id });
         map.setFeatureState({ source: 'provinces', id }, { ...cur, hover: true });
 
+        const name = provinceName(f as GeoJSON.Feature) || '';
         if (!hoverFromPanelRef.current) {
-          setHoverProvince(provinceName(f as GeoJSON.Feature) || null);
+          setHoverProvince(name || null);
         }
+        const meta = provinceMetaRef.current.get(name);
+        const metric = heatMetricRef.current;
+        const heatLine =
+          metric === 'schools'
+            ? null
+            : `${HEAT_METRIC_LABELS[metric]}: ${(meta?.scores[metric] ?? 0).toFixed(1)}`;
+        popupRef.current
+          ?.setLngLat(e.lngLat)
+          .setHTML(
+            popupHtml(name || 'จังหวัด', [
+              `อำเภอ: ${(meta?.districts ?? 0).toLocaleString()}`,
+              `เขตการศึกษา: ${(meta?.areas ?? 0).toLocaleString()}`,
+              `โรงเรียน: ${(meta?.schools ?? 0).toLocaleString()}`,
+              ...(heatLine ? [heatLine] : []),
+            ])
+          )
+          .addTo(map);
       });
       map.on('mouseleave', 'province-fill', () => {
         if (selectedProvinceRef.current) return;
@@ -459,6 +728,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
           hoveredProvinceId = null;
         }
         if (!hoverFromPanelRef.current) setHoverProvince(null);
+        popupRef.current?.remove();
       });
 
       // District-only hover (glow that district boundary alone)
@@ -476,11 +746,22 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
         hoveredDistrictId = id as string | number;
         map.setFeatureState({ source: 'districts', id }, { hover: true });
 
+        const name = districtName(f as GeoJSON.Feature);
         if (!hoverFromPanelRef.current) {
-          const name = districtName(f as GeoJSON.Feature);
           setHoverDistrict(name || null);
           setHoverKey(name ? `group:${name}` : null);
         }
+        const prov = selectedProvinceRef.current ?? '';
+        const metaKey = `${prov}|${normalizeDistrictLabel(name)}`;
+        const meta = districtMetaRef.current.get(metaKey);
+        popupRef.current
+          ?.setLngLat(e.lngLat)
+          .setHTML(
+            popupHtml(name || 'อำเภอ', [
+              `โรงเรียน: ${(meta?.schools ?? 0).toLocaleString()}`,
+            ])
+          )
+          .addTo(map);
       });
       map.on('mouseleave', 'district-fill', () => {
         map.getCanvas().style.cursor = '';
@@ -492,12 +773,14 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
           setHoverDistrict(null);
           setHoverKey(null);
         }
+        popupRef.current?.remove();
       });
 
       let hoveredSchool: string | null = null;
       map.on('mousemove', 'schools-circle', (e) => {
         map.getCanvas().style.cursor = 'pointer';
-        const id = String(e.features?.[0]?.properties?.school_id ?? '');
+        const feat = e.features?.[0];
+        const id = String(feat?.properties?.school_id ?? '');
         if (!id) return;
         if (hoveredSchool && hoveredSchool !== id) {
           map.setFeatureState({ source: 'schools', id: hoveredSchool }, { hover: false });
@@ -505,6 +788,18 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
         hoveredSchool = id;
         map.setFeatureState({ source: 'schools', id }, { hover: true });
         setHoverKey(id);
+        const schoolName = String(feat?.properties?.school_name_th ?? 'โรงเรียน');
+        const students = Number(feat?.properties?.students ?? 0);
+        const personnel = Number(feat?.properties?.personnel ?? 0);
+        popupRef.current
+          ?.setLngLat(e.lngLat)
+          .setHTML(
+            popupHtml(schoolName, [
+              `นักเรียน: ${students.toLocaleString()}`,
+              `บุคลากร: ${personnel.toLocaleString()}`,
+            ])
+          )
+          .addTo(map);
       });
       map.on('mouseleave', 'schools-circle', () => {
         map.getCanvas().style.cursor = '';
@@ -513,6 +808,13 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
           hoveredSchool = null;
         }
         setHoverKey(null);
+        popupRef.current?.remove();
+      });
+
+      map.on('click', 'schools-circle', (e) => {
+        e.preventDefault();
+        const id = String(e.features?.[0]?.properties?.school_id ?? '');
+        if (id) askSchoolRef.current(id);
       });
 
       setReady(true);
@@ -520,6 +822,8 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     });
 
     return () => {
+      popupRef.current?.remove();
+      popupRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -529,8 +833,108 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !provincesRef.current) return;
-    applyProvinceBaseStates(map, provincesRef.current, schoolProvinceNames);
-  }, [schoolProvinceNames, ready]);
+    applyProvinceBaseStates(
+      map,
+      provincesRef.current,
+      schoolProvinceNames,
+      provinceMeta,
+      maxProvinceSchools,
+      heatMetric
+    );
+  }, [schoolProvinceNames, ready, provinceMeta, maxProvinceSchools, heatMetric]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !map.getLayer('province-fill')) return;
+    // Country-level heatmap stays on provinces; when zoomed, heat applies to districts
+    const provinceHeat = viewMode === 'heatmap' && !selectedProvince;
+    const districtHeat = viewMode === 'heatmap' && Boolean(selectedProvince);
+
+    map.setPaintProperty(
+      'province-fill',
+      'fill-color',
+      provinceHeat ? HEATMAP_FILL_COLOR : NORMAL_FILL_COLOR
+    );
+    map.setPaintProperty(
+      'province-fill',
+      'fill-opacity',
+      provinceHeat
+        ? [
+            'case',
+            ['boolean', ['feature-state', 'hover'], false],
+            0.95,
+            ['boolean', ['feature-state', 'selected'], false],
+            0.9,
+            ['boolean', ['feature-state', 'dimmed'], false],
+            0.12,
+            [
+              'interpolate',
+              ['linear'],
+              ['coalesce', ['feature-state', 'density'], 0],
+              0,
+              0.28,
+              0.2,
+              0.55,
+              1,
+              0.88,
+            ],
+          ]
+        : [
+            'case',
+            ['boolean', ['feature-state', 'hover'], false],
+            0.9,
+            ['boolean', ['feature-state', 'selected'], false],
+            0.85,
+            ['boolean', ['feature-state', 'dimmed'], false],
+            0.12,
+            ['boolean', ['feature-state', 'hasSchools'], false],
+            0.62,
+            0.22,
+          ]
+    );
+
+    if (map.getLayer('district-fill')) {
+      map.setPaintProperty(
+        'district-fill',
+        'fill-color',
+        districtHeat
+          ? HEATMAP_FILL_COLOR
+          : ([
+              'case',
+              ['boolean', ['feature-state', 'hover'], false],
+              '#ea580c',
+              '#fbbf24',
+            ] as maplibregl.ExpressionSpecification)
+      );
+      map.setPaintProperty(
+        'district-fill',
+        'fill-opacity',
+        districtHeat
+          ? ([
+              'case',
+              ['boolean', ['feature-state', 'hover'], false],
+              0.95,
+              [
+                'interpolate',
+                ['linear'],
+                ['coalesce', ['feature-state', 'density'], 0],
+                0,
+                0.22,
+                0.2,
+                0.5,
+                1,
+                0.85,
+              ],
+            ] as maplibregl.ExpressionSpecification)
+          : ([
+              'case',
+              ['boolean', ['feature-state', 'hover'], false],
+              0.88,
+              0.32,
+            ] as maplibregl.ExpressionSpecification)
+      );
+    }
+  }, [viewMode, selectedProvince, ready, heatMetric]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -554,8 +958,21 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
         type: 'FeatureCollection',
         features: [],
       });
-      clearProvinceInteractionStates(map, provinces);
-      applyProvinceBaseStates(map, provinces, schoolProvinceNames);
+      clearProvinceInteractionStates(
+        map,
+        provinces,
+        provinceMeta,
+        maxProvinceSchools,
+        heatMetric
+      );
+      applyProvinceBaseStates(
+        map,
+        provinces,
+        schoolProvinceNames,
+        provinceMeta,
+        maxProvinceSchools,
+        heatMetric
+      );
       map.fitBounds(FIT, { padding: 48, duration: 800, maxZoom: 6.2 });
       return;
     }
@@ -577,15 +994,64 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     map.setLayoutProperty('district-fill', 'visibility', 'visible');
     map.setLayoutProperty('district-line', 'visibility', 'visible');
 
+    // District-level heatmap values (same metrics as province, scoped to this province)
+    const inProvince = schools.filter((s) => s.province === selectedProvince);
+    type DAcc = { schools: number; scoreSum: number; scoreCount: number };
+    const dAcc = new Map<string, DAcc>();
+    for (const s of inProvince) {
+      const dName = (s.district || '').trim();
+      if (!dName) continue;
+      const key = normalizeDistrictLabel(dName);
+      const row = dAcc.get(key) ?? { schools: 0, scoreSum: 0, scoreCount: 0 };
+      row.schools += 1;
+      if (heatMetric !== 'schools') {
+        const v = schoolHeatValue(s, heatMetric);
+        if (v > 0) {
+          row.scoreSum += v;
+          row.scoreCount += 1;
+        }
+      }
+      dAcc.set(key, row);
+    }
+    const maxDistrictSchools = Math.max(1, ...[...dAcc.values()].map((r) => r.schools), 1);
+
+    for (const df of filtered.features) {
+      const id = districtId(df);
+      if (id == null) continue;
+      const name = districtName(df);
+      const acc = dAcc.get(normalizeDistrictLabel(name));
+      const count = acc?.schools ?? 0;
+      const raw =
+        heatMetric === 'schools'
+          ? count
+          : acc?.scoreCount
+            ? acc.scoreSum / acc.scoreCount
+            : 0;
+      const density =
+        heatMetric === 'schools'
+          ? count / maxDistrictSchools
+          : Math.max(0, Math.min(1, raw / heatScaleMax(heatMetric)));
+      map.setFeatureState(
+        { source: 'districts', id },
+        { hover: false, density, heatValue: raw, schoolCount: count }
+      );
+    }
+
     const selectedId = String(feature.id ?? feature.properties?.pro_code);
     for (const pf of provinces.features) {
       const id = provinceId(pf);
       if (id == null) continue;
+      const name = provinceName(pf);
       const prev = map.getFeatureState({ source: 'provinces', id });
+      const meta = provinceMeta.get(name);
+      const count = meta?.schools ?? Number(prev?.schoolCount ?? 0);
       map.setFeatureState(
         { source: 'provinces', id },
         {
           hasSchools: Boolean(prev?.hasSchools),
+          schoolCount: count,
+          density: provinceDensity(meta, heatMetric, maxProvinceSchools),
+          heatValue: heatMetric === 'schools' ? count : (meta?.scores[heatMetric] ?? 0),
           selected: String(id) === selectedId,
           dimmed: String(id) !== selectedId,
           hover: false,
@@ -603,7 +1069,16 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     if (!bounds.isEmpty()) {
       map.fitBounds(bounds, { padding: 60, maxZoom: 9, duration: 900 });
     }
-  }, [selectedProvince, ready, schoolProvinceNames]);
+  }, [
+    selectedProvince,
+    ready,
+    schoolProvinceNames,
+    provinceMeta,
+    maxProvinceSchools,
+    heatMetric,
+    schools,
+    viewMode,
+  ]);
 
   /** Fly to district polygon or area school cluster when scope dropdown changes */
   useEffect(() => {
@@ -648,7 +1123,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     const pts = schools.filter(
       (s) =>
         s.province === selectedProvince &&
-        (s.area_name || s.area_id || 'ไม่ระบุเขต') === selectedScope &&
+        (s.area_name || s.area_id || 'ไม่ระบุเขตการศึกษา') === selectedScope &&
         Number(s.longitude) &&
         Number(s.latitude)
     );
@@ -734,7 +1209,28 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     if (!map || !ready) return;
     const t = window.setTimeout(() => map.resize(), 80);
     return () => window.clearTimeout(t);
-  }, [fullscreen, ready]);
+  }, [fullscreen, sidebarOpen, ready]);
+
+  /** Zooming out far enough while in a province view returns to country level */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const onZoomEnd = () => {
+      if (!selectedProvinceRef.current) return;
+      if (map.getZoom() <= 6.35) {
+        setSelectedProvince(null);
+        setSelectedScope('');
+        setHoverProvince(null);
+        setHoverDistrict(null);
+        setHoverKey(null);
+        hoverFromPanelRef.current = false;
+      }
+    };
+    map.on('zoomend', onZoomEnd);
+    return () => {
+      map.off('zoomend', onZoomEnd);
+    };
+  }, [ready]);
 
   const reset = () => {
     setSelectedProvince(null);
@@ -778,12 +1274,145 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     }
   };
 
+  const heatToolbar = (
+    <>
+      <span className="map-view-bar__label">มุมมองแผนที่</span>
+      <button
+        type="button"
+        className={`map-view-bar__btn ${viewMode === 'normal' ? 'is-active' : ''}`}
+        onClick={() => {
+          setViewMode('normal');
+          setHeatMetric('schools');
+        }}
+      >
+        มุมมองปกติ
+      </button>
+      <button
+        type="button"
+        className={`map-view-bar__btn ${
+          viewMode === 'heatmap' && heatMetric === 'schools' ? 'is-active' : ''
+        }`}
+        onClick={() => {
+          setViewMode('heatmap');
+          setHeatMetric('schools');
+        }}
+        title="เปรียบเทียบจำนวนโรงเรียนรายจังหวัด"
+      >
+        ความหนาแน่นโรงเรียน
+      </button>
+      <button
+        type="button"
+        className={`map-view-bar__btn ${
+          viewMode === 'heatmap' && heatMetric.startsWith('pillar') ? 'is-active' : ''
+        }`}
+        onClick={() => {
+          setViewMode('heatmap');
+          setHeatMetric('pillarOverall');
+        }}
+        title="Heatmap ตามคะแนน 3 เสาหลัก"
+      >
+        คะแนน 3 เสาหลัก
+      </button>
+      <button
+        type="button"
+        className={`map-view-bar__btn ${
+          viewMode === 'heatmap' &&
+          (heatMetric === 'strategyOverall' ||
+            heatMetric === 'learner' ||
+            heatMetric === 'participation' ||
+            heatMetric === 'teacherAdmin' ||
+            heatMetric === 'curriculum' ||
+            heatMetric === 'infrastructure')
+            ? 'is-active'
+            : ''
+        }`}
+        onClick={() => {
+          setViewMode('heatmap');
+          setHeatMetric('strategyOverall');
+        }}
+        title="Heatmap ตามคะแนน 5 กลยุทธ์"
+      >
+        คะแนน 5 กลยุทธ์
+      </button>
+      {viewMode === 'heatmap' && heatMetric.startsWith('pillar') && (
+        <div className="map-view-bar__sub">
+          {(
+            [
+              ['pillarOverall', 'รวม'],
+              ['pillar1', 'เสา 1'],
+              ['pillar2', 'เสา 2'],
+              ['pillar3', 'เสา 3'],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              className={`map-view-bar__btn map-view-bar__btn--sm ${
+                heatMetric === key ? 'is-active' : ''
+              }`}
+              onClick={() => setHeatMetric(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {viewMode === 'heatmap' &&
+        (heatMetric === 'strategyOverall' ||
+          heatMetric === 'learner' ||
+          heatMetric === 'participation' ||
+          heatMetric === 'teacherAdmin' ||
+          heatMetric === 'curriculum' ||
+          heatMetric === 'infrastructure') && (
+          <div className="map-view-bar__sub">
+            {(
+              [
+                ['strategyOverall', 'รวม'],
+                ['learner', 'ผู้เรียน'],
+                ['participation', 'มีส่วนร่วม'],
+                ['teacherAdmin', 'ครู/ผู้บริหาร'],
+                ['curriculum', 'หลักสูตร'],
+                ['infrastructure', 'โครงสร้าง'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`map-view-bar__btn map-view-bar__btn--sm ${
+                  heatMetric === key ? 'is-active' : ''
+                }`}
+                onClick={() => setHeatMetric(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+    </>
+  );
+
   return (
-    <div className={`map-layout ${fullscreen ? 'map-layout--fullscreen' : ''}`}>
+    <div className="map-page">
+      {!fullscreen && (
+        <div className="map-view-bar" role="toolbar" aria-label="มุมมองแผนที่">
+          {heatToolbar}
+        </div>
+      )}
+
+      <div
+        className={`map-layout ${fullscreen ? 'map-layout--fullscreen' : ''} ${
+          !sidebarOpen ? 'map-layout--no-aside' : ''
+        }`}
+      >
       <div className="relative panel-card p-0 overflow-hidden map-layout__canvas">
         {loading && (
           <div className="absolute inset-0 z-10 grid place-items-center bg-white/70 text-tm-blue font-medium">
             กำลังโหลดแผนที่…
+          </div>
+        )}
+        {fullscreen && (
+          <div className="map-view-bar map-view-bar--overlay" role="toolbar" aria-label="มุมมองแผนที่">
+            {heatToolbar}
           </div>
         )}
         <button
@@ -794,6 +1423,26 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
         >
           {fullscreen ? 'ย่อหน้าต่าง' : 'เต็มจอ'}
         </button>
+        <button
+          type="button"
+          className="map-sidebar-toggle"
+          onClick={() => setSidebarOpen((v) => !v)}
+          aria-pressed={!sidebarOpen}
+          aria-label={sidebarOpen ? 'ซ่อนแผงรายละเอียด' : 'แสดงแผงรายละเอียด'}
+          title={sidebarOpen ? 'ซ่อนรายละเอียด' : 'แสดงรายละเอียด'}
+        >
+          {sidebarOpen ? '›' : '‹'}
+        </button>
+        {selectedProvince && (
+          <button
+            type="button"
+            className="map-country-btn"
+            onClick={reset}
+            aria-label="กลับมุมมองทั้งประเทศ"
+          >
+            ← ทั้งประเทศ
+          </button>
+        )}
         <div ref={containerRef} className="maplibre-map" />
       </div>
 
@@ -812,7 +1461,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
           {selectedScope ? ` · โฟกัส: ${selectedScope}` : ''}
         </p>
         <p className="text-xs text-slate-400 m-0">
-          คลิกรายการด้านข้างเพื่อซูมแผนที่ · หรือคลิกจังหวัดบนแผนที่
+          คลิกรายการด้านข้างเพื่อซูมแผนที่ · หรือคลิกจังหวัดบนแผนที่ · วางเมาส์บนแผนที่เพื่อดูป๊อปอัป
         </p>
 
         {!selectedProvince ? (
@@ -841,7 +1490,8 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
                 <div className="flex justify-between items-center gap-2">
                   <span className="font-semibold text-tm-blue text-sm">{p.name}</span>
                   <span className="text-xs text-slate-500 whitespace-nowrap">
-                    {p.count.toLocaleString()} โรงเรียน
+                    {p.districts.toLocaleString()} อำเภอ · {p.areas.toLocaleString()}{' '}
+                    เขตการศึกษา · {p.count.toLocaleString()} รร.
                   </span>
                 </div>
               </button>
@@ -872,7 +1522,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
                   setHoverKey(null);
                 }}
               >
-                ตามเขตพื้นที่
+                ตามเขตการศึกษา
               </button>
             </div>
 
@@ -919,7 +1569,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
                       {g.schools.slice(0, 8).map((s) => (
                         <li
                           key={String(s.school_id)}
-                          className="text-sm rounded px-1.5 py-0.5"
+                          className="text-sm rounded px-1.5 py-0.5 cursor-pointer hover:underline"
                           style={{
                             background:
                               hoverKey === String(s.school_id)
@@ -933,6 +1583,10 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
                           onMouseLeave={(e) => {
                             e.stopPropagation();
                             setHoverKey(`group:${g.name}`);
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmSchool(s);
                           }}
                         >
                           • {formatSchoolLabel(s, groupMode)}
@@ -951,6 +1605,49 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
           </>
         )}
       </aside>
+
+      {confirmSchool && (
+        <div
+          className="map-confirm-modal"
+          role="dialog"
+          aria-modal
+          aria-labelledby="map-school-confirm-title"
+        >
+          <div className="map-confirm-modal__card">
+            <h3 id="map-school-confirm-title" className="ed-section-title text-base m-0">
+              ดูรายละเอียดโรงเรียน?
+            </h3>
+            <p className="text-sm text-slate-600 m-0">
+              คุณต้องการเปิดหน้าข้อมูลของ{' '}
+              <strong className="text-tm-blue">{confirmSchool.school_name_th}</strong> หรือไม่
+            </p>
+            <p className="text-xs text-slate-500 m-0">
+              {[confirmSchool.district, confirmSchool.province].filter(Boolean).join(' · ') || '—'}
+            </p>
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button
+                type="button"
+                className="ed-btn ed-btn--outline ed-btn--sm"
+                onClick={() => setConfirmSchool(null)}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                className="ed-btn ed-btn--primary ed-btn--sm"
+                onClick={() => {
+                  const id = confirmSchool.school_id;
+                  setConfirmSchool(null);
+                  router.push(`/schools/${id}`);
+                }}
+              >
+                ดูรายละเอียด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   );
 }

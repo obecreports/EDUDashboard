@@ -401,11 +401,7 @@ export function StaffCalendarClient({
                       setEvents((prev) => [...prev, res.event!]);
                     }
                     setShowModal(false);
-                    setMsg(
-                      res.warning
-                        ? `บันทึกในเครื่องแล้ว (ฐานข้อมูล: ${res.warning})`
-                        : 'บันทึกข้อมูลเรียบร้อยแล้ว'
-                    );
+                    setMsg('บันทึกข้อมูลเรียบร้อยแล้ว');
                   });
                 }}
               >

@@ -13,6 +13,12 @@ const EXPLORE = [
     icon: BookOpen,
   },
   {
+    href: '/pillars',
+    label: 'ภาพรวม 3 เสาหลัก',
+    desc: 'เกณฑ์คะแนนใหม่ (mockup)',
+    icon: Hexagon,
+  },
+  {
     href: '/strategy',
     label: 'ภาพรวม 5 กลยุทธ์',
     desc: 'คะแนนเฉลี่ยและการกระจายสถานะ',
@@ -26,7 +32,7 @@ const EXPLORE = [
   },
   {
     href: '/schools',
-    label: 'โรงเรียนในความดูแล',
+    label: 'โรงเรียนในโครงการ',
     desc: 'รายชื่อและข้อมูลโรงเรียน',
     icon: School,
   },

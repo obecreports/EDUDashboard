@@ -1,0 +1,636 @@
+'use client';
+
+import { useMemo, useState, useTransition } from 'react';
+import Link from 'next/link';
+import { ChevronDown, FilePlus2, MessageSquare, Pencil } from 'lucide-react';
+import { updateSchoolCommentAction } from '@/app/actions/school-extras';
+import { REPORT_HASHTAGS, type SchoolSize } from '@/lib/types';
+import type { ReportDraft } from '@/lib/auth/mock-users';
+import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
+
+export type ReportRow = {
+  id: string;
+  school_id: string;
+  school_name: string;
+  province: string;
+  district: string;
+  school_size?: string;
+  staff_id: string;
+  staff_name: string;
+  text: string;
+  created_at: string;
+  edited_at?: string | null;
+  tags?: string[];
+  image_urls?: string[];
+};
+
+type RangePreset = 'today' | 'this-week' | 'next-week' | 'this-month' | 'next-month' | 'custom';
+
+const DAYS_PER_PAGE = 10;
+const SCHOOL_SIZES: SchoolSize[] = ['เล็ก', 'กลาง', 'ใหญ่', 'ใหญ่พิเศษ'];
+
+function ymd(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function startOfWeek(d: Date) {
+  const x = new Date(d);
+  const day = (x.getDay() + 6) % 7;
+  x.setDate(x.getDate() - day);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function rangeForPreset(preset: RangePreset): { from: string; to: string } {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (preset === 'today') return { from: ymd(today), to: ymd(today) };
+  if (preset === 'this-week') {
+    const start = startOfWeek(today);
+    return { from: ymd(start), to: ymd(addDays(start, 6)) };
+  }
+  if (preset === 'next-week') {
+    const start = addDays(startOfWeek(today), 7);
+    return { from: ymd(start), to: ymd(addDays(start, 6)) };
+  }
+  if (preset === 'this-month') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    return { from: ymd(start), to: ymd(end) };
+  }
+  if (preset === 'next-month') {
+    const start = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+    return { from: ymd(start), to: ymd(end) };
+  }
+  const start = new Date(today.getFullYear(), today.getMonth(), 1);
+  const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  return { from: ymd(start), to: ymd(end) };
+}
+
+const PRESETS: { key: RangePreset; label: string }[] = [
+  { key: 'today', label: 'วันนี้' },
+  { key: 'this-week', label: 'สัปดาห์นี้' },
+  { key: 'next-week', label: 'สัปดาห์หน้า' },
+  { key: 'this-month', label: 'เดือนนี้' },
+  { key: 'next-month', label: 'เดือนหน้า' },
+];
+
+function extractTags(row: ReportRow): string[] {
+  if (row.tags?.length) return row.tags.map((t) => t.replace(/^#/, ''));
+  const found = row.text.match(/#[\p{L}\p{N}_]+/gu) ?? [];
+  return [...new Set(found.map((t) => t.replace(/^#/, '')))];
+}
+
+function groupByDate(rows: ReportRow[]) {
+  const map = new Map<string, ReportRow[]>();
+  for (const r of rows) {
+    const day = r.created_at.slice(0, 10);
+    const list = map.get(day) ?? [];
+    list.push(r);
+    map.set(day, list);
+  }
+  return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+}
+
+export function ReportsClient({
+  rows: initialRows,
+  currentUserId,
+  drafts = [],
+}: {
+  rows: ReportRow[];
+  currentUserId: string;
+  drafts?: ReportDraft[];
+}) {
+  const initial = rangeForPreset('this-month');
+  const [rows, setRows] = useState(initialRows);
+  const [ownerFilter, setOwnerFilter] = useState<'mine' | 'all'>('all');
+  const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
+  const [preset, setPreset] = useState<RangePreset>('this-month');
+  const [dateFrom, setDateFrom] = useState(initial.from);
+  const [dateTo, setDateTo] = useState(initial.to);
+  const [province, setProvince] = useState('');
+  const [district, setDistrict] = useState('');
+  const [schoolName, setSchoolName] = useState('');
+  const [schoolSize, setSchoolSize] = useState('');
+  const [page, setPage] = useState(1);
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [pending, start] = useTransition();
+
+  const provinces = useMemo(
+    () => [...new Set(rows.map((r) => r.province).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th')),
+    [rows]
+  );
+
+  const districts = useMemo(() => {
+    let list = rows;
+    if (province) list = list.filter((r) => r.province === province);
+    return [...new Set(list.map((r) => r.district).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b, 'th')
+    );
+  }, [rows, province]);
+
+  const applyPreset = (key: RangePreset) => {
+    setPreset(key);
+    const next = rangeForPreset(key);
+    setDateFrom(next.from);
+    setDateTo(next.to);
+    setPage(1);
+  };
+
+  const toggleFilterTag = (tag: string) => {
+    setActiveTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+    setPage(1);
+  };
+
+  const filtered = useMemo(() => {
+    let list = [...rows];
+    if (ownerFilter === 'mine') list = list.filter((r) => r.staff_id === currentUserId);
+    if (dateFrom) list = list.filter((r) => r.created_at.slice(0, 10) >= dateFrom);
+    if (dateTo) list = list.filter((r) => r.created_at.slice(0, 10) <= dateTo);
+    if (province) list = list.filter((r) => r.province === province);
+    if (district) list = list.filter((r) => r.district === district);
+    if (schoolSize) list = list.filter((r) => String(r.school_size || '') === schoolSize);
+    if (schoolName.trim()) {
+      const n = schoolName.trim().toLowerCase();
+      list = list.filter((r) => r.school_name.toLowerCase().includes(n));
+    }
+    if (activeTags.size > 0) {
+      list = list.filter((r) => {
+        const tags = extractTags(r);
+        return [...activeTags].every((t) => tags.includes(t));
+      });
+    }
+    return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }, [
+    rows,
+    ownerFilter,
+    currentUserId,
+    dateFrom,
+    dateTo,
+    activeTags,
+    province,
+    district,
+    schoolSize,
+    schoolName,
+  ]);
+
+  const dayGroups = useMemo(() => groupByDate(filtered), [filtered]);
+  const totalPages = Math.max(1, Math.ceil(dayGroups.length / DAYS_PER_PAGE));
+  const pageGroups = dayGroups.slice((page - 1) * DAYS_PER_PAGE, page * DAYS_PER_PAGE);
+
+  const startEdit = (r: ReportRow) => {
+    setEditingId(r.id);
+    setEditText(r.text.replace(/^#[^\n]+\n?/, '').trim() || r.text);
+    setEditTags(extractTags(r));
+  };
+
+  const saveEdit = (r: ReportRow) => {
+    start(async () => {
+      const fd = new FormData();
+      fd.set('school_id', r.school_id);
+      fd.set('comment_id', r.id);
+      fd.set('text', editText.trim());
+      fd.set('tags', editTags.join(','));
+      const res = await updateSchoolCommentAction(fd);
+      if (!res.ok || !('comment' in res) || !res.comment) return;
+      setRows((prev) =>
+        prev.map((x) =>
+          x.id === r.id
+            ? {
+                ...x,
+                text: res.comment!.text,
+                edited_at: res.comment!.edited_at,
+                tags: res.comment!.tags,
+              }
+            : x
+        )
+      );
+      setEditingId(null);
+    });
+  };
+
+  return (
+    <div className="page-shell py-5 grid gap-5">
+      <section className="ed-card p-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="ed-section-title text-base m-0">ส่งรายงานลงพื้นที่</h2>
+          <p className="text-sm text-slate-600 m-0 mt-1">
+            บันทึกความคิดเห็นหรือกิจกรรมของโรงเรียนภายใต้ขอบเขต
+          </p>
+        </div>
+        <Link href="/reports/new" className="ed-btn ed-btn--primary">
+          <FilePlus2 size={16} /> ฉันจะส่งรายงาน
+        </Link>
+      </section>
+
+      {drafts.length > 0 && (
+        <section className="ed-card p-4 space-y-3">
+          <div>
+            <h2 className="ed-section-title text-base m-0">ร่างรายงานของฉัน</h2>
+            <p className="text-sm text-slate-600 m-0 mt-1">
+              คลิกเพื่อเขียนต่อ · หากไม่ต้องการแล้ว ให้เปิดร่างแล้วกดลบด้านบน
+            </p>
+          </div>
+          <div className="report-draft-list">
+            {drafts.map((d) => (
+              <Link
+                key={d.id}
+                href={`/reports/new?draft_id=${encodeURIComponent(d.id)}`}
+                className="report-draft-item"
+              >
+                <div>
+                  <strong className="text-tm-blue">{d.school_name || 'ไม่ระบุโรงเรียน'}</strong>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    แก้ไขล่าสุด{' '}
+                    {new Date(d.updated_at).toLocaleString('th-TH', {
+                      dateStyle: 'medium',
+                      timeStyle: 'short',
+                    })}
+                    {d.report_date ? ` · วันที่รายงาน ${d.report_date}` : ''}
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-tm-blue">เขียนต่อ →</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="ed-card p-4 space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <strong className="text-sm">มุมมอง</strong>
+          <div className="score-mode-switch" role="group" aria-label="เจ้าของรายงาน">
+            <button
+              type="button"
+              className={ownerFilter === 'mine' ? 'is-active' : ''}
+              onClick={() => {
+                setOwnerFilter('mine');
+                setPage(1);
+              }}
+            >
+              รายงานของฉัน
+            </button>
+            <button
+              type="button"
+              className={ownerFilter === 'all' ? 'is-active' : ''}
+              onClick={() => {
+                setOwnerFilter('all');
+                setPage(1);
+              }}
+            >
+              รายงานทั้งหมด
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <strong className="text-sm">แฮชแท็ก</strong>
+          {REPORT_HASHTAGS.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className={`report-tag ${activeTags.has(tag) ? 'is-active' : ''}`}
+              onClick={() => toggleFilterTag(tag)}
+            >
+              #{tag}
+            </button>
+          ))}
+          {activeTags.size > 0 && (
+            <button type="button" className="navbar__link text-xs" onClick={() => setActiveTags(new Set())}>
+              ล้างแท็ก
+            </button>
+          )}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-sm font-semibold grid gap-1">
+            จังหวัด
+            <select
+              className="form-input"
+              value={province}
+              onChange={(e) => {
+                setProvince(e.target.value);
+                setDistrict('');
+                setPage(1);
+              }}
+            >
+              <option value="">ทั้งหมด</option>
+              {provinces.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-semibold grid gap-1">
+            อำเภอ / เขต
+            <select
+              className="form-input"
+              value={district}
+              onChange={(e) => {
+                setDistrict(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">ทั้งหมด</option>
+              {districts.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-semibold grid gap-1">
+            ชื่อโรงเรียน
+            <input
+              className="form-input"
+              value={schoolName}
+              onChange={(e) => {
+                setSchoolName(e.target.value);
+                setPage(1);
+              }}
+              placeholder="ค้นหาชื่อ"
+            />
+          </label>
+          <label className="text-sm font-semibold grid gap-1">
+            ขนาดโรงเรียน
+            <select
+              className="form-input"
+              value={schoolSize}
+              onChange={(e) => {
+                setSchoolSize(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">ทั้งหมด</option>
+              {SCHOOL_SIZES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <strong className="text-sm">ช่วงวันที่</strong>
+          {PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              className={`navbar__link ${preset === p.key ? 'navbar__link--active' : ''}`}
+              onClick={() => applyPreset(p.key)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-3 items-end">
+          <label className="text-sm font-semibold grid gap-1">
+            จากวันที่
+            <input
+              type="date"
+              className="form-input"
+              value={dateFrom}
+              onChange={(e) => {
+                setPreset('custom');
+                setDateFrom(e.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+          <label className="text-sm font-semibold grid gap-1">
+            ถึงวันที่
+            <input
+              type="date"
+              className="form-input"
+              value={dateTo}
+              onChange={(e) => {
+                setPreset('custom');
+                setDateTo(e.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+        </div>
+        <p className="text-sm text-slate-500 m-0">
+          {filtered.length} รายการ · {dayGroups.length} วัน · หน้า {page}/{totalPages}
+        </p>
+      </section>
+
+      <section className="panel-card space-y-3 school-activity">
+        <div className="flex items-center gap-2">
+          <MessageSquare size={18} className="text-tm-blue" />
+          <h2 className="section-heading text-base m-0">รายงานทั้งหมด</h2>
+        </div>
+
+        {pageGroups.length === 0 ? (
+          <p className="school-empty-note m-0">ไม่พบรายงานตามเงื่อนไข</p>
+        ) : (
+          <div className="school-activity__list">
+            {pageGroups.map(([day, items]) => {
+              const open = expandedDays.has(day);
+              return (
+                <article key={day} className="school-activity__day">
+                  <button
+                    type="button"
+                    className="school-activity__day-head"
+                    aria-expanded={open}
+                    onClick={() =>
+                      setExpandedDays((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(day)) next.delete(day);
+                        else next.add(day);
+                        return next;
+                      })
+                    }
+                  >
+                    <div>
+                      <strong>
+                        {new Date(day + 'T12:00:00').toLocaleDateString('th-TH', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                        })}
+                      </strong>
+                      <div className="school-activity__day-preview">
+                        {open ? 'คลิกเพื่อย่อ' : `${items.length} รายงาน · ${items[0]?.school_name || ''}`}
+                      </div>
+                    </div>
+                    <span className="school-activity__day-head__right">
+                      <span className="school-activity__count">{items.length}</span>
+                      <ChevronDown
+                        size={16}
+                        className={open ? 'visit-booking-card__chevron is-open' : 'visit-booking-card__chevron'}
+                      />
+                    </span>
+                  </button>
+                  {open && (
+                    <ul className="school-activity__items">
+                      {items.map((c) => {
+                        const tags = extractTags(c);
+                        const mine = c.staff_id === currentUserId;
+                        const editing = editingId === c.id;
+                        return (
+                          <li key={c.id} className="report-detail-item">
+                            <div className="report-detail-item__top">
+                              <div>
+                                <strong className="text-tm-blue">{c.school_name}</strong>
+                                <div className="text-xs text-slate-500">
+                                  {[c.district, c.province, c.school_size].filter(Boolean).join(' · ') || '—'}
+                                </div>
+                                <div className="text-xs font-semibold mt-1 flex items-center gap-2">
+                                  <span className={mine ? 'owner-name--mine' : 'owner-name--other'}>
+                                    {c.staff_name}
+                                  </span>
+                                  {c.edited_at ? (
+                                    <span className="report-edited-flag">แก้ไขแล้ว</span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <time className="text-xs text-slate-500 whitespace-nowrap">
+                                {new Date(c.created_at).toLocaleString('th-TH')}
+                              </time>
+                            </div>
+
+                            {editing ? (
+                              <div className="grid gap-2 mt-2">
+                                <div className="report-hashtag-pick">
+                                  {REPORT_HASHTAGS.map((tag) => (
+                                    <button
+                                      key={tag}
+                                      type="button"
+                                      className={editTags.includes(tag) ? 'is-on' : ''}
+                                      onClick={() =>
+                                        setEditTags((prev) =>
+                                          prev.includes(tag)
+                                            ? prev.filter((t) => t !== tag)
+                                            : [...prev, tag]
+                                        )
+                                      }
+                                    >
+                                      #{tag}
+                                    </button>
+                                  ))}
+                                </div>
+                                <textarea
+                                  className="form-input"
+                                  rows={3}
+                                  value={editText}
+                                  onChange={(e) => setEditText(e.target.value)}
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    className="ed-btn ed-btn--primary ed-btn--sm"
+                                    disabled={pending || !editText.trim()}
+                                    onClick={() => saveEdit(c)}
+                                  >
+                                    บันทึกการแก้ไข
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ed-btn ed-btn--outline ed-btn--sm"
+                                    onClick={() => setEditingId(null)}
+                                  >
+                                    ยกเลิก
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="text-sm mt-2 mb-2 whitespace-pre-wrap">{c.text}</p>
+                                {c.image_urls && c.image_urls.length > 0 ? (
+                                  <ImageThumbGrid urls={c.image_urls} label="รูปแนบรายงาน" />
+                                ) : null}
+                                <div className="report-tags">
+                                  {tags.map((t) => (
+                                    <button
+                                      key={t}
+                                      type="button"
+                                      className={`report-tag ${activeTags.has(t) ? 'is-active' : ''}`}
+                                      onClick={() => toggleFilterTag(t)}
+                                    >
+                                      #{t}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  <Link
+                                    href={`/schools/${c.school_id}`}
+                                    className="ed-btn ed-btn--outline ed-btn--sm w-fit"
+                                  >
+                                    เปิดรายละเอียดโรงเรียน
+                                  </Link>
+                                  {mine && (
+                                    <button
+                                      type="button"
+                                      className="ed-btn ed-btn--outline ed-btn--sm"
+                                      onClick={() => startEdit(c)}
+                                    >
+                                      <Pencil size={14} /> แก้ไข
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+        {dayGroups.length > DAYS_PER_PAGE && (
+          <div className="managed-pagination">
+            <span>
+              วัน {(page - 1) * DAYS_PER_PAGE + 1}–{Math.min(page * DAYS_PER_PAGE, dayGroups.length)} จาก{' '}
+              {dayGroups.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="navbar__link"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                ‹
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .slice(Math.max(0, page - 3), page + 2)
+                .map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`navbar__link ${page === n ? 'navbar__link--active' : ''}`}
+                    onClick={() => setPage(n)}
+                  >
+                    {n}
+                  </button>
+                ))}
+              <button
+                type="button"
+                className="navbar__link"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                ›
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

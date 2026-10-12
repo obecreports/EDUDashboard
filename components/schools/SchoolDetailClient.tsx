@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -16,28 +16,48 @@ import {
 import { Bar, Doughnut } from 'react-chartjs-2';
 import {
   Award,
+  Building2,
+  CalendarDays,
+  CheckCircle2,
   ClipboardPen,
   Expand,
+  FilePlus2,
   Home,
   Info,
   Map as MapIcon,
+  MapPin,
   MessageSquare,
+  Phone,
+  ShieldAlert,
+  Sparkles,
+  Star,
+  TriangleAlert,
   UserCheck,
   Users,
   X,
 } from 'lucide-react';
 import type { SchoolFull } from '@/lib/types';
+import { schoolCoverImage } from '@/lib/schools/images';
+import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
 import type {
   SchoolAchievements,
   SchoolComment,
   SchoolSwot,
 } from '@/lib/auth/user-store';
-import { postSchoolCommentAction } from '@/app/actions/school-extras';
 import { DualRadarChart } from '@/components/schools/SchoolRadarChart';
+import { THREE_PILLAR_INDICATOR_DEFS, THREE_PILLAR_LABELS } from '@/lib/mock/pillars';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
-type TabId = 'overview' | 'basic' | 'people' | 'scores';
+type TabId =
+  | 'overview'
+  | 'basic'
+  | 'people'
+  | 'location'
+  | 'swot'
+  | 'visits'
+  | 'scores'
+  | 'pillars';
 
 function num(v: unknown): number {
   if (v == null || v === '') return 0;
@@ -53,17 +73,24 @@ function labelOf(
   return lookup?.[code] || lookup?.[code.replace(/_score$/, '')] || fallback;
 }
 
+/** Normalize 0–100 pillar scores onto 0–5 strategy scale for color/label thresholds */
+function scoreOnFive(score: number) {
+  return score > 5 ? score / 20 : score;
+}
+
 function scoreColor(score: number) {
-  if (score >= 4) return '#059669';
-  if (score >= 3) return '#65a30d';
-  if (score >= 2) return '#d97706';
+  const s = scoreOnFive(score);
+  if (s >= 4) return '#059669';
+  if (s >= 3) return '#65a30d';
+  if (s >= 2) return '#d97706';
   return '#ea580c';
 }
 
 function qualityLabel(score: number) {
-  if (score >= 4) return 'ดีเยี่ยม';
-  if (score >= 3) return 'ดี';
-  if (score >= 2) return 'พอใช้';
+  const s = scoreOnFive(score);
+  if (s >= 4) return 'ดีเยี่ยม';
+  if (s >= 3) return 'ดี';
+  if (s >= 2) return 'พอใช้';
   return 'ต้องปรับปรุง';
 }
 
@@ -180,8 +207,8 @@ function ScoreBar({
   );
 }
 
-function OverallGauge({ score }: { score: number }) {
-  const pct = Math.max(0, Math.min(100, (score / 5) * 100));
+function OverallGauge({ score, max = 5 }: { score: number; max?: number }) {
+  const pct = Math.max(0, Math.min(100, (score / Math.max(1, max)) * 100));
   const color = scoreColor(score);
   return (
     <div className="overall-gauge">
@@ -191,44 +218,96 @@ function OverallGauge({ score }: { score: number }) {
       >
         <div className="overall-gauge__inner">
           <div className="overall-gauge__score" style={{ color }}>
-            {score.toFixed(2)}
+            {max > 5 ? score.toFixed(1) : score.toFixed(2)}
           </div>
           <div className="overall-gauge__label">{qualityLabel(score)}</div>
         </div>
       </div>
-      <p className="text-sm text-slate-500 m-0 text-center">คะแนนรวม · เต็ม 5</p>
+      <p className="text-sm text-slate-500 m-0 text-center">คะแนนรวม · เต็ม {max}</p>
     </div>
   );
 }
 
-import {
-  SWOT_EXTERNAL_FIELDS,
-  SWOT_INTERNAL_FIELDS,
-} from '@/lib/swot/schema';
+import { SWOT_SECTIONS, swotHasContent } from '@/lib/swot/schema';
+
+function groupCommentsByDate(comments: SchoolComment[]) {
+  const map = new Map<string, SchoolComment[]>();
+  for (const c of comments) {
+    const day = c.created_at.slice(0, 10);
+    if (!map.has(day)) map.set(day, []);
+    map.get(day)!.push(c);
+  }
+  return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+}
+
+function swotLongTexts(swot: SchoolSwot) {
+  return {
+    internalStrengths: swot.internal.strengths.trim(),
+    internalWeaknesses: swot.internal.weaknesses.trim(),
+    externalStrengths: swot.external.strengths.trim(),
+    externalThreats: swot.external.threats.trim(),
+  };
+}
+
+export type SchoolVisitHistoryItem = {
+  id: string;
+  date: string;
+  activity: string;
+  status_th?: string | null;
+  notes?: string;
+  staff_name?: string | null;
+};
+
+export type PillarIndicatorScore = {
+  code: string;
+  column: string;
+  label: string;
+  score: number;
+};
 
 export function SchoolDetailClient({
   school,
   canEdit,
   canViewComments = false,
   canComment,
+  showScores = true,
+  guestView = false,
   initialComments,
   initialSwot,
   initialAchievements,
+  visitHistory = [],
+  pillarIndicators,
 }: {
   school: SchoolFull;
   canEdit: boolean;
   canViewComments?: boolean;
   canComment: boolean;
+  showScores?: boolean;
+  guestView?: boolean;
   initialComments: SchoolComment[];
   initialSwot: SchoolSwot;
   initialAchievements: SchoolAchievements;
+  /** Calendar / schedule history for this school (read-only) */
+  visitHistory?: SchoolVisitHistoryItem[];
+  /** 3-pillar indicators mapped via Label_Lookup + school_pillar_scores */
+  pillarIndicators?: Record<
+    'qualitySchool' | 'qualityGraduation' | 'disciplineMorality',
+    PillarIndicatorScore[]
+  >;
 }) {
   const [tab, setTab] = useState<TabId>('overview');
   const [mapFullscreen, setMapFullscreen] = useState(false);
-  const [comments, setComments] = useState(initialComments);
-  const [commentText, setCommentText] = useState('');
-  const [msg, setMsg] = useState<string | null>(null);
-  const [pending, start] = useTransition();
+  const [comments] = useState(() => initialComments);
+  const [showAllActivity, setShowAllActivity] = useState(false);
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(() => {
+    const groups = groupCommentsByDate(initialComments);
+    return groups[0] ? new Set([groups[0][0]]) : new Set();
+  });
+
+  const activityGroups = useMemo(() => groupCommentsByDate(comments), [comments]);
+  const visibleGroups = showAllActivity ? activityGroups : activityGroups.slice(0, 3);
+  const swotTexts = useMemo(() => swotLongTexts(initialSwot), [initialSwot]);
+  const hasSwot = useMemo(() => swotHasContent(initialSwot), [initialSwot]);
 
   const people = (school.School_People ?? {}) as Record<string, unknown>;
   const scores = (school.School_Score ?? school.scores ?? {}) as Record<string, unknown>;
@@ -339,6 +418,12 @@ export function SchoolDetailClient({
   });
 
   const overall = num(scores.overall) || school.overallScore || 0;
+  const three = school.threePillarScores ?? {
+    qualitySchool: 0,
+    qualityGraduation: 0,
+    disciplineMorality: 0,
+    overall: 0,
+  };
 
   const barData = useMemo(() => {
     const labels = activeLevels.map((l) => l.name.replace(/^จำนวนนักเรียน\s*/u, '').slice(0, 22));
@@ -401,12 +486,174 @@ export function SchoolDetailClient({
     [totalBoys, totalGirls]
   );
 
-  const tabs: { id: TabId; label: string; icon: typeof Home }[] = [
-    { id: 'overview', label: 'ภาพรวม', icon: Home },
-    { id: 'basic', label: 'ข้อมูลพื้นฐาน', icon: Info },
-    { id: 'people', label: 'นักเรียน / บุคลากร', icon: Users },
-    { id: 'scores', label: 'ผลการประเมิน', icon: Award },
-  ];
+  const tabs: { id: TabId; label: string; icon: typeof Home }[] = guestView
+    ? [
+        { id: 'overview', label: 'ภาพรวม', icon: Home },
+        { id: 'basic', label: 'ข้อมูลพื้นฐาน', icon: Info },
+        { id: 'location', label: 'ที่ตั้งและแผนที่', icon: MapIcon },
+        { id: 'swot', label: 'SWOT โรงเรียน', icon: ClipboardPen },
+      ]
+    : [
+        { id: 'overview', label: 'ภาพรวม', icon: Home },
+        { id: 'basic', label: 'ข้อมูลพื้นฐาน', icon: Info },
+        { id: 'swot', label: 'SWOT โรงเรียน', icon: ClipboardPen },
+        { id: 'visits', label: 'การลงพื้นที่', icon: CalendarDays },
+        ...(showScores
+          ? [
+              { id: 'scores' as const, label: '5 กลยุทธ์', icon: Award },
+              { id: 'pillars' as const, label: '3 เสาหลัก', icon: Sparkles },
+            ]
+          : []),
+        { id: 'people', label: 'นักเรียน / บุคลากร', icon: Users },
+      ];
+
+  const mapsUrl =
+    hasCoords
+      ? `https://www.google.com/maps?q=${lat},${lng}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(school.school_name_th + ' ' + (school.province || ''))}`;
+
+  const renderActivityFeed = () => (
+    <section className="panel-card space-y-3 school-activity">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <MessageSquare size={18} className="text-tm-blue" />
+          <h2 className="section-heading text-base m-0">บันทึกกิจกรรม</h2>
+        </div>
+        {canComment && (
+          <Link
+            href={`/reports/new?school_id=${encodeURIComponent(String(school.school_id))}`}
+            className="ed-btn ed-btn--primary ed-btn--sm"
+          >
+            <FilePlus2 size={14} /> ส่งรายงาน
+          </Link>
+        )}
+      </div>
+      {activityGroups.length === 0 ? (
+        <p className="school-empty-note m-0">ยังไม่มีกิจกรรมของโรงเรียนนี้</p>
+      ) : (
+        <div className="school-activity__list">
+          {visibleGroups.map(([day, items]) => {
+            const open = expandedDays.has(day);
+            return (
+              <article key={day} className="school-activity__day">
+                <button
+                  type="button"
+                  className="school-activity__day-head"
+                  aria-expanded={open}
+                  onClick={() =>
+                    setExpandedDays((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(day)) next.delete(day);
+                      else next.add(day);
+                      return next;
+                    })
+                  }
+                >
+                  <div>
+                    <strong>
+                      {new Date(day + 'T12:00:00').toLocaleDateString('th-TH', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
+                    </strong>
+                    <div className="school-activity__day-preview">
+                      {open ? 'คลิกเพื่อย่อ' : items[0]?.text.slice(0, 72) || '—'}
+                      {!open && (items[0]?.text.length ?? 0) > 72 ? '…' : ''}
+                    </div>
+                  </div>
+                  <span className="school-activity__count">{items.length} รายการ</span>
+                </button>
+                {open && (
+                  <ul className="school-activity__items">
+                    {items.map((c) => (
+                      <li key={c.id}>
+                        <div className="school-activity__meta">
+                          <strong>{c.staff_name}</strong>
+                          <span>{new Date(c.created_at).toLocaleTimeString('th-TH')}</span>
+                        </div>
+                        <p>{c.text}</p>
+                        {c.image_urls && c.image_urls.length > 0 ? (
+                          <ImageThumbGrid urls={c.image_urls} />
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            );
+          })}
+          {activityGroups.length > 3 && (
+            <button
+              type="button"
+              className="ed-btn ed-btn--outline ed-btn--sm w-fit"
+              onClick={() => setShowAllActivity((v) => !v)}
+            >
+              {showAllActivity
+                ? 'แสดงเฉพาะ 3 วันล่าสุด'
+                : `ดูกิจกรรมทั้งหมด (${activityGroups.length} วัน)`}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+
+  const renderSwotLongText = () => (
+    <div className="swot-long space-y-5">
+      {SWOT_SECTIONS.map((section) => (
+        <div key={section.group} className="prose-stack">
+          <h3 className="prose-stack__group">{section.group}</h3>
+          {section.items.map((item) => {
+            const text =
+              item.key === 'internal.strengths'
+                ? swotTexts.internalStrengths
+                : item.key === 'internal.weaknesses'
+                  ? swotTexts.internalWeaknesses
+                  : item.key === 'external.strengths'
+                    ? swotTexts.externalStrengths
+                    : swotTexts.externalThreats;
+            return (
+              <div key={item.key} className="prose-stack__item">
+                <h4 className="prose-stack__title">
+                  {item.code} {item.label}
+                </h4>
+                <p className="prose-stack__body swot-long__text whitespace-pre-wrap">
+                  {text || '— ยังไม่มีข้อมูล —'}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+      {!hasSwot && (
+        <p className="text-sm text-slate-500 m-0">ยังไม่มีข้อมูล SWOT สำหรับโรงเรียนนี้</p>
+      )}
+    </div>
+  );
+
+  const renderLocationPanel = () => (
+    <div className="school-loc-panel panel-card">
+      <h2 className="section-heading text-base">ที่ตั้งโรงเรียน</h2>
+      <div className="school-loc-panel__grid">
+        {hasCoords ? (
+          <MiniMap lat={lat} lng={lng} name={school.school_name_th} className="school-mini-map school-mini-map--panel" />
+        ) : (
+          <div className="school-loc-panel__map-fallback">ไม่มีพิกัดบนแผนที่</div>
+        )}
+        <div className="school-loc-panel__facts">
+          <div><MapPin size={16} /><div><em>ที่อยู่</em><strong>{address || '—'}</strong></div></div>
+          <div><Building2 size={16} /><div><em>อำเภอ / จังหวัด</em><strong>{[school.district, school.province].filter(Boolean).join(' · ') || '—'}</strong></div></div>
+          <div><Sparkles size={16} /><div><em>สังกัด / เขตพื้นที่</em><strong>{areaName || '—'}</strong></div></div>
+          <div><MapIcon size={16} /><div><em>พิกัด</em><strong>{hasCoords ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : '—'}</strong></div></div>
+          <a href={mapsUrl} target="_blank" rel="noreferrer" className="ed-btn ed-btn--primary ed-btn--sm w-fit">
+            เปิดใน Google Maps
+          </a>
+        </div>
+      </div>
+    </div>
+  );
 
   const mapBlock = hasCoords ? (
     <div className="school-map-card panel-card p-0 overflow-hidden">
@@ -452,34 +699,73 @@ export function SchoolDetailClient({
         </Link>
         <span className="text-slate-300">/</span>
         <span className="text-slate-600 truncate">{school.school_name_th}</span>
-        {canEdit && (
+        {!guestView && (
           <>
             <span className="text-slate-300">·</span>
             <Link
-              href={`/staff/update-school?id=${school.school_id}`}
+              href={`/tickets/new?school_id=${school.school_id}&school_name=${encodeURIComponent(school.school_name_th)}`}
               prefetch
               className="text-tm-blue hover:underline inline-flex items-center gap-1"
             >
               <ClipboardPen size={14} />
-              อัปเดตข้อมูล
+              ขอแก้ไขข้อมูล (Ticket)
             </Link>
           </>
         )}
       </nav>
 
-      <header className="school-detail__banner">
-        <p className="school-detail__banner-id">รหัสโรงเรียน {school.school_id}</p>
-        <h1 className="school-detail__banner-name">{school.school_name_th}</h1>
-        <div className="school-detail__banner-meta">
-          <span>{school.province || '—'}</span>
-          {areaName ? (
-            <>
-              <span className="school-detail__banner-dot" aria-hidden>
-                ·
-              </span>
-              <span>{areaName}</span>
-            </>
-          ) : null}
+      <header className={`school-profile-card ${guestView ? 'school-profile-card--guest' : ''}`}>
+        <div
+          className="school-profile-card__photo"
+          style={{ backgroundImage: `url(${schoolCoverImage(school)})` }}
+          role="img"
+          aria-label="ภาพโรงเรียน"
+        />
+        <div className="school-profile-card__body">
+          <div className="school-profile-card__identity">
+            <div className="school-profile-card__seal" aria-hidden>
+              <Building2 size={28} />
+            </div>
+            <div>
+              <h1 className="school-profile-card__name">{school.school_name_th}</h1>
+              <p className="school-profile-card__place m-0">
+                {[school.district ? `อำเภอ${school.district}` : '', school.province ? `จังหวัด${school.province}` : '']
+                  .filter(Boolean)
+                  .join(' ') || '—'}
+              </p>
+              <p className="school-profile-card__id m-0">รหัสสถานศึกษา {school.school_id}</p>
+            </div>
+          </div>
+          <div className="school-profile-card__badges">
+            <div className="school-profile-badge">
+              <Building2 size={18} />
+              <div>
+                <em>สังกัด</em>
+                <strong>สพฐ. / โครงการกองทุนการศึกษา</strong>
+              </div>
+            </div>
+            <div className="school-profile-badge">
+              <MapPin size={18} />
+              <div>
+                <em>เขตพื้นที่การศึกษา</em>
+                <strong>{areaName || '—'}</strong>
+              </div>
+            </div>
+            <div className="school-profile-badge">
+              <UserCheck size={18} />
+              <div>
+                <em>ผู้อำนวยการโรงเรียน</em>
+                <strong>{school.director_name || '—'}</strong>
+              </div>
+            </div>
+            <div className="school-profile-badge">
+              <Phone size={18} />
+              <div>
+                <em>เบอร์ติดต่อ</em>
+                <strong>{school.phone || '—'}</strong>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -505,180 +791,197 @@ export function SchoolDetailClient({
 
       {tab === 'overview' && (
         <div className="space-y-4">
-          <div className="kpi-grid">
-            <article className="kpi-card">
-              <div className="kpi-card__icon">
-                <Users size={22} />
+          {guestView ? (
+            <>
+              <div className="school-guest-overview">
+                {renderLocationPanel()}
+                <section className="panel-card space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="section-heading text-base m-0">SWOT โรงเรียน</h2>
+                    <span className="text-xs text-slate-500">ภาพรวมสาธารณะ</span>
+                  </div>
+                  {renderSwotLongText()}
+                </section>
               </div>
-              <div>
-                <div className="kpi-card__label">นักเรียนทั้งหมด</div>
-                <div className="kpi-card__value">{totalStudents.toLocaleString()}</div>
-                <div className="kpi-card__hint">
-                  ชาย {totalBoys.toLocaleString()} · หญิง {totalGirls.toLocaleString()}
-                </div>
+              <div className="panel-card">
+                <h2 className="section-heading text-base">ระดับชั้นที่เปิดสอน</h2>
+                {offeredLevels.length === 0 ? (
+                  <p className="text-sm text-slate-500 m-0">ยังไม่มีข้อมูลจำนวนนักเรียนรายระดับ</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {offeredLevels.map((lv) => (
+                      <span key={lv} className="school-chip">{lv}</span>
+                    ))}
+                  </div>
+                )}
               </div>
-            </article>
-            <article className="kpi-card">
-              <div className="kpi-card__icon kpi-card__icon--seafoam">
-                <UserCheck size={22} />
-              </div>
-              <div>
-                <div className="kpi-card__label">บุคลากรทั้งหมด</div>
-                <div className="kpi-card__value">{totalTeachers.toLocaleString()}</div>
-                <div className="kpi-card__hint">ผู้อำนวยการ: {teacherDirector.toLocaleString()}</div>
-              </div>
-            </article>
-            <article className="kpi-card">
-              <div className="kpi-card__icon">
-                <Award size={22} />
-              </div>
-              <div>
-                <div className="kpi-card__label">คะแนนรวม</div>
-                <div className="kpi-card__value" style={{ color: scoreColor(overall) }}>
-                  {overall.toFixed(2)}
-                </div>
-                <div className="kpi-card__hint">{qualityLabel(overall)}</div>
-              </div>
-            </article>
-          </div>
-
-          {school.area_special && (
-            <div className="panel-card flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-slate-600">พื้นที่พิเศษ:</span>
-              <span className="school-chip school-chip--amber">{school.area_special}</span>
-            </div>
-          )}
-
-          <div className="panel-card">
-            <h2 className="section-heading text-base">ระดับชั้นที่เปิดสอน</h2>
-            {offeredLevels.length === 0 ? (
-              <p className="text-sm text-slate-500 m-0">ยังไม่มีข้อมูลจำนวนนักเรียนรายระดับ</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {offeredLevels.map((lv) => (
-                  <span key={lv} className="school-chip">
-                    {lv}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div
-            className="grid gap-4"
-            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}
-          >
-            <div className="panel-card">
-              <OverallGauge score={overall} />
-            </div>
-            <div className="panel-card space-y-3">
-              <h2 className="section-heading text-base m-0">กลุ่มผลการประเมิน</h2>
-              {gScores.map((g) => (
-                <ScoreBar key={g.code} label={g.label} score={g.value} showCode={false} />
-              ))}
-            </div>
-          </div>
-
-          {mapBlock}
-
-          {canViewComments && (
-            <section className="panel-card space-y-3">
-              <div className="flex items-center gap-2">
-                <MessageSquare size={18} className="text-tm-blue" />
-                <h2 className="section-heading text-base m-0">ความคิดเห็นและบันทึกติดตาม</h2>
-              </div>
-              {canComment ? (
-                <form
-                  className="space-y-2"
-                  action={(fd) => {
-                    setMsg(null);
-                    start(async () => {
-                      fd.set('school_id', String(school.school_id));
-                      fd.set('text', commentText);
-                      const res = await postSchoolCommentAction(fd);
-                      if (!res.ok) {
-                        setMsg(('error' in res && res.error) || 'บันทึกไม่สำเร็จ');
-                        return;
-                      }
-                      if ('comment' in res && res.comment) {
-                        setComments((prev) => [res.comment, ...prev]);
-                        setCommentText('');
-                        setMsg('บันทึกความคิดเห็นแล้ว');
-                      }
-                    });
-                  }}
-                >
-                  <textarea
-                    className="form-input"
-                    rows={3}
-                    placeholder="บันทึกการเยี่ยม / ความคิดเห็นติดตาม…"
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    required
-                  />
-                  <button
-                    type="submit"
-                    className="navbar__login"
-                    disabled={pending || !commentText.trim()}
-                  >
-                    {pending ? 'กำลังบันทึก…' : 'โพสต์บันทึก'}
-                  </button>
-                </form>
-              ) : null}
-              {msg && <p className="text-sm text-tm-blue m-0">{msg}</p>}
-              {comments.length === 0 ? (
-                <p className="school-empty-note m-0">ยังไม่มีความเห็นของโรงเรียนนี้</p>
-              ) : (
-                <ul className="m-0 p-0 list-none space-y-2">
-                  {comments.map((c) => (
-                    <li key={c.id} className="rounded-lg border border-slate-100 p-3 text-sm">
-                      <div className="flex justify-between gap-2 text-xs text-slate-500 mb-1">
-                        <strong className="text-tm-blue">{c.staff_name}</strong>
-                        <span>{new Date(c.created_at).toLocaleString('th-TH')}</span>
+            </>
+          ) : (
+            <>
+              <div className="kpi-grid">
+                <article className="kpi-card">
+                  <div className="kpi-card__icon">
+                    <Users size={22} />
+                  </div>
+                  <div>
+                    <div className="kpi-card__label">นักเรียนทั้งหมด</div>
+                    <div className="kpi-card__value">{totalStudents.toLocaleString()}</div>
+                    <div className="kpi-card__hint">
+                      ชาย {totalBoys.toLocaleString()} · หญิง {totalGirls.toLocaleString()}
+                    </div>
+                  </div>
+                </article>
+                <article className="kpi-card">
+                  <div className="kpi-card__icon kpi-card__icon--seafoam">
+                    <UserCheck size={22} />
+                  </div>
+                  <div>
+                    <div className="kpi-card__label">บุคลากรทั้งหมด</div>
+                    <div className="kpi-card__value">{totalTeachers.toLocaleString()}</div>
+                    <div className="kpi-card__hint">ผู้อำนวยการ: {teacherDirector.toLocaleString()}</div>
+                  </div>
+                </article>
+                {showScores && (
+                  <>
+                    <article className="kpi-card">
+                      <div className="kpi-card__icon">
+                        <Award size={22} />
                       </div>
-                      <div>{c.text}</div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )}
+                      <div>
+                        <div className="kpi-card__label">คะแนนรวม 5 กลยุทธ์</div>
+                        <div className="kpi-card__value" style={{ color: scoreColor(overall) }}>
+                          {overall.toFixed(2)}
+                        </div>
+                        <div className="kpi-card__hint">{qualityLabel(overall)} · / 5.00</div>
+                      </div>
+                    </article>
+                    <article className="kpi-card">
+                      <div className="kpi-card__icon kpi-card__icon--seafoam">
+                        <Sparkles size={22} />
+                      </div>
+                      <div>
+                        <div className="kpi-card__label">คะแนนรวม 3 เสาหลัก</div>
+                        <div className="kpi-card__value" style={{ color: scoreColor(three.overall) }}>
+                          {three.overall.toFixed(1)}
+                        </div>
+                        <div className="kpi-card__hint">{qualityLabel(three.overall)} · / 100</div>
+                      </div>
+                    </article>
+                  </>
+                )}
+              </div>
 
-          <section className="panel-card space-y-5">
-            <h2 className="section-heading text-base">การวิเคราะห์สภาพแวดล้อม — SWOT</h2>
-            <div className="prose-stack">
-              <h3 className="prose-stack__group">สภาพแวดล้อมภายใน</h3>
-              {SWOT_INTERNAL_FIELDS.map((f) => (
-                <div key={f.key} className="prose-stack__item">
-                  <h4 className="prose-stack__title">{f.label}</h4>
-                  <p className="prose-stack__body">
-                    <strong>จุดแข็ง:</strong>{' '}
-                    {initialSwot.internal[f.key]?.strengths?.trim() || '—'}
-                  </p>
-                  <p className="prose-stack__body">
-                    <strong>จุดอ่อน:</strong>{' '}
-                    {initialSwot.internal[f.key]?.weaknesses?.trim() || '—'}
-                  </p>
+              {school.area_special && (
+                <div className="panel-card flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-600">พื้นที่พิเศษ:</span>
+                  <span className="school-chip school-chip--amber">{school.area_special}</span>
                 </div>
-              ))}
-            </div>
-            <div className="prose-stack">
-              <h3 className="prose-stack__group">สภาพแวดล้อมภายนอก</h3>
-              {SWOT_EXTERNAL_FIELDS.map((f) => (
-                <div key={f.key} className="prose-stack__item">
-                  <h4 className="prose-stack__title">{f.label}</h4>
-                  <p className="prose-stack__body">
-                    <strong>จุดแข็ง:</strong>{' '}
-                    {initialSwot.external[f.key]?.strengths?.trim() || '—'}
-                  </p>
-                  <p className="prose-stack__body">
-                    <strong>จุดอ่อน:</strong>{' '}
-                    {initialSwot.external[f.key]?.weaknesses?.trim() || '—'}
-                  </p>
+              )}
+
+              <div className="panel-card">
+                <h2 className="section-heading text-base">ระดับชั้นที่เปิดสอน</h2>
+                {offeredLevels.length === 0 ? (
+                  <p className="text-sm text-slate-500 m-0">ยังไม่มีข้อมูลจำนวนนักเรียนรายระดับ</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {offeredLevels.map((lv) => (
+                      <span key={lv} className="school-chip">{lv}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {showScores && (
+                <div
+                  className="grid gap-4"
+                  style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}
+                >
+                  <div className="panel-card space-y-3">
+                    <h2 className="section-heading text-base m-0">5 กลยุทธ์</h2>
+                    <OverallGauge score={overall} />
+                    <div className="space-y-2 pt-2">
+                      {gScores.map((g) => (
+                        <div key={g.code} className="flex justify-between text-sm gap-2">
+                          <span className="text-slate-600">{g.label}</span>
+                          <strong className="text-tm-blue">{g.value.toFixed(2)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="panel-card space-y-3">
+                    <h2 className="section-heading text-base m-0">3 เสาหลัก</h2>
+                    <OverallGauge score={three.overall} max={100} />
+                    <div className="space-y-2 pt-2">
+                      {(
+                        [
+                          [THREE_PILLAR_LABELS.qualitySchool, three.qualitySchool],
+                          [THREE_PILLAR_LABELS.qualityGraduation, three.qualityGraduation],
+                          [THREE_PILLAR_LABELS.disciplineMorality, three.disciplineMorality],
+                        ] as const
+                      ).map(([label, score]) => (
+                        <div key={label} className="flex justify-between text-sm gap-2">
+                          <span className="text-slate-600">{label}</span>
+                          <strong className="text-tm-blue">{score.toFixed(1)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
+              )}
+
+              {mapBlock}
+              {canViewComments && renderActivityFeed()}
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === 'location' && <div className="space-y-4">{renderLocationPanel()}</div>}
+
+      {tab === 'swot' && (
+        <section className="panel-card space-y-4">
+          <h2 className="section-heading text-base m-0">การวิเคราะห์สภาพแวดล้อม — SWOT</h2>
+          {renderSwotLongText()}
+        </section>
+      )}
+
+      {tab === 'visits' && (
+        <div className="space-y-4">
+          <section className="panel-card space-y-3">
+            <h2 className="section-heading text-base m-0">ประวัติปฏิทิน / นัดหมายลงพื้นที่</h2>
+            <p className="text-xs text-slate-500 m-0">
+              อ้างอิงจากปฏิทินนัดหมายเท่านั้น — ไม่สามารถแก้ไขจากหน้านี้
+            </p>
+            {visitHistory.length === 0 ? (
+              <p className="text-sm text-slate-500 m-0">ยังไม่มีนัดหมายลงพื้นที่สำหรับโรงเรียนนี้</p>
+            ) : (
+              <ul className="m-0 p-0 list-none space-y-2">
+                {visitHistory.map((v) => (
+                  <li
+                    key={v.id}
+                    className="rounded-xl border border-slate-100 px-3 py-2.5 text-sm flex flex-wrap justify-between gap-2"
+                  >
+                    <div>
+                      <strong className="text-tm-blue">
+                        {new Date(v.date).toLocaleDateString('th-TH', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </strong>
+                      <div className="text-slate-600">{v.activity}</div>
+                      {v.notes ? <div className="text-xs text-slate-500 mt-0.5">{v.notes}</div> : null}
+                    </div>
+                    <div className="text-right text-xs text-slate-500">
+                      <div>{v.status_th || 'นัดหมายแล้ว'}</div>
+                      {v.staff_name ? <div>{v.staff_name}</div> : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
+          {renderActivityFeed()}
         </div>
       )}
 
@@ -902,6 +1205,7 @@ export function SchoolDetailClient({
             style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}
           >
             <div className="panel-card">
+              <h2 className="section-heading text-base m-0 mb-3">คะแนนรวม 5 กลยุทธ์</h2>
               <OverallGauge score={overall} />
             </div>
             <div className="panel-card">
@@ -909,12 +1213,13 @@ export function SchoolDetailClient({
               <DualRadarChart
                 labels={gScores.map((g) => g.label.replace(/^ด้าน/, ''))}
                 schoolScores={gScores.map((g) => g.value)}
+                maxScale={5}
               />
             </div>
           </div>
 
           <div className="panel-card space-y-3">
-            <h2 className="section-heading text-base m-0">กลุ่มผลการประเมิน</h2>
+            <h2 className="section-heading text-base m-0">กลุ่มผลการประเมิน 5 กลยุทธ์</h2>
             <div className="score-grid-2">
               {gScores.map((g) => (
                 <ScoreBar key={g.code} label={g.label} score={g.value} showCode={false} />
@@ -932,6 +1237,81 @@ export function SchoolDetailClient({
               </div>
             </section>
           ))}
+        </div>
+      )}
+
+      {tab === 'pillars' && (
+        <div className="space-y-4">
+          <div
+            className="grid gap-4"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}
+          >
+            <div className="panel-card">
+              <h2 className="section-heading text-base m-0 mb-3">คะแนนรวม 3 เสาหลัก</h2>
+              <OverallGauge score={three.overall} max={100} />
+            </div>
+            <div className="panel-card">
+              <h2 className="section-heading text-base">ภาพรวม 3 เสาหลัก</h2>
+              <DualRadarChart
+                labels={[
+                  THREE_PILLAR_LABELS.qualitySchool,
+                  THREE_PILLAR_LABELS.qualityGraduation,
+                  THREE_PILLAR_LABELS.disciplineMorality,
+                ]}
+                schoolScores={[
+                  three.qualitySchool,
+                  three.qualityGraduation,
+                  three.disciplineMorality,
+                ]}
+                showNational={false}
+                schoolLabel="โรงเรียนนี้"
+                maxScale={100}
+                tickValues={[0, 50, 100]}
+              />
+            </div>
+          </div>
+
+          {(
+            [
+              ['qualitySchool', THREE_PILLAR_LABELS.qualitySchool, three.qualitySchool],
+              ['qualityGraduation', THREE_PILLAR_LABELS.qualityGraduation, three.qualityGraduation],
+              ['disciplineMorality', THREE_PILLAR_LABELS.disciplineMorality, three.disciplineMorality],
+            ] as const
+          ).map(([key, title, score]) => {
+            const inds =
+              pillarIndicators?.[key] ??
+              THREE_PILLAR_INDICATOR_DEFS[key].map((d) => ({
+                code: d.code,
+                column: '',
+                label: d.label,
+                score: 0,
+              }));
+            return (
+              <section key={key} className="panel-card space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="section-heading text-base m-0">{title}</h2>
+                  <strong className="text-tm-blue text-lg">{score.toFixed(1)} / 100</strong>
+                </div>
+                <ul className="m-0 p-0 list-none grid gap-2">
+                  {inds.map((ind) => (
+                    <li
+                      key={ind.code}
+                      className="flex justify-between gap-3 text-sm rounded-lg border border-slate-100 px-3 py-2"
+                    >
+                      <span>
+                        <strong className="text-slate-800 mr-1">{ind.code}</strong>
+                        {ind.label}
+                        {ind.column ? (
+                          <span className="text-[10px] text-slate-400 ml-1">({ind.column})</span>
+                        ) : null}
+                      </span>
+                      <strong className="text-tm-blue shrink-0">{ind.score.toFixed(1)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
 

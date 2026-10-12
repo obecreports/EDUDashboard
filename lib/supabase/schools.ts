@@ -1,13 +1,23 @@
 import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
-import type { SchoolFull, PillarScores } from '@/lib/types';
+import type { SchoolFull, PillarScores, ThreePillarScores } from '@/lib/types';
 import { createAnonClient } from '@/lib/supabase/anon';
+import {
+  EMPTY_THREE_PILLAR,
+  fetchAllPillarScores,
+  fetchPillarScoreBySchoolId,
+  mapPillarRow,
+  type SchoolPillarScoreRow,
+} from '@/lib/supabase/school-pillars';
 
 /**
  * Map DB rows using the legacy schema (select '*') — do not hardcode
  * optional columns like school_name_en / director_name that may not exist.
  */
-function toSchoolFull(raw: Record<string, any>): SchoolFull {
+function toSchoolFull(
+  raw: Record<string, any>,
+  threePillarScores: ThreePillarScores = EMPTY_THREE_PILLAR
+): SchoolFull {
   const basic = raw;
   const score = raw.School_Score || {};
   const people = raw.School_People || {};
@@ -56,8 +66,15 @@ function toSchoolFull(raw: Record<string, any>): SchoolFull {
     latitude: basic.lat ?? basic.latitude ?? null,
     longitude: basic.long ?? basic.lng ?? basic.longitude ?? null,
     director_name: typeof director === 'string' ? director : String(director || ''),
+    coverImageUrl:
+      (typeof basic.cover_image_url === 'string' && basic.cover_image_url.trim()) ||
+      (typeof basic.coverImageUrl === 'string' && basic.coverImageUrl.trim()) ||
+      null,
     scores: score,
     pillarScores,
+    threePillarScores,
+    lastActivityAt: null,
+    visitStatus: 'never',
     overallScore: Number.isFinite(overallScore) ? overallScore : 0,
     studentSummary: {
       totalStudents: Number(people.sum_student ?? people.student_count ?? 0),
@@ -122,12 +139,13 @@ const loadLabelLookupRaw = unstable_cache(
 async function loadAllSchools(): Promise<SchoolFull[]> {
   const supabase = createAnonClient();
 
-  const [basicsRes, scoresRes, peopleRes, govRows, labelRows] = await Promise.all([
+  const [basicsRes, scoresRes, peopleRes, govRows, labelRows, pillarMap] = await Promise.all([
     supabase.from('School_Basic').select('*'),
     supabase.from('School_Score').select('*'),
     supabase.from('School_People').select('*'),
     loadGovDomainsRaw(),
     loadLabelLookupRaw(),
+    fetchAllPillarScores(),
   ]);
 
   if (basicsRes.error) throw basicsRes.error;
@@ -163,12 +181,16 @@ async function loadAllSchools(): Promise<SchoolFull[]> {
 
   return basics.map((basic) => {
     const id = String(basic.school_id);
-    const full = toSchoolFull({
-      ...basic,
-      School_Score: scoreMap.get(id) ?? {},
-      School_People: peopleMap.get(id) ?? {},
-      Gov_Domain: basic.area_id != null ? govMap.get(String(basic.area_id)) ?? {} : {},
-    });
+    const pillarRow = pillarMap.get(id) as SchoolPillarScoreRow | undefined;
+    const full = toSchoolFull(
+      {
+        ...basic,
+        School_Score: scoreMap.get(id) ?? {},
+        School_People: peopleMap.get(id) ?? {},
+        Gov_Domain: basic.area_id != null ? govMap.get(String(basic.area_id)) ?? {} : {},
+      },
+      mapPillarRow(pillarRow)
+    );
     full.labelLookup = labelMap;
     return full;
   });
@@ -178,12 +200,13 @@ async function loadSchoolById(schoolId: string): Promise<SchoolFull | null> {
   const supabase = createAnonClient();
   const id = Number(schoolId);
 
-  const [basicRes, scoreRes, peopleRes, govRows, labelRows] = await Promise.all([
+  const [basicRes, scoreRes, peopleRes, govRows, labelRows, pillarRow] = await Promise.all([
     supabase.from('School_Basic').select('*').eq('school_id', id).maybeSingle(),
     supabase.from('School_Score').select('*').eq('school_id', id).maybeSingle(),
     supabase.from('School_People').select('*').eq('school_id', id).maybeSingle(),
     loadGovDomainsRaw(),
     loadLabelLookupRaw(),
+    fetchPillarScoreBySchoolId(id),
   ]);
 
   if (basicRes.error) throw basicRes.error;
@@ -199,12 +222,15 @@ async function loadSchoolById(schoolId: string): Promise<SchoolFull | null> {
       ? govRows.find((g) => String(g.area_id) === String(basicRes.data!.area_id))
       : null;
 
-  const full = toSchoolFull({
-    ...basicRes.data,
-    School_Score: scoreRes.data ?? {},
-    School_People: peopleRes.data ?? {},
-    Gov_Domain: gov ?? {},
-  });
+  const full = toSchoolFull(
+    {
+      ...basicRes.data,
+      School_Score: scoreRes.data ?? {},
+      School_People: peopleRes.data ?? {},
+      Gov_Domain: gov ?? {},
+    },
+    mapPillarRow(pillarRow)
+  );
   full.labelLookup = labelMap;
   return full;
 }
@@ -213,17 +239,17 @@ const SCHOOLS_REVALIDATE = 120;
 
 /** Deduped per-request + ISR cache across navigations */
 export const fetchSchools = cache(async (): Promise<SchoolFull[]> => {
-  return unstable_cache(loadAllSchools, ['schools-legacy-star-v1'], {
+  return unstable_cache(loadAllSchools, ['schools-legacy-star-v3-covers'], {
     revalidate: SCHOOLS_REVALIDATE,
-    tags: ['schools'],
+    tags: ['schools', 'school-pillars'],
   })();
 });
 
 export const fetchSchoolById = cache(async (schoolId: string | number): Promise<SchoolFull | null> => {
   const id = String(schoolId);
-  return unstable_cache(() => loadSchoolById(id), ['school-by-id-legacy-v1', id], {
+  return unstable_cache(() => loadSchoolById(id), ['school-by-id-legacy-v3-covers', id], {
     revalidate: SCHOOLS_REVALIDATE,
-    tags: ['schools', `school-${id}`],
+    tags: ['schools', 'school-pillars', `school-${id}`],
   })();
 });
 

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
+import { isDbUserId, type StaffCalendarEvent } from '@/lib/auth/mock-users';
 import {
   normalizeActivity,
   normalizeStatus,
@@ -57,8 +57,7 @@ function toSchoolId(schoolId: string | number | null | undefined): number | null
 export async function fetchSiteVisitsForStaff(
   staffId: string
 ): Promise<StaffCalendarEvent[]> {
-  // Mock cookie auth IDs are not UUIDs — skip DB filter (cookie merge covers demo)
-  if (!staffId || staffId.startsWith('mock-') || staffId === 'guest') {
+  if (!staffId || staffId === 'guest' || !isDbUserId(staffId)) {
     return [];
   }
 
@@ -90,8 +89,11 @@ export async function insertSiteVisitEvent(input: {
   notes?: string;
 }): Promise<{ ok: true; event: StaffCalendarEvent } | { ok: false; error: string }> {
   const schoolId = toSchoolId(input.schoolId);
-  const staffId = input.staffId.startsWith('mock-') ? null : input.staffId;
+  const staffId = isDbUserId(input.staffId) ? input.staffId : null;
   const status = input.status ?? 'นัดหมายแล้ว';
+  if (!staffId) {
+    return { ok: false, error: 'บัญชียังไม่อยู่ในฐานข้อมูล — รัน migration 007' };
+  }
 
   try {
     const supabase = await createClient();
@@ -121,6 +123,28 @@ export async function insertSiteVisitEvent(input: {
       ok: false,
       error: e instanceof Error ? e.message : 'บันทึกกิจกรรมไม่สำเร็จ',
     };
+  }
+}
+
+/** Calendar / visit history for one school (read-only reference on school detail) */
+export async function fetchSiteVisitsForSchool(
+  schoolId: string | number
+): Promise<StaffCalendarEvent[]> {
+  const id = toSchoolId(schoolId);
+  if (id == null) return [];
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from('site_visit_events')
+      .select(
+        'id, staff_id, school_id, school_name, area_id, visit_date, activity_type, status, notes, created_at'
+      )
+      .eq('school_id', id)
+      .order('visit_date', { ascending: false });
+    if (error || !data) return [];
+    return (data as SiteVisitRow[]).map(mapRow);
+  } catch {
+    return [];
   }
 }
 

@@ -1,0 +1,302 @@
+'use client';
+
+import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { assignGeoAction } from '@/app/actions/admin';
+import { ROLE_LABELS, type UserRole } from '@/lib/types';
+import { X } from 'lucide-react';
+
+type Account = {
+  id: string;
+  email: string;
+  full_name: string;
+  role: UserRole;
+  reports_to: string | null;
+  assigned_provinces: string[];
+  /** Staff: Gov_Domain area_id values (legacy may still be province|district) */
+  assigned_districts: string[];
+};
+
+type AreaOption = { id: string; name: string };
+
+export function DomainControlClient({
+  accounts: accountsProp,
+  provinces,
+  areas,
+}: {
+  accounts: Account[];
+  provinces: string[];
+  areas: AreaOption[];
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState(accountsProp);
+
+  const [roleFilter, setRoleFilter] = useState<'all' | 'overseer' | 'staff'>('all');
+  const [nameQuery, setNameQuery] = useState('');
+  const [selectedId, setSelectedId] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagPick, setTagPick] = useState('');
+
+  useEffect(() => {
+    setAccounts(accountsProp);
+  }, [accountsProp]);
+
+  const areaById = useMemo(() => {
+    const m = new Map<string, string>();
+    areas.forEach((a) => m.set(a.id, a.name));
+    return m;
+  }, [areas]);
+
+  const labelForTag = (tag: string, role: UserRole) => {
+    if (role === 'overseer') return tag;
+    return areaById.get(tag) || tag.replace('|', ' / ');
+  };
+
+  const assignable = useMemo(
+    () => accounts.filter((a) => a.role === 'overseer' || a.role === 'staff'),
+    [accounts]
+  );
+
+  const filteredUsers = useMemo(() => {
+    let list = assignable;
+    if (roleFilter !== 'all') list = list.filter((a) => a.role === roleFilter);
+    if (nameQuery.trim()) {
+      const q = nameQuery.trim().toLowerCase();
+      list = list.filter(
+        (a) =>
+          a.full_name.toLowerCase().includes(q) ||
+          a.email.toLowerCase().includes(q) ||
+          a.id.toLowerCase().includes(q)
+      );
+    }
+    return list.sort((a, b) => a.full_name.localeCompare(b.full_name, 'th'));
+  }, [assignable, roleFilter, nameQuery]);
+
+  const selected = assignable.find((a) => a.id === selectedId) ?? null;
+
+  const pickUser = (id: string) => {
+    setSelectedId(id);
+    const u = assignable.find((a) => a.id === id);
+    if (!u) {
+      setTags([]);
+      return;
+    }
+    setNameQuery(u.full_name);
+    setTags(
+      u.role === 'overseer' ? [...u.assigned_provinces] : [...u.assigned_districts]
+    );
+    setTagPick('');
+    setMsg(null);
+  };
+
+  const availableTags = useMemo(() => {
+    if (!selected) return [] as string[];
+    if (selected.role === 'overseer') {
+      return provinces.filter((t) => !tags.includes(t));
+    }
+    return areas.filter((a) => !tags.includes(a.id)).map((a) => a.id);
+  }, [selected, provinces, areas, tags]);
+
+  const addTag = (value: string) => {
+    if (!value || tags.includes(value)) return;
+    setTags((prev) => [...prev, value]);
+    setTagPick('');
+  };
+
+  const removeTag = (value: string) => {
+    setTags((prev) => prev.filter((t) => t !== value));
+  };
+
+  const saveDomain = () => {
+    if (!selected) {
+      setMsg('เลือกผู้ใช้ก่อนบันทึกพื้นที่จัดการ');
+      return;
+    }
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set('userId', selected.id);
+      if (selected.role === 'overseer') {
+        fd.set('provinces', JSON.stringify(tags));
+        fd.set('districts', '[]');
+      } else {
+        fd.set('provinces', '[]');
+        // Staff tags = Gov_Domain area_id list
+        fd.set('districts', JSON.stringify(tags));
+      }
+      const res = await assignGeoAction(fd);
+      if (!res.ok) {
+        setMsg(res.error || 'บันทึกไม่สำเร็จ');
+        return;
+      }
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.id !== selected.id
+            ? a
+            : selected.role === 'overseer'
+              ? { ...a, assigned_provinces: [...tags] }
+              : { ...a, assigned_districts: [...tags] }
+        )
+      );
+      setMsg(`บันทึกพื้นที่จัดการของ ${selected.full_name} แล้ว`);
+      router.refresh();
+    });
+  };
+
+  return (
+    <div className="grid gap-4">
+      {msg && <div className="ed-card p-3 text-sm text-tm-blue bg-tm-blue-50">{msg}</div>}
+
+      <div className="grid gap-4">
+        <section className="ed-card p-4 space-y-3">
+          <div>
+            <h2 className="ed-section-title text-base m-0">1 · ค้นหาและเลือกผู้ใช้</h2>
+            <p className="text-sm text-slate-600 m-0 mt-1">
+              Overseer = มอบหมายจังหวัด · Staff = มอบหมายเขตพื้นที่การศึกษา (Gov_Domain)
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-sm font-semibold">
+              บทบาท
+              <select
+                className="form-input"
+                value={roleFilter}
+                onChange={(e) => {
+                  setRoleFilter(e.target.value as 'all' | 'overseer' | 'staff');
+                  setSelectedId('');
+                  setTags([]);
+                  setNameQuery('');
+                }}
+              >
+                <option value="all">ทั้งหมด (Overseer / Staff)</option>
+                <option value="overseer">{ROLE_LABELS.overseer}</option>
+                <option value="staff">{ROLE_LABELS.staff}</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-semibold">
+              ชื่อผู้ใช้
+              <input
+                className="form-input"
+                list="domain-user-combo"
+                value={nameQuery}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setNameQuery(value);
+                  const match = filteredUsers.find(
+                    (u) =>
+                      u.full_name === value ||
+                      u.email === value ||
+                      `${u.full_name} (${ROLE_LABELS[u.role]})` === value
+                  );
+                  if (match) pickUser(match.id);
+                  else setSelectedId('');
+                }}
+                placeholder="พิมพ์ชื่อหรือเลือกจากรายการ"
+              />
+              <datalist id="domain-user-combo">
+                {filteredUsers.slice(0, 80).map((u) => (
+                  <option
+                    key={u.id}
+                    value={`${u.full_name} (${ROLE_LABELS[u.role]})`}
+                  />
+                ))}
+              </datalist>
+            </label>
+          </div>
+
+          {filteredUsers.length > 0 && !selected && (
+            <div className="domain-user-pick">
+              {filteredUsers.slice(0, 12).map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  className="domain-user-pick__item"
+                  onClick={() => pickUser(u.id)}
+                >
+                  <strong>{u.full_name}</strong>
+                  <span>
+                    {ROLE_LABELS[u.role]} · {u.email}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {selected && (
+          <section className="ed-card p-4 space-y-3">
+            <div>
+              <h2 className="ed-section-title text-base m-0">2 · มอบหมายพื้นที่จัดการ</h2>
+              <p className="text-sm text-slate-600 m-0 mt-1">
+                <strong className="text-tm-blue">{selected.full_name}</strong>
+                {' · '}
+                {ROLE_LABELS[selected.role]}
+                {' · '}
+                {selected.role === 'overseer'
+                  ? 'เลือกจังหวัด (หลายรายการได้)'
+                  : 'เลือกเขตพื้นที่การศึกษา (หลายรายการได้)'}
+              </p>
+            </div>
+
+            <div className="domain-tag-list">
+              {tags.length === 0 && (
+                <span className="text-sm text-slate-500">ยังไม่ได้เลือกพื้นที่</span>
+              )}
+              {tags.map((t) => (
+                <span key={t} className="domain-tag">
+                  {labelForTag(t, selected.role)}
+                  <button type="button" aria-label="ลบ" onClick={() => removeTag(t)}>
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+
+            <label className="grid gap-1 text-sm font-semibold">
+              เพิ่ม{selected.role === 'overseer' ? 'จังหวัด' : 'เขตพื้นที่การศึกษา'}
+              <select
+                className="form-input"
+                value={tagPick}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setTagPick(v);
+                  if (v) addTag(v);
+                }}
+              >
+                <option value="">— เลือกเพื่อเพิ่ม —</option>
+                {availableTags.map((t) => (
+                  <option key={t} value={t}>
+                    {selected.role === 'staff' ? labelForTag(t, 'staff') : t}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="ed-btn ed-btn--primary"
+                disabled={pending}
+                onClick={saveDomain}
+              >
+                {pending ? 'กำลังบันทึก…' : 'บันทึกพื้นที่จัดการ'}
+              </button>
+              <button
+                type="button"
+                className="ed-btn ed-btn--outline"
+                onClick={() => {
+                  setSelectedId('');
+                  setTags([]);
+                  setNameQuery('');
+                }}
+              >
+                เลือกผู้ใช้อื่น
+              </button>
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}

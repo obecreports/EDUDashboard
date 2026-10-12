@@ -1,8 +1,11 @@
 import { Suspense } from 'react';
+import { redirect } from 'next/navigation';
 import { SiteSettingsForm } from '@/components/admin/SiteSettingsForm';
+import { getSessionProfile } from '@/lib/auth/session';
 import { readHeroSettings } from '@/lib/auth/user-store';
 import { createClient } from '@/lib/supabase/server';
 import { PageSkeleton } from '@/components/ui/PageSkeleton';
+import { normalizeRole } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +16,11 @@ function unwrap(value: unknown): string {
 }
 
 async function SettingsBody() {
+  const { profile, isAuthenticated, role } = await getSessionProfile();
+  if (!isAuthenticated || !profile || normalizeRole(role) !== 'super_admin') {
+    redirect('/admin/accounts');
+  }
+
   const cookieSettings = await readHeroSettings();
   let map: Record<string, unknown> = {};
   try {
@@ -38,7 +46,7 @@ async function SettingsBody() {
       <div>
         <h1 className="section-heading">ตั้งค่าเว็บไซต์</h1>
         <p className="text-slate-500 mt-[-0.5rem]">
-          แก้ไขข้อความและภาพพื้นหลัง Hero แบบไดนามิก (site_settings)
+          เฉพาะ Super Admin · แก้ไขข้อความและภาพพื้นหลัง Hero
         </p>
       </div>
       <section>

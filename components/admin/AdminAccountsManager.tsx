@@ -1,18 +1,19 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import {
   createAccountAction,
   generateOtpForUserAction,
   toggleAccountStatusAction,
-  updateAccountRole,
+  updateAdminUserAction,
 } from '@/app/actions/admin';
-import { ROLE_LABELS, type UserRole } from '@/lib/types';
+import { ROLE_LABELS, normalizeRole, type UserRole } from '@/lib/types';
 
 type AccountRow = {
   id: string;
   email: string;
   full_name: string;
+  name_prefix?: string | null;
   position: string;
   role: string;
   assigned_zone: string | null;
@@ -23,27 +24,135 @@ type AccountRow = {
   mustChangePassword: boolean;
 };
 
-const MANAGE_ROLES: UserRole[] = ['staff', 'overseer', 'admin'];
+const CREATE_ROLES: UserRole[] = ['staff', 'overseer', 'super_overseer', 'admin'];
 
-export function AdminAccountsManager({ accounts }: { accounts: AccountRow[] }) {
+function canManageTarget(actorRole: UserRole, targetRole: UserRole, targetId: string, actorId: string) {
+  if (targetId === actorId) return true; // self view ok, but edits limited below
+  if (actorRole === 'super_admin') return true;
+  if (actorRole === 'admin') {
+    // admin cannot manage other admin or super_admin
+    return targetRole !== 'admin' && targetRole !== 'super_admin';
+  }
+  return false;
+}
+
+function rolesAssignableBy(actorRole: UserRole): UserRole[] {
+  if (actorRole === 'super_admin') {
+    return ['staff', 'overseer', 'super_overseer', 'admin', 'super_admin'];
+  }
+  return ['staff', 'overseer', 'super_overseer'];
+}
+
+export function AdminAccountsManager({
+  accounts,
+  actorRole,
+  actorId,
+}: {
+  accounts: AccountRow[];
+  actorRole: UserRole;
+  actorId: string;
+}) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [nameFilter, setNameFilter] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [editName, setEditName] = useState('');
+  const [editPrefix, setEditPrefix] = useState('');
+  const [editPosition, setEditPosition] = useState('');
+  const [editRole, setEditRole] = useState<UserRole>('staff');
+
+  const filtered = useMemo(() => {
+    // When editing, focus only on that user row
+    if (editingId) {
+      const one = accounts.find((a) => a.id === editingId);
+      return one ? [one] : [];
+    }
+    let list = [...accounts];
+    if (roleFilter !== 'all') list = list.filter((a) => a.role === roleFilter);
+    if (nameFilter.trim()) {
+      const q = nameFilter.trim().toLowerCase();
+      list = list.filter(
+        (a) =>
+          a.full_name.toLowerCase().includes(q) ||
+          a.email.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [accounts, roleFilter, nameFilter, editingId]);
+
+  const startEdit = (a: AccountRow) => {
+    setEditingId(a.id);
+    setEditName(a.full_name);
+    setEditPrefix(a.name_prefix ?? '');
+    setEditPosition(a.position);
+    setEditRole(normalizeRole(a.role));
+    setMsg(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setMsg(null);
+  };
+
+  const createRoles =
+    actorRole === 'super_admin'
+      ? [...CREATE_ROLES, 'super_admin' as UserRole]
+      : CREATE_ROLES;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-500 m-0">{accounts.length} บัญชีในระบบ</p>
-        <button
-          type="button"
-          className="navbar__login"
-          onClick={() => setShowCreate((v) => !v)}
-        >
-          {showCreate ? 'ปิดฟอร์ม' : '+ สร้างผู้ใช้ใหม่'}
-        </button>
+        <p className="text-sm text-slate-500 m-0">
+          {editingId
+            ? 'โหมดแก้ไข — แสดงเฉพาะผู้ใช้ที่เลือก'
+            : `${filtered.length} / ${accounts.length} บัญชี`}
+        </p>
+        {!editingId && (
+          <button
+            type="button"
+            className="navbar__login"
+            onClick={() => setShowCreate((v) => !v)}
+          >
+            {showCreate ? 'ปิดฟอร์ม' : '+ สร้างผู้ใช้ใหม่'}
+          </button>
+        )}
       </div>
 
-      {showCreate && (
+      {!editingId && (
+        <div className="ed-card p-4 grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-sm font-semibold">
+            กรองบทบาท
+            <select
+              className="form-input"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+            >
+              <option value="all">ทั้งหมด</option>
+              {(Object.keys(ROLE_LABELS) as UserRole[])
+                .filter((r) => r !== 'guest')
+                .map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r]}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-semibold">
+            ค้นหาชื่อ / อีเมล
+            <input
+              className="form-input"
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+              placeholder="พิมพ์ชื่อหรืออีเมล"
+            />
+          </label>
+        </div>
+      )}
+
+      {showCreate && !editingId && (
         <form
           className="panel-card space-y-3"
           action={(fd) => {
@@ -79,7 +188,7 @@ export function AdminAccountsManager({ accounts }: { accounts: AccountRow[] }) {
           <label className="block text-sm">
             บทบาท
             <select name="role" className="form-input" defaultValue="staff">
-              {MANAGE_ROLES.map((r) => (
+              {createRoles.map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABELS[r]}
                 </option>
@@ -106,100 +215,183 @@ export function AdminAccountsManager({ accounts }: { accounts: AccountRow[] }) {
             </tr>
           </thead>
           <tbody>
-            {accounts.map((a) => (
-              <tr key={a.id} className="border-t border-slate-100 align-top">
-                <td className="p-3">
-                  <div className="font-medium">{a.full_name}</div>
-                  <div className="text-xs text-slate-500">{a.email}</div>
-                </td>
-                <td className="p-3">{a.position || '—'}</td>
-                <td className="p-3">
-                  <form
-                    action={(fd) => {
-                      start(async () => {
-                        await updateAccountRole(fd);
-                      });
-                    }}
-                    className="flex gap-2 items-center"
-                  >
-                    <input type="hidden" name="id" value={a.id} />
-                    <select
-                      name="role"
-                      className="form-input"
-                      style={{ marginTop: 0, padding: '6px 10px' }}
-                      defaultValue={a.role}
-                      disabled={pending || a.role === 'global'}
-                    >
-                      {(Object.keys(ROLE_LABELS) as UserRole[]).map((role) => (
-                        <option key={role} value={role}>
-                          {ROLE_LABELS[role]}
-                        </option>
-                      ))}
-                    </select>
-                    {a.role !== 'global' && (
-                      <button type="submit" className="navbar__link text-xs">
-                        บันทึก
-                      </button>
-                    )}
-                  </form>
-                </td>
-                <td className="p-3">
-                  <span
-                    className="text-xs font-semibold px-2 py-1 rounded-full"
-                    style={{
-                      background: a.disabled ? '#fee2e2' : '#d1fae5',
-                      color: a.disabled ? '#b91c1c' : '#047857',
-                    }}
-                  >
-                    {a.disabled ? 'Disabled' : 'Active'}
-                  </span>
-                  {a.mustChangePassword && (
-                    <div className="text-xs text-amber-700 mt-1">ต้องเปลี่ยนรหัส</div>
+            {filtered.map((a) => {
+              const targetRole = normalizeRole(a.role);
+              const manageable = canManageTarget(actorRole, targetRole, a.id, actorId);
+              const editing = editingId === a.id;
+              const assignableRoles = rolesAssignableBy(actorRole);
+
+              return (
+                <tr key={a.id} className="border-t border-slate-100 align-top">
+                  {editing ? (
+                    <td className="p-3" colSpan={5}>
+                      <div className="grid gap-3 max-w-2xl">
+                        <h3 className="font-bold text-tm-blue text-sm m-0">
+                          แก้ไขผู้ใช้ · {a.email}
+                        </h3>
+                        <label className="block text-sm font-semibold">
+                          ชื่อ–นามสกุล
+                          <input
+                            className="form-input"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                          />
+                        </label>
+                        <label className="block text-sm font-semibold">
+                          คำนำหน้า
+                          <input
+                            className="form-input"
+                            value={editPrefix}
+                            onChange={(e) => setEditPrefix(e.target.value)}
+                            placeholder="ว่าง = คุณ"
+                          />
+                        </label>
+                        <label className="block text-sm font-semibold">
+                          ตำแหน่ง
+                          <input
+                            className="form-input"
+                            value={editPosition}
+                            onChange={(e) => setEditPosition(e.target.value)}
+                          />
+                        </label>
+                        <label className="block text-sm font-semibold">
+                          บทบาท
+                          <select
+                            className="form-input"
+                            value={editRole}
+                            onChange={(e) => setEditRole(normalizeRole(e.target.value))}
+                            disabled={a.id === actorId}
+                          >
+                            {assignableRoles.map((r) => (
+                              <option key={r} value={r}>
+                                {ROLE_LABELS[r]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="ed-btn ed-btn--primary ed-btn--sm"
+                            disabled={pending}
+                            onClick={() => {
+                              start(async () => {
+                                const fd = new FormData();
+                                fd.set('id', a.id);
+                                fd.set('full_name', editName.trim());
+                                fd.set('name_prefix', editPrefix.trim());
+                                fd.set('position', editPosition.trim());
+                                fd.set('role', editRole);
+                                const res = await updateAdminUserAction(fd);
+                                if (!res.ok) {
+                                  setMsg(res.error || 'บันทึกไม่สำเร็จ');
+                                  return;
+                                }
+                                setMsg(`บันทึก ${editName} แล้ว`);
+                                setEditingId(null);
+                              });
+                            }}
+                          >
+                            บันทึกข้อมูลผู้ใช้
+                          </button>
+                          <button
+                            type="button"
+                            className="ed-btn ed-btn--outline ed-btn--sm"
+                            disabled={pending || a.id === actorId}
+                            onClick={() => {
+                              start(async () => {
+                                const fd = new FormData();
+                                fd.set('id', a.id);
+                                fd.set('disabled', a.disabled ? '0' : '1');
+                                const res = await toggleAccountStatusAction(fd);
+                                if (!res.ok) setMsg(('error' in res && res.error) || 'ล้มเหลว');
+                                else
+                                  setMsg(
+                                    a.disabled
+                                      ? `เปิดใช้งาน ${a.full_name} แล้ว`
+                                      : `ปิดใช้งาน ${a.full_name} แล้ว`
+                                  );
+                              });
+                            }}
+                          >
+                            {a.disabled ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
+                          </button>
+                          <button
+                            type="button"
+                            className="ed-btn ed-btn--outline ed-btn--sm"
+                            disabled={pending}
+                            onClick={() => {
+                              start(async () => {
+                                const fd = new FormData();
+                                fd.set('userId', a.id);
+                                const res = await generateOtpForUserAction(fd);
+                                if (!res.ok) setMsg(('error' in res && res.error) || 'ล้มเหลว');
+                                else
+                                  setMsg(
+                                    `OTP สำหรับ ${a.full_name}: ${
+                                      'tempPassword' in res ? res.tempPassword : ''
+                                    } · ผู้ใช้ต้องตั้งรหัสผ่านใหม่หลังล็อกอิน`
+                                  );
+                              });
+                            }}
+                          >
+                            สร้าง OTP (รีเซ็ตรหัสผ่าน)
+                          </button>
+                          <button
+                            type="button"
+                            className="ed-btn ed-btn--outline ed-btn--sm"
+                            onClick={cancelEdit}
+                          >
+                            ยกเลิก
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  ) : (
+                    <>
+                      <td className="p-3">
+                        <div className="font-medium">{a.full_name}</div>
+                        <div className="text-xs text-slate-500">{a.email}</div>
+                      </td>
+                      <td className="p-3">{a.position || '—'}</td>
+                      <td className="p-3">{ROLE_LABELS[targetRole] ?? a.role}</td>
+                      <td className="p-3">
+                        <span
+                          className="text-xs font-semibold px-2 py-1 rounded-full"
+                          style={{
+                            background: a.disabled ? '#fee2e2' : '#d1fae5',
+                            color: a.disabled ? '#b91c1c' : '#047857',
+                          }}
+                        >
+                          {a.disabled ? 'Disabled' : 'Active'}
+                        </span>
+                        {a.mustChangePassword && (
+                          <div className="text-xs text-amber-700 mt-1">ต้องเปลี่ยนรหัส</div>
+                        )}
+                        {a.hintTemp && (
+                          <div className="text-xs font-mono text-slate-500 mt-1">
+                            OTP: {a.hintTemp}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        {manageable ? (
+                          <button
+                            type="button"
+                            className="ed-btn ed-btn--outline ed-btn--sm"
+                            onClick={() => startEdit(a)}
+                          >
+                            แก้ไข
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">ไม่มีสิทธิ์จัดการ</span>
+                        )}
+                      </td>
+                    </>
                   )}
-                  {a.hintTemp && (
-                    <div className="text-xs font-mono text-slate-500 mt-1">OTP: {a.hintTemp}</div>
-                  )}
-                </td>
-                <td className="p-3">
-                  <div className="flex flex-col gap-2 items-start">
-                    <form
-                      action={(fd) => {
-                        start(async () => {
-                          await toggleAccountStatusAction(fd);
-                        });
-                      }}
-                    >
-                      <input type="hidden" name="id" value={a.id} />
-                      <input type="hidden" name="disabled" value={a.disabled ? '0' : '1'} />
-                      <button type="submit" className="navbar__link text-xs" disabled={pending}>
-                        {a.disabled ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
-                      </button>
-                    </form>
-                    <form
-                      action={(fd) => {
-                        setMsg(null);
-                        start(async () => {
-                          const res = await generateOtpForUserAction(fd);
-                          if (!res.ok) setMsg(('error' in res && res.error) || 'ล้มเหลว');
-                          else
-                            setMsg(
-                              `OTP สำหรับ ${a.full_name}: ${
-                                'tempPassword' in res ? res.tempPassword : ''
-                              }`
-                            );
-                        });
-                      }}
-                    >
-                      <input type="hidden" name="userId" value={a.id} />
-                      <input type="hidden" name="clearPermanent" value="0" />
-                      <button type="submit" className="navbar__login text-xs py-1.5" disabled={pending}>
-                        สร้าง OTP ชั่วคราว
-                      </button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
