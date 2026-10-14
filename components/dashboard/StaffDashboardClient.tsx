@@ -12,7 +12,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import { AlertTriangle, Building2, Clock3, Star, TrendingUp } from 'lucide-react';
+import { AlertTriangle, Award, Building2, Clock3, Star, TrendingUp } from 'lucide-react';
 import type { SchoolFull, UserRole } from '@/lib/types';
 import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
 import { DualRadarChart } from '@/components/schools/SchoolRadarChart';
@@ -23,8 +23,22 @@ import {
   type ActivitySchool,
 } from '@/components/dashboard/SuperOverseerActivityPanel';
 import type { ReportActivityLink } from '@/lib/activity/complete';
-import { DEV_STATUS, STRATEGY_LABELS, statusFromScore, type DevStatusKey } from '@/lib/theme/status';
+import {
+  DEV_STATUS,
+  DEV_STATUS_ORDER,
+  STRATEGY_LABELS,
+  statusFromScore,
+  type DevStatusKey,
+} from '@/lib/theme/status';
 import { THREE_PILLAR_LABELS } from '@/lib/mock/pillars';
+
+function statusIcon(key: DevStatusKey) {
+  if (key === 'develop') return AlertTriangle;
+  if (key === 'fair') return TrendingUp;
+  if (key === 'good') return Clock3;
+  if (key === 'veryGood') return Star;
+  return Award;
+}
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
@@ -58,10 +72,11 @@ export function StaffDashboardClient({
   const counts = useMemo(() => {
     const c: Record<DevStatusKey | 'all', number> = {
       all: schools.length,
-      urgent: 0,
-      accelerate: 0,
-      progressing: 0,
-      strong: 0,
+      develop: 0,
+      fair: 0,
+      good: 0,
+      veryGood: 0,
+      excellent: 0,
     };
     schools.forEach((s) => {
       c[statusFromScore(s.overallScore).key] += 1;
@@ -127,13 +142,15 @@ export function StaffDashboardClient({
     };
   }, [nationPool]);
 
+  const statusColors = DEV_STATUS_ORDER.map((k) => DEV_STATUS[k].color);
+
   const statusBar = {
-    labels: (Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => DEV_STATUS[k].label),
+    labels: DEV_STATUS_ORDER.map((k) => DEV_STATUS[k].label),
     datasets: [
       {
         label: 'จำนวนโรงเรียน',
-        data: (Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => counts[k]),
-        backgroundColor: (Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => DEV_STATUS[k].color),
+        data: DEV_STATUS_ORDER.map((k) => counts[k]),
+        backgroundColor: statusColors,
         borderWidth: 0,
         borderRadius: 8,
       },
@@ -141,12 +158,13 @@ export function StaffDashboardClient({
   };
 
   const statusDonut = {
-    labels: (Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => DEV_STATUS[k].label),
+    labels: DEV_STATUS_ORDER.map((k) => DEV_STATUS[k].label),
     datasets: [
       {
-        data: (Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => counts[k]),
-        backgroundColor: (Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => DEV_STATUS[k].color),
-        borderWidth: 0,
+        data: DEV_STATUS_ORDER.map((k) => counts[k]),
+        backgroundColor: statusColors,
+        borderWidth: 2,
+        borderColor: '#fff',
       },
     ],
   };
@@ -180,7 +198,7 @@ export function StaffDashboardClient({
       <div>
         <h2 className="ed-section-title m-0 text-base">แดชบอร์ด · {roleLabel}</h2>
         <p className="text-sm text-slate-600 m-0 mt-1">
-          สรุปคะแนน 5 ด้าน (connextED) และ 3 เสาหลัก · โรงเรียนภายใต้ขอบเขต {schools.length} แห่ง
+          สรุปคะแนนตามระบบ SMS และ 3 เสาหลัก · โรงเรียนของฉัน {schools.length} แห่ง
         </p>
       </div>
 
@@ -207,19 +225,12 @@ export function StaffDashboardClient({
           </div>
           <div>
             <div className="status-card__value text-tm-blue">{counts.all}</div>
-            <div className="status-card__label">โรงเรียนภายใต้ขอบเขต</div>
+            <div className="status-card__label">โรงเรียนของฉัน</div>
           </div>
         </Link>
-        {(Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => {
+        {DEV_STATUS_ORDER.map((k) => {
           const meta = DEV_STATUS[k];
-          const Icon =
-            k === 'urgent'
-              ? AlertTriangle
-              : k === 'accelerate'
-                ? TrendingUp
-                : k === 'progressing'
-                  ? Clock3
-                  : Star;
+          const Icon = statusIcon(k);
           return (
             <Link
               key={k}
@@ -333,7 +344,7 @@ export function StaffDashboardClient({
           <section className="ed-card p-4 space-y-4 schools-list-panel schools-list-panel--five">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h2 className="ed-section-title text-base m-0">5 ด้าน (connextED)</h2>
+                <h2 className="ed-section-title text-base m-0">ผลการประเมินตามระบบ SMS</h2>
                 <p className="text-sm text-slate-500 m-0 mt-1">เปรียบเทียบกับค่าเฉลี่ยทั้งประเทศ</p>
               </div>
               <div className="text-right">
@@ -410,7 +421,7 @@ export function StaffDashboardClient({
             </section>
             <section className="ed-card p-4 space-y-3 schools-list-panel schools-list-panel--five">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="ed-section-title text-base m-0">Top 10 · 5 ด้าน (connextED)</h2>
+                <h2 className="ed-section-title text-base m-0">Top 10 · ผลการประเมินตามระบบ SMS</h2>
                 <Link href="/schools" className="ed-btn ed-btn--outline ed-btn--sm">
                   ดูรายชื่อโรงเรียน
                 </Link>

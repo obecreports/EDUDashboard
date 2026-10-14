@@ -15,6 +15,7 @@ import {
   HierarchicalFilterDropdown,
   type FilterTreeNode,
 } from '@/components/ui/HierarchicalFilterDropdown';
+import { formatThaiDate, formatThaiYearMonth } from '@/lib/format/date';
 
 export type ActivityPerson = {
   id: string;
@@ -50,26 +51,6 @@ function monthKey(ymd: string) {
   return ymd.slice(0, 7);
 }
 
-function formatThaiMonth(ym: string) {
-  const [y, m] = ym.split('-').map(Number);
-  if (!y || !m) return ym;
-  return new Date(y, m - 1, 1).toLocaleDateString('th-TH', {
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
-function formatThaiShortDate(ymd: string) {
-  if (!ymd) return '—';
-  const d = new Date(`${ymd}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return ymd;
-  return d.toLocaleDateString('th-TH', {
-    day: 'numeric',
-    month: 'short',
-    year: '2-digit',
-  });
-}
-
 /** 5 pastel levels from red → green by report completion rate */
 function perfLevel(bookings: number, complete: number): PerfLevel {
   if (bookings <= 0) return 0;
@@ -100,7 +81,7 @@ function MetricLink({
   label: string;
 }) {
   return (
-    <Link href={href} className="so-metric" title={`ไปโดเมนโรงเรียน · ${label}`}>
+    <Link href={href} className="so-metric" title={`ไปโรงเรียนของฉัน · ${label}`}>
       <strong>{value}</strong>
       <span>{label}</span>
     </Link>
@@ -216,7 +197,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     );
     return [...set]
       .sort((a, b) => b.localeCompare(a))
-      .map((id) => ({ id, label: formatThaiMonth(id) }));
+      .map((id) => ({ id, label: formatThaiYearMonth(id) }));
   }, [events, reports]);
 
   const filteredEvents = useMemo(() => {
@@ -659,9 +640,6 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
           <h2 className="ed-section-title text-base m-0 flex items-center gap-2">
             <Activity size={18} /> ภาพรวมกิจกรรมทั้งระบบ
           </h2>
-          <p className="text-sm text-slate-600 m-0 mt-1">
-            กิจกรรมครบ = นัดหมาย + รายงานที่ผูกกัน · สีพาสเทล 5 ระดับตาม % รายงานต่อนัด
-          </p>
         </div>
         <div className="so-activity__kpis">
           <MetricLink
@@ -689,20 +667,22 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
           onChange={setSelectedMonths}
           emptyLabel="ทุกเดือน"
         />
-        <div className="score-mode-switch" role="tablist" aria-label="มุมมองกิจกรรม">
+        <div className="score-mode-switch so-track-switch" role="tablist" aria-label="มุมมองกิจกรรม">
           <button
             type="button"
             className={tab === 'people' ? 'is-active' : ''}
             onClick={() => setTab('people')}
           >
-            <UserRound size={14} /> ตามบุคคล
+            <UserRound size={14} aria-hidden />
+            <span>ติดตามบุคคล</span>
           </button>
           <button
             type="button"
             className={tab === 'schools' ? 'is-active' : ''}
             onClick={() => setTab('schools')}
           >
-            <School size={14} /> ตามโรงเรียน
+            <School size={14} aria-hidden />
+            <span>ติดตามโรงเรียน</span>
           </button>
         </div>
         {tab === 'people' ? (
@@ -771,7 +751,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                     <div className="so-tree__main">
                       <strong>
                         {ov.full_name}
-                        <span className="so-tree__last">ล่าสุด {formatThaiShortDate(last)}</span>
+                        <span className="so-tree__last">ล่าสุด {formatThaiDate(last)}</span>
                       </strong>
                       <span className="so-tree__meta">
                         {ROLE_LABELS[normalizeRole(ov.role)]} · ลูกทีม {kids.length} คน
@@ -817,7 +797,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                                 <strong>
                                   {st.full_name}
                                   <span className="so-tree__last">
-                                    ล่าสุด {formatThaiShortDate(sm?.lastDate || '')}
+                                    ล่าสุด {formatThaiDate(sm?.lastDate || '')}
                                   </span>
                                 </strong>
                                 <span className="so-tree__meta">
@@ -878,7 +858,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                       <strong>
                         {prov.province}
                         <span className="so-tree__last">
-                          ล่าสุด {formatThaiShortDate(prov.lastDate)}
+                          ล่าสุด {formatThaiDate(prov.lastDate)}
                         </span>
                       </strong>
                       <span className="so-tree__meta">
@@ -924,7 +904,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                                 <strong>
                                   {area.area}
                                   <span className="so-tree__last">
-                                    ล่าสุด {formatThaiShortDate(area.lastDate)}
+                                    ล่าสุด {formatThaiDate(area.lastDate)}
                                   </span>
                                 </strong>
                                 <span className="so-tree__meta">
@@ -982,7 +962,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                                           {leaf.school.name}
                                         </Link>
                                         <span className="so-tree__last">
-                                          ล่าสุด {formatThaiShortDate(leaf.lastDate)}
+                                          ล่าสุด {formatThaiDate(leaf.lastDate)}
                                         </span>
                                       </strong>
                                       <span className="so-tree__meta">

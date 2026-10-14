@@ -9,6 +9,12 @@ import {
   mapPillarRow,
   type SchoolPillarScoreRow,
 } from '@/lib/supabase/school-pillars';
+import {
+  pickScoreRowExactYear,
+  pickScoreRowForYear,
+  SCORE_YEAR_CURRENT,
+  SCORE_YEAR_PREVIOUS,
+} from '@/lib/scores/years';
 
 /**
  * Map DB rows using the legacy schema (select '*') — do not hardcode
@@ -165,12 +171,22 @@ async function loadAllSchools(): Promise<SchoolFull[]> {
     if (l.label_code) labelMap[l.label_code] = l.label_name ?? '';
   });
 
-  const scoreMap = new Map<string, Record<string, unknown>>();
+  const scoreBySchool = new Map<string, Record<string, unknown>[]>();
   (scoresRes.data ?? []).forEach((s) => {
-    if (s.school_id != null) {
-      scoreMap.set(String(s.school_id), s as Record<string, unknown>);
-    }
+    if (s.school_id == null) return;
+    const id = String(s.school_id);
+    const list = scoreBySchool.get(id) ?? [];
+    list.push(s as Record<string, unknown>);
+    scoreBySchool.set(id, list);
   });
+  const scoreMap = new Map<string, Record<string, unknown>>();
+  for (const [id, rows] of scoreBySchool) {
+    const picked = pickScoreRowForYear(
+      rows as { school_year?: string | null }[],
+      SCORE_YEAR_CURRENT
+    );
+    if (picked) scoreMap.set(id, picked as Record<string, unknown>);
+  }
 
   const peopleMap = new Map<string, Record<string, unknown>>();
   (peopleRes.data ?? []).forEach((p) => {
@@ -200,14 +216,16 @@ async function loadSchoolById(schoolId: string): Promise<SchoolFull | null> {
   const supabase = createAnonClient();
   const id = Number(schoolId);
 
-  const [basicRes, scoreRes, peopleRes, govRows, labelRows, pillarRow] = await Promise.all([
-    supabase.from('School_Basic').select('*').eq('school_id', id).maybeSingle(),
-    supabase.from('School_Score').select('*').eq('school_id', id).maybeSingle(),
-    supabase.from('School_People').select('*').eq('school_id', id).maybeSingle(),
-    loadGovDomainsRaw(),
-    loadLabelLookupRaw(),
-    fetchPillarScoreBySchoolId(id),
-  ]);
+  const [basicRes, scoreRes, peopleRes, govRows, labelRows, pillarRow, pillarPrevRow] =
+    await Promise.all([
+      supabase.from('School_Basic').select('*').eq('school_id', id).maybeSingle(),
+      supabase.from('School_Score').select('*').eq('school_id', id),
+      supabase.from('School_People').select('*').eq('school_id', id).maybeSingle(),
+      loadGovDomainsRaw(),
+      loadLabelLookupRaw(),
+      fetchPillarScoreBySchoolId(id, SCORE_YEAR_CURRENT),
+      fetchPillarScoreBySchoolId(id, SCORE_YEAR_PREVIOUS, { exact: true }),
+    ]);
 
   if (basicRes.error) throw basicRes.error;
   if (!basicRes.data) return null;
@@ -222,16 +240,24 @@ async function loadSchoolById(schoolId: string): Promise<SchoolFull | null> {
       ? govRows.find((g) => String(g.area_id) === String(basicRes.data!.area_id))
       : null;
 
+  const scoreRows = (scoreRes.data ?? []) as { school_year?: string | null }[];
+  const scoreRow = pickScoreRowForYear(scoreRows, SCORE_YEAR_CURRENT) ?? {};
+  const scorePrevRow = pickScoreRowExactYear(scoreRows, SCORE_YEAR_PREVIOUS);
+
   const full = toSchoolFull(
     {
       ...basicRes.data,
-      School_Score: scoreRes.data ?? {},
+      School_Score: scoreRow,
       School_People: peopleRes.data ?? {},
       Gov_Domain: gov ?? {},
     },
     mapPillarRow(pillarRow)
   );
   full.labelLookup = labelMap;
+  full.School_Score_Previous = scorePrevRow
+    ? (scorePrevRow as Record<string, number | string>)
+    : null;
+  full.threePillarScoresPrevious = pillarPrevRow ? mapPillarRow(pillarPrevRow) : null;
   return full;
 }
 
@@ -239,7 +265,7 @@ const SCHOOLS_REVALIDATE = 120;
 
 /** Deduped per-request + ISR cache across navigations */
 export const fetchSchools = cache(async (): Promise<SchoolFull[]> => {
-  return unstable_cache(loadAllSchools, ['schools-legacy-star-v3-covers'], {
+  return unstable_cache(loadAllSchools, ['schools-legacy-star-v5-year', SCORE_YEAR_CURRENT], {
     revalidate: SCHOOLS_REVALIDATE,
     tags: ['schools', 'school-pillars'],
   })();
@@ -247,10 +273,14 @@ export const fetchSchools = cache(async (): Promise<SchoolFull[]> => {
 
 export const fetchSchoolById = cache(async (schoolId: string | number): Promise<SchoolFull | null> => {
   const id = String(schoolId);
-  return unstable_cache(() => loadSchoolById(id), ['school-by-id-legacy-v3-covers', id], {
-    revalidate: SCHOOLS_REVALIDATE,
-    tags: ['schools', 'school-pillars', `school-${id}`],
-  })();
+  return unstable_cache(
+    () => loadSchoolById(id),
+    ['school-by-id-legacy-v5-yoy', SCORE_YEAR_CURRENT, SCORE_YEAR_PREVIOUS, id],
+    {
+      revalidate: SCHOOLS_REVALIDATE,
+      tags: ['schools', 'school-pillars', `school-${id}`],
+    }
+  )();
 });
 
 export const fetchGovDomains = cache(async () => loadGovDomainsRaw());

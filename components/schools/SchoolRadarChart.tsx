@@ -37,9 +37,24 @@ export function DualRadarChart({
   maxScale?: number;
   tickValues?: number[];
 }) {
+  const compareSeries = showNational
+    ? [
+        {
+          label: nationalLabel,
+          data: nationalScores.map((n) => Number(n.toFixed(2))),
+          backgroundColor: 'rgba(41, 86, 143, 0.12)',
+          borderColor: '#29568f',
+          borderWidth: 2,
+          borderDash: [5, 4],
+          pointBackgroundColor: '#29568f',
+        },
+      ]
+    : [];
+
   const data = {
     labels,
     datasets: [
+      ...compareSeries,
       {
         label: schoolLabel,
         data: schoolScores.map((n) => Number(n.toFixed(2))),
@@ -48,19 +63,6 @@ export function DualRadarChart({
         borderWidth: 2.5,
         pointBackgroundColor: '#00c6a0',
       },
-      ...(showNational
-        ? [
-            {
-              label: nationalLabel,
-              data: nationalScores.map((n) => Number(n.toFixed(2))),
-              backgroundColor: 'rgba(41, 86, 143, 0.12)',
-              borderColor: '#29568f',
-              borderWidth: 2,
-              borderDash: [5, 4],
-              pointBackgroundColor: '#29568f',
-            },
-          ]
-        : []),
     ],
   };
 

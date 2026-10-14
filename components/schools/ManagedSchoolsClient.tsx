@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
+  Award,
   Building2,
   Clock3,
   Filter,
@@ -20,7 +21,9 @@ import { PAGE_BANNERS } from '@/lib/types';
 import { schoolCoverImage } from '@/lib/schools/images';
 import {
   DEV_STATUS,
+  DEV_STATUS_ORDER,
   STRATEGY_LABELS,
+  parseDevStatusKey,
   scorePastelLevel,
   statusFromScore,
   type DevStatusKey,
@@ -29,6 +32,15 @@ import { THREE_PILLAR_LABELS } from '@/lib/mock/pillars';
 import { HierarchicalFilterDropdown } from '@/components/ui/HierarchicalFilterDropdown';
 import type { FilterTreeNode } from '@/components/ui/HierarchicalFilterDropdown';
 import { normalizeRole } from '@/lib/types';
+import { formatThaiDate } from '@/lib/format/date';
+
+function statusIcon(key: DevStatusKey) {
+  if (key === 'develop') return AlertTriangle;
+  if (key === 'fair') return TrendingUp;
+  if (key === 'good') return Clock3;
+  if (key === 'veryGood') return Star;
+  return Award;
+}
 
 export type DomainPersonOption = {
   id: string;
@@ -75,7 +87,7 @@ type Props = {
   inScopeIds?: string[];
   staffName?: string;
   initialQuery?: string;
-  /** Dashboard deep-link: urgent | accelerate | progressing | strong | all */
+  /** Dashboard deep-link: develop | fair | good | veryGood | excellent | all */
   initialStatus?: string;
   initialPersonIds?: string[];
   initialProvince?: string;
@@ -96,11 +108,11 @@ function parseInitialVisit(raw?: string): Set<VisitFilter> {
 }
 
 const PAGE_SIZE = 12;
-const STATUS_KEYS = new Set<string>(['urgent', 'accelerate', 'progressing', 'strong']);
 
 function parseInitialStatus(raw?: string): Set<StatusFilterKey> {
   if (!raw || raw === 'all') return new Set<StatusFilterKey>(['all']);
-  if (STATUS_KEYS.has(raw)) return new Set<StatusFilterKey>([raw as DevStatusKey]);
+  const key = parseDevStatusKey(raw);
+  if (key) return new Set<StatusFilterKey>([key]);
   return new Set<StatusFilterKey>(['all']);
 }
 
@@ -187,10 +199,11 @@ export function ManagedSchoolsClient({
   const counts = useMemo(() => {
     const c: Record<DevStatusKey | 'all', number> = {
       all: poolSchools.length,
-      urgent: 0,
-      accelerate: 0,
-      progressing: 0,
-      strong: 0,
+      develop: 0,
+      fair: 0,
+      good: 0,
+      veryGood: 0,
+      excellent: 0,
     };
     poolSchools.forEach((s) => {
       c[statusFromScore(s.overallScore).key] += 1;
@@ -361,7 +374,7 @@ export function ManagedSchoolsClient({
       .map((ov) => ({
         id: ov.id,
         label: ov.full_name,
-        hint: `Overseer · ${ov.schoolIds.length} รร.`,
+        hint: `อาสาสมัคร/องคมนตรี · ${ov.schoolIds.length} รร.`,
         children: (under.get(ov.id) ?? [])
           .slice()
           .sort((a, b) => a.full_name.localeCompare(b.full_name, 'th'))
@@ -445,10 +458,10 @@ export function ManagedSchoolsClient({
     if (district && !nextDistricts.has(district)) setDistrict('');
   };
 
-  const title = mode === 'staff' ? 'โรงเรียนภายใต้ขอบเขต' : 'โรงเรียนในโครงการทั้งหมด';
+  const title = mode === 'staff' ? 'โรงเรียนของฉัน' : 'โรงเรียนในโครงการทั้งหมด';
   const subtitle =
     mode === 'staff'
-      ? `โรงเรียนภายใต้ขอบเขตของคุณ${staffName || 'อาสาสมัคร'} ${poolSchools.length} แห่ง`
+      ? `โรงเรียนของฉัน · ${staffName || 'อาสาสมัคร'} ${poolSchools.length} แห่ง`
       : `โรงเรียนในโครงการกองทุนการศึกษา ${poolSchools.length} แห่ง`;
 
   return (
@@ -474,20 +487,13 @@ export function ManagedSchoolsClient({
             <div>
               <div className="status-card__value text-tm-blue">{counts.all}</div>
               <div className="status-card__label">
-                {mode === 'staff' ? 'โรงเรียนในความดูแล' : 'โรงเรียนทั้งหมด'}
+                {mode === 'staff' ? 'โรงเรียนของฉัน' : 'โรงเรียนทั้งหมด'}
               </div>
             </div>
           </button>
-          {(Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => {
+          {DEV_STATUS_ORDER.map((k) => {
             const meta = DEV_STATUS[k];
-            const Icon =
-              k === 'urgent'
-                ? AlertTriangle
-                : k === 'accelerate'
-                  ? TrendingUp
-                  : k === 'progressing'
-                    ? Clock3
-                    : Star;
+            const Icon = statusIcon(k);
             const active = applied.statusFilter.has(k) && !applied.statusFilter.has('all');
             return (
               <button
@@ -613,14 +619,17 @@ export function ManagedSchoolsClient({
                     />
                     ทั้งหมด ({counts.all})
                   </label>
-                  {(Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => (
+                  {DEV_STATUS_ORDER.map((k) => (
                     <label key={k} className="ed-check ed-check--inline">
                       <input
                         type="checkbox"
                         checked={statusFilter.has(k)}
                         onChange={() => toggleStatus(k)}
                       />
-                      {DEV_STATUS[k].label} ({counts[k]})
+                      <span style={{ color: DEV_STATUS[k].color, fontWeight: 700 }}>
+                        {DEV_STATUS[k].label}
+                      </span>
+                      <span className="text-slate-500"> ({counts[k]})</span>
                     </label>
                   ))}
                 </div>
@@ -705,7 +714,7 @@ export function ManagedSchoolsClient({
                       setPage(1);
                     }}
                   >
-                    คะแนน 5 ด้าน (connextED)
+                    ผลการประเมินตามระบบ SMS
                   </button>
                   <button
                     type="button"
@@ -723,8 +732,8 @@ export function ManagedSchoolsClient({
               {showScores && (
                 <p className="schools-list-panel__mode-hint m-0">
                   {scoreMode === 'five'
-                    ? 'กำลังแสดงคะแนนตาม 5 ด้าน (connextED) — พื้นหลังโทนน้ำเงิน'
-                    : 'กำลังแสดงคะแนนตาม 3 เสาหลัก — พื้นหลังโทนเขียวอมฟ้า'}
+                    ? 'กำลังแสดงคะแนนตามระบบ SMS — พื้นหลังโทนแดงทอง'
+                    : 'กำลังแสดงคะแนนตาม 3 เสาหลัก — พื้นหลังโทนขาวทอง'}
                 </p>
               )}
             </div>
@@ -960,9 +969,7 @@ export function ManagedSchoolsClient({
                         <div className="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
                           <span>
                             กิจกรรมล่าสุด:{' '}
-                            {s.lastActivityAt
-                              ? new Date(s.lastActivityAt).toLocaleDateString('th-TH')
-                              : '—'}
+                            {s.lastActivityAt ? formatThaiDate(s.lastActivityAt) : '—'}
                           </span>
                           <span>
                             ลงพื้นที่:{' '}

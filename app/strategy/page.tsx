@@ -6,7 +6,14 @@ import { DualRadarChart } from '@/components/schools/SchoolRadarChart';
 import { PageBanner } from '@/components/layout/PageBanner';
 import { StrategySkeleton } from '@/components/ui/PageSkeleton';
 import { PAGE_BANNERS, type SchoolFull } from '@/lib/types';
-import { statusFromScore, STRATEGY_LABELS } from '@/lib/theme/status';
+import {
+  DEV_STATUS,
+  DEV_STATUS_ORDER,
+  STRATEGY_LABELS,
+  statusFromScore,
+  type DevStatusKey,
+} from '@/lib/theme/status';
+import { formatThaiDate } from '@/lib/format/date';
 
 export const revalidate = 120;
 
@@ -21,7 +28,10 @@ function meanPillars(list: SchoolFull[]): number[] {
 }
 
 function tierCounts(list: SchoolFull[], key: keyof NonNullable<SchoolFull['pillarScores']>) {
-  const buckets = { strong: 0, progressing: 0, accelerate: 0, urgent: 0 };
+  const buckets = Object.fromEntries(DEV_STATUS_ORDER.map((k) => [k, 0])) as Record<
+    DevStatusKey,
+    number
+  >;
   list.forEach((s) => {
     const st = statusFromScore(s.pillarScores?.[key]);
     buckets[st.key] += 1;
@@ -29,12 +39,12 @@ function tierCounts(list: SchoolFull[], key: keyof NonNullable<SchoolFull['pilla
   return buckets;
 }
 
-/** Top issues = strategies with the most schools in urgent/accelerate tiers */
+/** Top issues = strategies with the most schools in ควรพัฒนา / พอใช้ */
 function topIssuesFromData(list: SchoolFull[]) {
   return STRATEGY_LABELS.map((s) => {
     const weak = list.filter((school) => {
       const st = statusFromScore(school.pillarScores?.[s.key]);
-      return st.key === 'urgent' || st.key === 'accelerate';
+      return st.key === 'develop' || st.key === 'fair';
     }).length;
     return { label: s.label, count: weak, color: s.color };
   })
@@ -62,8 +72,8 @@ async function StrategyBody() {
     .slice(0, 5);
 
   const overallAvg = avgs.reduce((a, b) => a + b, 0) / 5;
-  const strongShare =
-    (schools.filter((s) => statusFromScore(s.overallScore).key === 'strong').length / n) * 100;
+  const excellentShare =
+    (schools.filter((s) => statusFromScore(s.overallScore).key === 'excellent').length / n) * 100;
 
   const ranked = STRATEGY_LABELS.map((s, i) => ({ ...s, score: avgs[i] ?? 0 })).sort(
     (a, b) => b.score - a.score
@@ -73,23 +83,20 @@ async function StrategyBody() {
   const issues = topIssuesFromData(schools);
   const maxIssue = Math.max(1, ...issues.map((i) => i.count));
 
-  const asOf = new Date().toLocaleDateString('th-TH', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  const asOf = formatThaiDate(new Date());
 
   return (
     <div className="strategy-page">
       <PageBanner
         src={PAGE_BANNERS.strategy}
-        title="ภาพรวมการดำเนินงานตาม 5 ด้าน (connextED)"
+        title="ผลการประเมินตามระบบ SMS"
         subtitle={`ข้อมูลภาพรวม ${schools.length.toLocaleString('th-TH')} โรงเรียนในโครงการกองทุนการศึกษา`}
         quote="“การศึกษา คือพลังในการเปลี่ยนแปลงสังคม”"
         quoteMeta={`ข้อมูล ณ วันที่ ${asOf}`}
       />
 
       <div className="page-shell space-y-5 py-5">
+        <div className="schools-list-panel schools-list-panel--five space-y-5">
         <div className="ed-strategy-row">
           {STRATEGY_LABELS.map((s, i) => {
             const score = avgs[i] ?? 0;
@@ -119,9 +126,9 @@ async function StrategyBody() {
 
         <div className="ed-analytics-row">
           <section className="ed-card p-4">
-            <h2 className="ed-section-title text-base">คะแนนเฉลี่ย 5 ด้าน (connextED)</h2>
+            <h2 className="ed-section-title text-base">คะแนนเฉลี่ยผลการประเมินตามระบบ SMS</h2>
             <p className="text-sm text-slate-600 m-0 mb-2">
-              คะแนนเฉลี่ยรวม 5 ด้าน (connextED){' '}
+              คะแนนเฉลี่ยรวมตามระบบ SMS{' '}
               <strong className="text-tm-blue">{overallAvg.toFixed(2)}</strong>
               <span className="text-slate-400"> / 5.00</span>
             </p>
@@ -137,18 +144,16 @@ async function StrategyBody() {
             <h2 className="ed-section-title text-base">การกระจายของโรงเรียนในแต่ละระดับ</h2>
             {STRATEGY_LABELS.map((s) => {
               const t = tierCounts(schools, s.key);
-              const total = Math.max(1, t.strong + t.progressing + t.accelerate + t.urgent);
-              const tiers = [
-                { key: 'strong', count: t.strong, color: '#4ade80', label: 'เข้มแข็ง' },
-                { key: 'progressing', count: t.progressing, color: '#fde047', label: 'พัฒนาได้' },
-                { key: 'accelerate', count: t.accelerate, color: '#fb923c', label: 'ควรเร่งพัฒนา' },
-                {
-                  key: 'urgent',
-                  count: t.urgent,
-                  color: '#f87171',
-                  label: 'ต้องได้รับการสนับสนุน',
-                },
-              ] as const;
+              const total = Math.max(
+                1,
+                DEV_STATUS_ORDER.reduce((sum, k) => sum + t[k], 0)
+              );
+              const tiers = [...DEV_STATUS_ORDER].reverse().map((key) => ({
+                key,
+                count: t[key],
+                color: DEV_STATUS[key].color,
+                label: DEV_STATUS[key].label,
+              }));
               return (
                 <div key={s.key}>
                   <div className="text-xs font-semibold mb-1 text-slate-600">{s.label}</div>
@@ -169,22 +174,12 @@ async function StrategyBody() {
               );
             })}
             <div className="strategy-legend">
-              <span>
-                <i style={{ background: '#4ade80' }} />
-                เข้มแข็ง
-              </span>
-              <span>
-                <i style={{ background: '#fde047' }} />
-                พัฒนาได้
-              </span>
-              <span>
-                <i style={{ background: '#fb923c' }} />
-                ควรเร่งพัฒนา
-              </span>
-              <span>
-                <i style={{ background: '#f87171' }} />
-                ต้องได้รับการสนับสนุน
-              </span>
+              {[...DEV_STATUS_ORDER].reverse().map((key) => (
+                <span key={key}>
+                  <i style={{ background: DEV_STATUS[key].color }} />
+                  {DEV_STATUS[key].label}
+                </span>
+              ))}
             </div>
           </section>
 
@@ -221,7 +216,8 @@ async function StrategyBody() {
             <div className="rounded-xl p-3 bg-blue-50 border border-blue-100">
               <strong className="text-tm-blue text-sm">แนวโน้มโดยรวม</strong>
               <p className="text-sm text-slate-700 m-0 mt-1">
-                คะแนนเฉลี่ยรวม {overallAvg.toFixed(2)} · โรงเรียนเข้มแข็ง {strongShare.toFixed(1)}%
+                คะแนนเฉลี่ยรวม {overallAvg.toFixed(2)} · โรงเรียนยอดเยี่ยม{' '}
+                {excellentShare.toFixed(1)}%
               </p>
             </div>
           </section>
@@ -231,7 +227,7 @@ async function StrategyBody() {
           <section className="ed-card p-4">
             <h2 className="ed-section-title text-base">ประเด็นที่พบร่วมกันมากที่สุด (Top 5)</h2>
             <p className="text-xs text-slate-500 m-0 mb-2">
-              จำนวนโรงเรียนในระดับควรเร่งพัฒนา / ต้องติดตาม แยกตามกลยุทธ์
+              จำนวนโรงเรียนในระดับควรพัฒนา / พอใช้ แยกตามกลยุทธ์
             </p>
             <ul className="space-y-2 m-0 p-0 list-none">
               {issues.map((item) => (
@@ -294,6 +290,7 @@ async function StrategyBody() {
               </Link>
             ))}
           </section>
+        </div>
         </div>
       </div>
     </div>

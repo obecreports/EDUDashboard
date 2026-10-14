@@ -1,6 +1,12 @@
 import { createAnonClient } from '@/lib/supabase/anon';
 import type { ThreePillarScores } from '@/lib/types';
 import { THREE_PILLAR_INDICATOR_DEFS, type ThreePillarKey } from '@/lib/mock/pillars';
+import {
+  pickScoreRowExactYear,
+  pickScoreRowForYear,
+  SCORE_YEAR_CURRENT,
+  SCORE_YEAR_PREVIOUS,
+} from '@/lib/scores/years';
 
 export type SchoolPillarScoreRow = {
   school_id: number | string;
@@ -147,16 +153,34 @@ export function indicatorScoresFromRow(
   return out;
 }
 
-/** Fetch all school_pillar_scores rows (anon). Returns empty map if table missing / unreachable. */
-export async function fetchAllPillarScores(): Promise<Map<string, SchoolPillarScoreRow>> {
+/**
+ * Fetch school_pillar_scores for one data year (default = live year).
+ * Map key = school_id. Empty if table missing / unreachable.
+ * Previous-year requests use exact match only (no fallback to other years).
+ */
+export async function fetchAllPillarScores(
+  schoolYear: string = SCORE_YEAR_CURRENT
+): Promise<Map<string, SchoolPillarScoreRow>> {
   const out = new Map<string, SchoolPillarScoreRow>();
+  const exactOnly = schoolYear === SCORE_YEAR_PREVIOUS;
   try {
     const supabase = createAnonClient();
     const { data, error } = await supabase.from('school_pillar_scores').select('*');
     if (error || !data) return out;
+
+    const bySchool = new Map<string, SchoolPillarScoreRow[]>();
     for (const row of data as SchoolPillarScoreRow[]) {
       if (row.school_id == null) continue;
-      out.set(String(row.school_id), row);
+      const id = String(row.school_id);
+      const list = bySchool.get(id) ?? [];
+      list.push(row);
+      bySchool.set(id, list);
+    }
+    for (const [id, rows] of bySchool) {
+      const picked = exactOnly
+        ? pickScoreRowExactYear(rows, schoolYear)
+        : pickScoreRowForYear(rows, schoolYear);
+      if (picked) out.set(id, picked);
     }
   } catch {
     /* table may not exist yet */
@@ -165,7 +189,9 @@ export async function fetchAllPillarScores(): Promise<Map<string, SchoolPillarSc
 }
 
 export async function fetchPillarScoreBySchoolId(
-  schoolId: string | number
+  schoolId: string | number,
+  schoolYear: string = SCORE_YEAR_CURRENT,
+  opts?: { exact?: boolean }
 ): Promise<SchoolPillarScoreRow | null> {
   try {
     const supabase = createAnonClient();
@@ -173,10 +199,13 @@ export async function fetchPillarScoreBySchoolId(
     const { data, error } = await supabase
       .from('school_pillar_scores')
       .select('*')
-      .eq('school_id', id)
-      .maybeSingle();
-    if (error || !data) return null;
-    return data as SchoolPillarScoreRow;
+      .eq('school_id', id);
+    if (error || !data?.length) return null;
+    const rows = data as SchoolPillarScoreRow[];
+    const exact = opts?.exact ?? schoolYear === SCORE_YEAR_PREVIOUS;
+    return exact
+      ? pickScoreRowExactYear(rows, schoolYear)
+      : pickScoreRowForYear(rows, schoolYear);
   } catch {
     return null;
   }

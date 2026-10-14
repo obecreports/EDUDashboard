@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react';
 import type { SchoolSwot } from '@/lib/auth/user-store';
 import { saveSchoolUpdateBundleAction } from '@/app/actions/school-extras';
 import { emptySchoolSwot, normalizeSchoolSwot } from '@/lib/swot/schema';
+import { formatThaiDateTime } from '@/lib/format/date';
 
 type SchoolOption = {
   id: number;
@@ -141,7 +142,7 @@ export function UpdateSchoolForm({
       >
         {editableSchools.length === 0 ? (
           <p className="text-sm text-amber-800 bg-amber-50 rounded-lg p-3 m-0">
-            ไม่มีโรงเรียนภายใต้ความรับผิดชอบ — มอบหมายเขตพื้นที่ในโปรไฟล์ก่อน
+            ไม่มีโรงเรียนของฉัน — มอบหมายเขตพื้นที่ในโปรไฟล์ก่อน
           </p>
         ) : (
           <label className="block text-sm font-semibold">
@@ -185,7 +186,7 @@ export function UpdateSchoolForm({
                     <li key={c.id} className="rounded-lg border border-slate-100 p-3 text-sm">
                       <div className="text-xs text-slate-500 mb-1">
                         <strong className="text-tm-blue">{c.staff_name}</strong> ·{' '}
-                        {new Date(c.created_at).toLocaleString('th-TH')}
+                        {formatThaiDateTime(c.created_at)}
                       </div>
                       <div>{c.text}</div>
                     </li>

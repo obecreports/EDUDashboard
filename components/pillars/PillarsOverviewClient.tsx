@@ -129,12 +129,21 @@ export function PillarsOverviewClient({
     ],
   };
 
+  const yc = overview.yearCompare;
   const radarData = {
     labels: [labels.qualitySchool, labels.qualityGraduation, labels.disciplineMorality],
     datasets: [
       {
-        label: 'ผลดำเนินงาน',
-        data: [overview.qualitySchool, overview.qualityGraduation, overview.disciplineMorality],
+        label: `ปี ${yc.prevLabel}`,
+        data: [yc.prev.qualitySchool, yc.prev.qualityGraduation, yc.prev.disciplineMorality],
+        backgroundColor: 'rgba(147,197,253,0.25)',
+        borderColor: '#93c5fd',
+        borderDash: [5, 4],
+        pointBackgroundColor: '#93c5fd',
+      },
+      {
+        label: `ปี ${yc.currLabel}`,
+        data: [yc.curr.qualitySchool, yc.curr.qualityGraduation, yc.curr.disciplineMorality],
         backgroundColor: 'rgba(11,77,162,0.2)',
         borderColor: '#0b4da2',
         pointBackgroundColor: '#0b4da2',
@@ -152,7 +161,7 @@ export function PillarsOverviewClient({
   ];
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-5 schools-list-panel schools-list-panel--three">
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
         {pillarCards.map(({ key, color }) => (
           <div key={key} className="grid gap-2">
@@ -174,15 +183,24 @@ export function PillarsOverviewClient({
         ))}
         <div className="ed-card p-4 grid place-content-center text-center text-white" style={{ background: COLORS.total }}>
           <div className="text-sm opacity-90">คะแนนเทียบเคียงรวม</div>
-          <div className="text-4xl font-extrabold my-2">{overview.overall.toFixed(1)}</div>
-          <div className="text-xs opacity-80">/ 100 · คะแนนเทียบเคียง 3 เสาหลัก</div>
+          <div className="text-4xl font-extrabold my-2">{yc.curr.overall.toFixed(1)}</div>
+          <div className="text-xs opacity-80">ปี {yc.currLabel} · / 100</div>
+          <div className="text-sm mt-3 opacity-95 border-t border-white/25 pt-2">
+            ปี {yc.prevLabel}: <strong>{yc.prev.overall.toFixed(1)}</strong>
+            {yc.prev.overall > 0 || yc.curr.overall > 0 ? (
+              <span className="ml-2 opacity-90">
+                ({yc.curr.overall - yc.prev.overall >= 0 ? '+' : ''}
+                {(yc.curr.overall - yc.prev.overall).toFixed(1)})
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 
       <div className="pillars-charts-row">
         <div className="ed-card p-4">
           <h3 className="font-bold text-tm-blue mb-3">
-            เปรียบเทียบคะแนนรายเสาหลัก ปี {overview.yearCompare.prevLabel}–{overview.yearCompare.currLabel}
+            เปรียบเทียบคะแนนรายเสาหลัก ปี {yc.prevLabel}–{yc.currLabel}
           </h3>
           <div className="pillars-chart-tall">
             <Bar
@@ -197,7 +215,7 @@ export function PillarsOverviewClient({
           </div>
         </div>
         <div className="ed-card p-4">
-          <h3 className="font-bold text-tm-blue mb-3">ภาพรวมผลการดำเนินงาน 3 เสาหลัก</h3>
+          <h3 className="font-bold text-tm-blue mb-3">เปรียบเทียบคะแนน 3 เสาหลัก</h3>
           <div className="pillars-chart-tall pillars-chart-tall--radar">
             <Radar
               data={radarData}
@@ -218,7 +236,7 @@ export function PillarsOverviewClient({
                     pointLabels: { font: { size: 12 } },
                   },
                 },
-                plugins: { legend: { display: false } },
+                plugins: { legend: { position: 'bottom' } },
               }}
             />
           </div>

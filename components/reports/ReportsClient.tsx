@@ -7,6 +7,8 @@ import { updateSchoolCommentAction } from '@/app/actions/school-extras';
 import { REPORT_HASHTAGS, type SchoolSize } from '@/lib/types';
 import type { ReportDraft } from '@/lib/auth/mock-users';
 import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
+import { formatThaiDate, formatThaiDateTime } from '@/lib/format/date';
+import { ThaiDateField } from '@/components/ui/ThaiDateField';
 
 export type ReportRow = {
   id: string;
@@ -230,7 +232,7 @@ export function ReportsClient({
         <div>
           <h2 className="ed-section-title text-base m-0">ส่งรายงานลงพื้นที่</h2>
           <p className="text-sm text-slate-600 m-0 mt-1">
-            บันทึกความคิดเห็นหรือกิจกรรมของโรงเรียนภายใต้ขอบเขต
+            บันทึกความคิดเห็นหรือกิจกรรมของโรงเรียนของฉัน
           </p>
         </div>
         <Link href="/reports/new" className="ed-btn ed-btn--primary">
@@ -257,11 +259,8 @@ export function ReportsClient({
                   <strong className="text-tm-blue">{d.school_name || 'ไม่ระบุโรงเรียน'}</strong>
                   <div className="text-xs text-slate-500 mt-0.5">
                     แก้ไขล่าสุด{' '}
-                    {new Date(d.updated_at).toLocaleString('th-TH', {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    })}
-                    {d.report_date ? ` · วันที่รายงาน ${d.report_date}` : ''}
+                    {formatThaiDateTime(d.updated_at)}
+                    {d.report_date ? ` · วันที่รายงาน ${formatThaiDate(d.report_date)}` : ''}
                   </div>
                 </div>
                 <span className="text-xs font-bold text-tm-blue">เขียนต่อ →</span>
@@ -394,26 +393,22 @@ export function ReportsClient({
         <div className="flex flex-wrap gap-3 items-end">
           <label className="text-sm font-semibold grid gap-1">
             จากวันที่
-            <input
-              type="date"
-              className="form-input"
+            <ThaiDateField
               value={dateFrom}
-              onChange={(e) => {
+              onChange={(ymd) => {
                 setPreset('custom');
-                setDateFrom(e.target.value);
+                setDateFrom(ymd);
                 setPage(1);
               }}
             />
           </label>
           <label className="text-sm font-semibold grid gap-1">
             ถึงวันที่
-            <input
-              type="date"
-              className="form-input"
+            <ThaiDateField
               value={dateTo}
-              onChange={(e) => {
+              onChange={(ymd) => {
                 setPreset('custom');
-                setDateTo(e.target.value);
+                setDateTo(ymd);
                 setPage(1);
               }}
             />
@@ -453,12 +448,7 @@ export function ReportsClient({
                   >
                     <div>
                       <strong>
-                        {new Date(day + 'T12:00:00').toLocaleDateString('th-TH', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric',
-                        })}
+                        {formatThaiDate(day)}
                       </strong>
                       <div className="school-activity__day-preview">
                         {open ? 'คลิกเพื่อย่อ' : `${items.length} รายงาน · ${items[0]?.school_name || ''}`}
@@ -496,7 +486,7 @@ export function ReportsClient({
                                 </div>
                               </div>
                               <time className="text-xs text-slate-500 whitespace-nowrap">
-                                {new Date(c.created_at).toLocaleString('th-TH')}
+                                {formatThaiDateTime(c.created_at)}
                               </time>
                             </div>
 

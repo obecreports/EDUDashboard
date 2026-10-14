@@ -18,6 +18,8 @@ import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
 import type { UserRole } from '@/lib/types';
 import { normalizeActivity, normalizeStatus } from '@/lib/visits/labels';
 import { statusFromScore } from '@/lib/theme/status';
+import { formatThaiDate, formatThaiMonthYear } from '@/lib/format/date';
+import { ThaiDateField } from '@/components/ui/ThaiDateField';
 
 type SchoolOpt = {
   id: string;
@@ -59,14 +61,6 @@ function addDays(d: Date, n: number) {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
   return x;
-}
-
-function formatThaiShort(dateStr: string) {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('th-TH', {
-    day: 'numeric',
-    month: 'short',
-    year: '2-digit',
-  });
 }
 
 function rangeForPreset(preset: RangePreset, anchor: Date): { from: string; to: string } {
@@ -225,7 +219,7 @@ export function StaffVisitHubClient({
     if (listPage > totalListPages) setListPage(totalListPages);
   }, [listPage, totalListPages]);
 
-  const monthLabel = cursor.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+  const monthLabel = formatThaiMonthYear(cursor);
   const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
   const startPad = (new Date(cursor.getFullYear(), cursor.getMonth(), 1).getDay() + 6) % 7;
 
@@ -258,7 +252,7 @@ export function StaffVisitHubClient({
             </div>
             <div>
               <div className="status-card__value text-tm-blue">{managedCount}</div>
-              <div className="status-card__label">โรงเรียนในความดูแล</div>
+              <div className="status-card__label">โรงเรียนของฉัน</div>
             </div>
           </div>
           <div className="status-card">
@@ -287,7 +281,7 @@ export function StaffVisitHubClient({
               <div className="status-card__value" style={{ color: '#B91C1C' }}>
                 {Math.max(0, managedCount - done)}
               </div>
-              <div className="status-card__label">ต้องติดตาม</div>
+              <div className="status-card__label">ควรพัฒนา</div>
             </div>
           </div>
         </div>
@@ -328,27 +322,27 @@ export function StaffVisitHubClient({
           <div className="flex flex-wrap gap-3 items-end">
             <label className="text-sm font-semibold grid gap-1">
               จาก
-              <input
-                type="date"
-                className="form-input"
+              <ThaiDateField
                 value={range.from}
-                onChange={(e) => {
+                onChange={(ymd) => {
+                  if (!ymd) return;
                   setPreset('custom');
-                  setRange((r) => ({ ...r, from: e.target.value }));
-                  const d = new Date(e.target.value + 'T12:00:00');
-                  if (!Number.isNaN(d.getTime())) setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+                  setRange((r) => ({ ...r, from: ymd }));
+                  const d = new Date(ymd + 'T12:00:00');
+                  if (!Number.isNaN(d.getTime())) {
+                    setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+                  }
                 }}
               />
             </label>
             <label className="text-sm font-semibold grid gap-1">
               ถึง
-              <input
-                type="date"
-                className="form-input"
+              <ThaiDateField
                 value={range.to}
-                onChange={(e) => {
+                onChange={(ymd) => {
+                  if (!ymd) return;
                   setPreset('custom');
-                  setRange((r) => ({ ...r, to: e.target.value }));
+                  setRange((r) => ({ ...r, to: ymd }));
                 }}
               />
             </label>
@@ -494,7 +488,7 @@ export function StaffVisitHubClient({
                           setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
                         }}
                       >
-                        <strong>{formatThaiShort(e.date)}</strong>
+                        <strong>{formatThaiDate(e.date)}</strong>
                         <span className="truncate">{e.school_name || 'ไม่ระบุโรงเรียน'}</span>
                       </button>
                     );
@@ -510,7 +504,7 @@ export function StaffVisitHubClient({
                 รายละเอียดนัดหมาย ({rangedEvents.length})
               </h2>
               <span className="visit-detail-panel__range">
-                {formatThaiShort(range.from)} – {formatThaiShort(range.to)}
+                {formatThaiDate(range.from)} – {formatThaiDate(range.to)}
               </span>
             </div>
 
@@ -543,7 +537,7 @@ export function StaffVisitHubClient({
                         onClick={() => toggleExpand(e.id)}
                       >
                         <div className="visit-booking-card__meta">
-                          <span className="visit-booking-card__date">{formatThaiShort(e.date)}</span>
+                          <span className="visit-booking-card__date">{formatThaiDate(e.date)}</span>
                           <span
                             className={`cal-badge ${
                               st === 'เยี่ยมชมเสร็จสิ้น' ? 'cal-badge--done' : 'cal-badge--sched'

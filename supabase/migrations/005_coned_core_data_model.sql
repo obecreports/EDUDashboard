@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS public.school_pillar_scores (
   pillar_2 numeric(5,2), -- สำเร็จการศึกษาอย่างมีคุณภาพ
   pillar_3 numeric(5,2), -- สร้างวินัย คุณธรรม/จริยธรรม
   overall numeric(5,2),
-  school_year text, -- e.g. '2568'
+  school_year text, -- Christian Era / A.D. e.g. '2025' (UI shows BE = +543)
   updated_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
   updated_by uuid REFERENCES public.user_profiles (id) ON DELETE SET NULL
 );

@@ -36,7 +36,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import type { SchoolFull } from '@/lib/types';
+import type { SchoolFull, ThreePillarScores } from '@/lib/types';
 import { schoolCoverImage } from '@/lib/schools/images';
 import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
 import type {
@@ -46,6 +46,16 @@ import type {
 } from '@/lib/auth/user-store';
 import { DualRadarChart } from '@/components/schools/SchoolRadarChart';
 import { THREE_PILLAR_INDICATOR_DEFS, THREE_PILLAR_LABELS } from '@/lib/mock/pillars';
+import {
+  formatThaiDate,
+  formatThaiDateWithWeekday,
+  formatThaiTime,
+} from '@/lib/format/date';
+import {
+  SCORE_YEAR_CURRENT,
+  SCORE_YEAR_PREVIOUS,
+  scoreYearToBeLabel,
+} from '@/lib/scores/years';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
@@ -207,9 +217,27 @@ function ScoreBar({
   );
 }
 
-function OverallGauge({ score, max = 5 }: { score: number; max?: number }) {
+function fmtScore(score: number, max: number) {
+  return max > 5 ? score.toFixed(1) : score.toFixed(2);
+}
+
+function OverallGauge({
+  score,
+  max = 5,
+  prevScore,
+  currLabel,
+  prevLabel,
+}: {
+  score: number;
+  max?: number;
+  prevScore?: number | null;
+  currLabel?: string;
+  prevLabel?: string;
+}) {
   const pct = Math.max(0, Math.min(100, (score / Math.max(1, max)) * 100));
   const color = scoreColor(score);
+  const hasPrev = prevScore != null && Number.isFinite(prevScore);
+  const delta = hasPrev ? score - (prevScore as number) : 0;
   return (
     <div className="overall-gauge">
       <div
@@ -218,12 +246,30 @@ function OverallGauge({ score, max = 5 }: { score: number; max?: number }) {
       >
         <div className="overall-gauge__inner">
           <div className="overall-gauge__score" style={{ color }}>
-            {max > 5 ? score.toFixed(1) : score.toFixed(2)}
+            {fmtScore(score, max)}
           </div>
           <div className="overall-gauge__label">{qualityLabel(score)}</div>
         </div>
       </div>
-      <p className="text-sm text-slate-500 m-0 text-center">คะแนนรวม · เต็ม {max}</p>
+      <p className="text-sm text-slate-500 m-0 text-center">
+        {currLabel ? `ปี ${currLabel} · ` : ''}คะแนนรวม · เต็ม {max}
+      </p>
+      {hasPrev && currLabel && prevLabel ? (
+        <div className="overall-gauge__yoy">
+          <div className="overall-gauge__yoy-row">
+            <span>ปี {prevLabel}</span>
+            <strong>{fmtScore(prevScore as number, max)}</strong>
+          </div>
+          <div className="overall-gauge__yoy-row">
+            <span>ปี {currLabel}</span>
+            <strong style={{ color }}>{fmtScore(score, max)}</strong>
+          </div>
+          <div className="overall-gauge__yoy-delta" style={{ color: delta >= 0 ? '#059669' : '#dc2626' }}>
+            {delta >= 0 ? '+' : ''}
+            {fmtScore(delta, max)}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -424,6 +470,40 @@ export function SchoolDetailClient({
     disciplineMorality: 0,
     overall: 0,
   };
+  const currYearLabel = scoreYearToBeLabel(SCORE_YEAR_CURRENT);
+  const prevYearLabel = scoreYearToBeLabel(SCORE_YEAR_PREVIOUS);
+  const prevScores = (school.School_Score_Previous ?? null) as Record<string, unknown> | null;
+  const overallPrev = prevScores
+    ? num(prevScores.overall) ||
+      (() => {
+        const gs = [
+          num(prevScores.G01),
+          num(prevScores.G02),
+          num(prevScores.G03),
+          num(prevScores.G04),
+          num(prevScores.G05),
+        ];
+        const pos = gs.filter((n) => n > 0);
+        return pos.length ? pos.reduce((a, b) => a + b, 0) / pos.length : 0;
+      })()
+    : null;
+  const gScoresPrev = prevScores
+    ? [
+        num(prevScores.G01),
+        num(prevScores.G02),
+        num(prevScores.G03),
+        num(prevScores.G04),
+        num(prevScores.G05),
+      ]
+    : null;
+  const threePrev: ThreePillarScores | null = school.threePillarScoresPrevious ?? null;
+  const hasSmsPrev = overallPrev != null && (overallPrev > 0 || (gScoresPrev?.some((n) => n > 0) ?? false));
+  const hasThreePrev =
+    threePrev != null &&
+    (threePrev.overall > 0 ||
+      threePrev.qualitySchool > 0 ||
+      threePrev.qualityGraduation > 0 ||
+      threePrev.disciplineMorality > 0);
 
   const barData = useMemo(() => {
     const labels = activeLevels.map((l) => l.name.replace(/^จำนวนนักเรียน\s*/u, '').slice(0, 22));
@@ -500,7 +580,7 @@ export function SchoolDetailClient({
         { id: 'visits', label: 'การลงพื้นที่', icon: CalendarDays },
         ...(showScores
           ? [
-              { id: 'scores' as const, label: '5 ด้าน (connextED)', icon: Award },
+              { id: 'scores' as const, label: 'ผลการประเมินตามระบบ SMS', icon: Award },
               { id: 'pillars' as const, label: '3 เสาหลัก', icon: Sparkles },
             ]
           : []),
@@ -551,12 +631,7 @@ export function SchoolDetailClient({
                 >
                   <div>
                     <strong>
-                      {new Date(day + 'T12:00:00').toLocaleDateString('th-TH', {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                      })}
+                      {formatThaiDateWithWeekday(day)}
                     </strong>
                     <div className="school-activity__day-preview">
                       {open ? 'คลิกเพื่อย่อ' : items[0]?.text.slice(0, 72) || '—'}
@@ -571,7 +646,7 @@ export function SchoolDetailClient({
                       <li key={c.id}>
                         <div className="school-activity__meta">
                           <strong>{c.staff_name}</strong>
-                          <span>{new Date(c.created_at).toLocaleTimeString('th-TH')}</span>
+                          <span>{formatThaiTime(c.created_at)}</span>
                         </div>
                         <p>{c.text}</p>
                         {c.image_urls && c.image_urls.length > 0 ? (
@@ -850,11 +925,15 @@ export function SchoolDetailClient({
                         <Award size={22} />
                       </div>
                       <div>
-                        <div className="kpi-card__label">คะแนนรวม 5 ด้าน (connextED)</div>
+                        <div className="kpi-card__label">คะแนนรวมตามระบบ SMS</div>
                         <div className="kpi-card__value" style={{ color: scoreColor(overall) }}>
                           {overall.toFixed(2)}
                         </div>
-                        <div className="kpi-card__hint">{qualityLabel(overall)} · / 5.00</div>
+                        <div className="kpi-card__hint">
+                          ปี {currYearLabel}
+                          {hasSmsPrev ? ` · ปี ${prevYearLabel} ${(overallPrev as number).toFixed(2)}` : ''}
+                          {' · / 5.00'}
+                        </div>
                       </div>
                     </article>
                     <article className="kpi-card">
@@ -866,7 +945,11 @@ export function SchoolDetailClient({
                         <div className="kpi-card__value" style={{ color: scoreColor(three.overall) }}>
                           {three.overall.toFixed(1)}
                         </div>
-                        <div className="kpi-card__hint">{qualityLabel(three.overall)} · / 100</div>
+                        <div className="kpi-card__hint">
+                          ปี {currYearLabel}
+                          {hasThreePrev ? ` · ปี ${prevYearLabel} ${threePrev!.overall.toFixed(1)}` : ''}
+                          {' · / 100'}
+                        </div>
                       </div>
                     </article>
                   </>
@@ -899,8 +982,13 @@ export function SchoolDetailClient({
                   style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}
                 >
                   <div className="panel-card space-y-3">
-                    <h2 className="section-heading text-base m-0">5 ด้าน (connextED)</h2>
-                    <OverallGauge score={overall} />
+                    <h2 className="section-heading text-base m-0">ผลการประเมินตามระบบ SMS</h2>
+                    <OverallGauge
+                      score={overall}
+                      prevScore={hasSmsPrev ? overallPrev : null}
+                      currLabel={currYearLabel}
+                      prevLabel={prevYearLabel}
+                    />
                     <div className="space-y-2 pt-2">
                       {gScores.map((g) => (
                         <div key={g.code} className="flex justify-between text-sm gap-2">
@@ -912,7 +1000,13 @@ export function SchoolDetailClient({
                   </div>
                   <div className="panel-card space-y-3">
                     <h2 className="section-heading text-base m-0">3 เสาหลัก</h2>
-                    <OverallGauge score={three.overall} max={100} />
+                    <OverallGauge
+                      score={three.overall}
+                      max={100}
+                      prevScore={hasThreePrev ? threePrev!.overall : null}
+                      currLabel={currYearLabel}
+                      prevLabel={prevYearLabel}
+                    />
                     <div className="space-y-2 pt-2">
                       {(
                         [
@@ -965,11 +1059,7 @@ export function SchoolDetailClient({
                   >
                     <div>
                       <strong className="text-tm-blue">
-                        {new Date(v.date).toLocaleDateString('th-TH', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
+                        {formatThaiDate(v.date)}
                       </strong>
                       <div className="text-slate-600">{v.activity}</div>
                       {v.notes ? <div className="text-xs text-slate-500 mt-0.5">{v.notes}</div> : null}
@@ -1201,27 +1291,36 @@ export function SchoolDetailClient({
       )}
 
       {tab === 'scores' && (
-        <div className="space-y-4">
+        <div className="space-y-4 school-scores-panel">
           <div
             className="grid gap-4"
             style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}
           >
-            <div className="panel-card">
-              <h2 className="section-heading text-base m-0 mb-3">คะแนนรวม 5 ด้าน (connextED)</h2>
-              <OverallGauge score={overall} />
+            <div className="panel-card school-scores-panel__card">
+              <h2 className="section-heading text-base m-0 mb-3">คะแนนรวมตามระบบ SMS</h2>
+              <OverallGauge
+                score={overall}
+                prevScore={hasSmsPrev ? overallPrev : null}
+                currLabel={currYearLabel}
+                prevLabel={prevYearLabel}
+              />
             </div>
-            <div className="panel-card">
-              <h2 className="section-heading text-base">เปรียบเทียบกับค่าเฉลี่ยประเทศ</h2>
+            <div className="panel-card school-scores-panel__card">
+              <h2 className="section-heading text-base">เปรียบเทียบคะแนน</h2>
               <DualRadarChart
                 labels={gScores.map((g) => g.label.replace(/^ด้าน/, ''))}
                 schoolScores={gScores.map((g) => g.value)}
+                schoolLabel={`ปี ${currYearLabel}`}
+                nationalScores={hasSmsPrev && gScoresPrev ? gScoresPrev : undefined}
+                nationalLabel={`ปี ${prevYearLabel}`}
+                showNational={hasSmsPrev}
                 maxScale={5}
               />
             </div>
           </div>
 
-          <div className="panel-card space-y-3">
-            <h2 className="section-heading text-base m-0">กลุ่มผลการประเมิน 5 ด้าน (connextED)</h2>
+          <div className="panel-card school-scores-panel__card space-y-3">
+            <h2 className="section-heading text-base m-0">กลุ่มผลการประเมินตามระบบ SMS</h2>
             <div className="score-grid-2">
               {gScores.map((g) => (
                 <ScoreBar key={g.code} label={g.label} score={g.value} showCode={false} />
@@ -1230,7 +1329,7 @@ export function SchoolDetailClient({
           </div>
 
           {indicatorGroups.map((grp) => (
-            <section key={grp.prefix} className="panel-card space-y-3">
+            <section key={grp.prefix} className="panel-card school-scores-panel__card space-y-3">
               <h2 className="section-heading text-base m-0">{grp.title}</h2>
               <div className="score-grid-2">
                 {grp.rows.map((r) => (
@@ -1250,7 +1349,13 @@ export function SchoolDetailClient({
           >
             <div className="panel-card school-pillars-panel__card">
               <h2 className="section-heading text-base m-0 mb-3">คะแนนรวม 3 เสาหลัก</h2>
-              <OverallGauge score={three.overall} max={100} />
+              <OverallGauge
+                score={three.overall}
+                max={100}
+                prevScore={hasThreePrev ? threePrev!.overall : null}
+                currLabel={currYearLabel}
+                prevLabel={prevYearLabel}
+              />
             </div>
             <div className="panel-card school-pillars-panel__card">
               <h2 className="section-heading text-base">ภาพรวม 3 เสาหลัก</h2>
@@ -1265,8 +1370,18 @@ export function SchoolDetailClient({
                   three.qualityGraduation,
                   three.disciplineMorality,
                 ]}
-                showNational={false}
-                schoolLabel="โรงเรียนนี้"
+                schoolLabel={`ปี ${currYearLabel}`}
+                nationalScores={
+                  hasThreePrev
+                    ? [
+                        threePrev!.qualitySchool,
+                        threePrev!.qualityGraduation,
+                        threePrev!.disciplineMorality,
+                      ]
+                    : undefined
+                }
+                nationalLabel={`ปี ${prevYearLabel}`}
+                showNational={hasThreePrev}
                 maxScale={100}
                 tickValues={[0, 50, 100]}
               />

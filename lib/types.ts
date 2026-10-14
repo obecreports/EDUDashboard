@@ -48,7 +48,11 @@ export interface SchoolFull {
   scores?: Record<string, number | string>;
   pillarScores?: PillarScores;
   threePillarScores?: ThreePillarScores;
+  /** Prior-year 3-pillar scores for YoY (exact year; null if missing) */
+  threePillarScoresPrevious?: ThreePillarScores | null;
   overallScore?: number;
+  /** Prior-year SMS row for YoY spider / total compare */
+  School_Score_Previous?: Record<string, number | string> | null;
   lastActivityAt?: string | null;
   /** Derived from calendar bookings / last activity */
   visitStatus?: 'never' | 'planned' | 'visited';
@@ -143,9 +147,9 @@ export const PUBLIC_ROLES: UserRole[] = [
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   guest: 'ผู้เยี่ยมชม (Guest)',
-  staff: 'เจ้าหน้าที่ (Staff)',
-  overseer: 'ผู้กำกับดูแล (Overseer)',
-  super_overseer: 'ผู้กำกับดูแลสูงสุด (Super Overseer)',
+  staff: 'ศึกษานิเทศก์',
+  overseer: 'อาสาสมัคร/องคมนตรี',
+  super_overseer: 'ผู้กำกับดูแลสูงสุด',
   admin: 'ผู้ดูแลระบบ (Admin)',
   super_admin: 'ผู้ดูแลระบบสูงสุด (Super Admin)',
 };
@@ -169,11 +173,12 @@ export const NAV_CATALOG: NavItem[] = [
   { href: '/', label: 'หน้าหลัก', roles: PUBLIC_ROLES, end: true },
   { href: '/about', label: 'เกี่ยวกับโครงการ', roles: PUBLIC_ROLES },
   { href: '/pillars', label: 'ภาพรวม 3 เสาหลัก', roles: PUBLIC_ROLES },
-  { href: '/strategy', label: 'ภาพรวม 5 ด้าน (connextED)', roles: PUBLIC_ROLES },
+  { href: '/strategy', label: 'ผลการประเมินตามระบบ SMS', roles: PUBLIC_ROLES },
   { href: '/thailand-map', label: 'แผนที่', roles: PUBLIC_ROLES },
   { href: '/schools', label: 'โรงเรียนในโครงการ', roles: PUBLIC_ROLES },
   { href: '/dashboard', label: 'แดชบอร์ด', roles: FIELD_ROLES },
-  { href: '/calendar', label: 'ปฏิทินกิจกรรม', roles: FIELD_ROLES },
+  { href: '/calendar', label: 'สรุปปฏิทิน', roles: FIELD_ROLES },
+  { href: '/calendar/new', label: 'สร้างนัดหมาย', roles: FIELD_ROLES },
   { href: '/reports/new', label: 'ส่งรายงาน', roles: FIELD_ROLES },
   { href: '/reports', label: 'ดูผลรายงาน', roles: FIELD_ROLES },
   { href: '/tickets', label: 'คำขอแก้ไขข้อมูล', roles: FIELD_ROLES },

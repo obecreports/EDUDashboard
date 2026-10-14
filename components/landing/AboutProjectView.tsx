@@ -8,16 +8,13 @@ import {
   HeartHandshake,
   TrendingUp,
   Sprout,
-  UserRound,
-  Settings2,
-  Handshake,
   BookOpen,
   Target,
   Landmark,
   Quote,
 } from 'lucide-react';
-import { STRATEGY_LABELS } from '@/lib/theme/status';
 import { PAGE_BANNERS } from '@/lib/types';
+import { LANDING_PILLARS, LANDING_STRATEGIES } from '@/lib/theme/pillars-strategies';
 
 type Props = {
   totalSchools: number;
@@ -27,8 +24,6 @@ type Props = {
   denied?: boolean;
   errorMsg?: string | null;
 };
-
-const STRATEGY_ICONS = [GraduationCap, Handshake, Users, BookOpen, School] as const;
 
 export function AboutProjectView({
   totalSchools,
@@ -128,9 +123,6 @@ export function AboutProjectView({
               <BookOpen size={20} aria-hidden />
               ความเป็นมาของโครงการ
             </h2>
-            <a href="#history" className="about-panel__link">
-              อ่านรายละเอียดทั้งหมด <ArrowRight size={14} />
-            </a>
           </header>
           <p className="about-panel__body">
             โครงการกองทุนการศึกษา จัดตั้งขึ้นเพื่อสนับสนุนการพัฒนาโรงเรียนที่มีความต้องการความช่วยเหลือเป็นพิเศษ
@@ -190,49 +182,38 @@ export function AboutProjectView({
           </div>
         </article>
 
-        {/* Pillars + Strategies */}
-        <article className="about-panel">
+        {/* 3 pillars ↔ 5 strategies */}
+        <article className="about-panel about-panel--map">
           <header className="about-panel__head">
             <h2>
               <Landmark size={20} aria-hidden />
-              3 เสาหลัก และ 5 ด้าน (connextED)
+              3 เสาหลัก 5 กลยุทธ์
             </h2>
-            <Link href="/strategy" className="about-panel__link">
-              ดูรายละเอียด 5 ด้าน (connextED) <ArrowRight size={14} />
-            </Link>
           </header>
-          <div className="about-pillars">
-            <div className="about-pillar about-pillar--blue">
-              <UserRound size={18} aria-hidden />
-              <span>การพัฒนาคน</span>
+          <div className="about-ps-map" aria-label="3 เสาหลัก และ 5 กลยุทธ์">
+            <div className="about-ps-map__col about-ps-map__col--pillars">
+              <p className="about-ps-map__heading">3 เสาหลัก</p>
+              <ol className="about-ps-map__list">
+                {LANDING_PILLARS.map((p) => (
+                  <li key={p.id} className={`about-ps-map__pillar about-ps-map__pillar--${p.id}`}>
+                    <span className="about-ps-map__num">{p.id}</span>
+                    <span className="about-ps-map__text">{p.label}</span>
+                  </li>
+                ))}
+              </ol>
             </div>
-            <div className="about-pillar about-pillar--amber">
-              <Settings2 size={18} aria-hidden />
-              <span>การพัฒนาระบบ</span>
+
+            <div className="about-ps-map__col about-ps-map__col--strategies">
+              <p className="about-ps-map__heading">5 กลยุทธ์</p>
+              <ol className="about-ps-map__list">
+                {LANDING_STRATEGIES.map((s) => (
+                  <li key={s.id} className="about-ps-map__strategy">
+                    <span className="about-ps-map__num about-ps-map__num--strategy">{s.id}</span>
+                    <span className="about-ps-map__text">{s.label}</span>
+                  </li>
+                ))}
+              </ol>
             </div>
-            <div className="about-pillar about-pillar--green">
-              <Handshake size={18} aria-hidden />
-              <span>การมีส่วนร่วมของทุกภาคส่วน</span>
-            </div>
-          </div>
-          <p className="about-strategies__title">5 ด้านหลัก (connextED) ในการขับเคลื่อน</p>
-          <div className="about-strategies">
-            {STRATEGY_LABELS.map((s, i) => {
-              const Icon = STRATEGY_ICONS[i] ?? School;
-              const short = s.label
-                .replace('ด้าน', '')
-                .replace('การ', '')
-                .trim();
-              return (
-                <div key={s.key} className="about-strategy">
-                  <span className="about-strategy__badge" style={{ background: s.color }}>
-                    {/* <em>{i + 1}</em> */}
-                    <Icon size={14} /> 
-                  </span>
-                  <span className="about-strategy__label">{short}</span>
-                </div>
-              );
-            })}
           </div>
         </article>
       </section>

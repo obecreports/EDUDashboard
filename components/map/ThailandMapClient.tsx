@@ -52,7 +52,7 @@ const HEAT_METRIC_LABELS: Record<HeatMetric, string> = {
   pillar1: 'เสาหลักที่ 1',
   pillar2: 'เสาหลักที่ 2',
   pillar3: 'เสาหลักที่ 3',
-  strategyOverall: 'รวม 5 ด้าน (connextED)',
+  strategyOverall: 'รวมผลการประเมินตามระบบ SMS',
   learner: 'ด้านผู้เรียน',
   participation: 'ด้านการมีส่วนร่วม',
   teacherAdmin: 'ด้านครูและผู้บริหาร',
@@ -1406,7 +1406,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
           <option value="pillar2">{HEAT_METRIC_LABELS.pillar2}</option>
           <option value="pillar3">{HEAT_METRIC_LABELS.pillar3}</option>
         </optgroup>
-        <optgroup label="คะแนน 5 ด้าน (connextED)">
+        <optgroup label="ผลการประเมินตามระบบ SMS">
           <option value="strategyOverall">{HEAT_METRIC_LABELS.strategyOverall}</option>
           <option value="learner">{HEAT_METRIC_LABELS.learner}</option>
           <option value="participation">{HEAT_METRIC_LABELS.participation}</option>

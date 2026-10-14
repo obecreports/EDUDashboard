@@ -7,6 +7,7 @@ import {
   type DataTicket,
   type TicketStatus,
 } from '@/lib/auth/ticket-types';
+import { formatThaiDateTime } from '@/lib/format/date';
 
 type Tab = 'pending' | 'done';
 
@@ -64,7 +65,7 @@ export function AdminTicketsClient({ tickets: initial }: { tickets: DataTicket[]
           <p className="text-sm whitespace-pre-wrap m-0">{t.detail}</p>
           <p className="text-xs text-slate-500 m-0">
             {t.requester_name} ({t.requester_role}) ·{' '}
-            {new Date(t.created_at).toLocaleString('th-TH')}
+            {formatThaiDateTime(t.created_at)}
           </p>
           {t.status === 'rejected' && t.admin_note && (
             <p className="text-sm m-0 p-2 rounded bg-rose-50 text-rose-900 border border-rose-100">

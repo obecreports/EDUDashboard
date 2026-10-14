@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { loginAction } from '@/app/actions/auth';
 import { MOCK_USER_SEEDS } from '@/lib/auth/mock-users';
 import { PasswordField } from '@/components/auth/PasswordField';
+import { ROLE_LABELS, normalizeRole } from '@/lib/types';
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +62,10 @@ export default function LoginPage() {
         <ul className="text-xs space-y-2 m-0 p-0 list-none text-slate-600">
           {tips.map((u) => (
             <li key={u.id} className="rounded-lg bg-slate-50 p-2 border border-slate-100">
-              <strong>{u.role}</strong> — {u.email}
+              <strong>
+                {ROLE_LABELS[normalizeRole(u.role)]} · {u.full_name}
+              </strong>{' '}
+              — {u.email}
               <br />
               {u.password ? `รหัส: ${u.password}` : ''}
               {u.tempPassword ? `OTP ชั่วคราว: ${u.tempPassword}` : ''}

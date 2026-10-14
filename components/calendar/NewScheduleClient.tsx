@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { createCalendarEventAction } from '@/app/actions/visits';
 import { VISIT_ACTIVITIES } from '@/lib/visits/labels';
+import { ThaiDateField } from '@/components/ui/ThaiDateField';
 
 type SchoolOpt = {
   id: string;
@@ -249,12 +250,7 @@ export function NewScheduleClient({
 
         <label className="grid gap-1 text-sm font-semibold">
           วันที่ทำกิจกรรม
-          <input
-            type="date"
-            className="form-input"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
+          <ThaiDateField value={date} onChange={setDate} required />
         </label>
 
         <label className="grid gap-1 text-sm font-semibold">

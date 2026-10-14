@@ -1,9 +1,14 @@
 import type { ThreePillarScores } from '@/lib/types';
+import {
+  SCORE_YEAR_CURRENT,
+  SCORE_YEAR_PREVIOUS,
+  scoreYearToBeLabel,
+} from '@/lib/scores/years';
 
 export const THREE_PILLAR_LABELS = {
-  qualitySchool: 'เสาหลักที่ 1 โรงเรียนมีคุณภาพ',
-  qualityGraduation: 'เสาหลักที่ 2 สำเร็จการศึกษาอย่างมีคุณภาพ',
-  disciplineMorality: 'เสาหลักที่ 3 สร้างวินัย คุณธรรม/จริยธรรม',
+  qualitySchool: 'เสาหลักที่ 1 ให้เด็กได้เรียนในโรงเรียนที่มีคุณภาพ',
+  qualityGraduation: 'เสาหลักที่ 2 ให้เด็กสำเร็จการศึกษาอย่างมีคุณภาพ',
+  disciplineMorality: 'เสาหลักที่ 3 ปลูกฝังวินัย คุณธรรม-จริยธรรม',
 } as const;
 
 export type ThreePillarKey = keyof typeof THREE_PILLAR_LABELS;
@@ -57,8 +62,9 @@ export const EMPTY_PILLAR_OVERVIEW = {
   yearCompare: {
     prev: { qualitySchool: 0, qualityGraduation: 0, disciplineMorality: 0, overall: 0 },
     curr: { qualitySchool: 0, qualityGraduation: 0, disciplineMorality: 0, overall: 0 },
-    prevLabel: '2567',
-    currLabel: '2568',
+    /** Buddhist Era labels for UI (DB stores CE via SCORE_YEAR_*) */
+    prevLabel: scoreYearToBeLabel(SCORE_YEAR_PREVIOUS),
+    currLabel: scoreYearToBeLabel(SCORE_YEAR_CURRENT),
   },
   strengths: [] as string[],
   opportunities: [] as string[],

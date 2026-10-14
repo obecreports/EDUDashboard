@@ -5,6 +5,7 @@ import { isAdminRole, isFieldRole } from '@/lib/auth/scope';
 import { normalizeRole } from '@/lib/types';
 import { listTicketsForUser } from '@/lib/auth/ticket-store';
 import { TICKET_STATUS_LABEL } from '@/lib/auth/ticket-types';
+import { formatThaiDateTime } from '@/lib/format/date';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +51,7 @@ export default async function TicketsPage() {
             <p className="text-sm text-slate-600 mt-1">{t.school_name}</p>
             <p className="text-sm mt-2 whitespace-pre-wrap">{t.detail}</p>
             <p className="text-xs text-slate-400 mt-2">
-              {t.requester_name} · {new Date(t.created_at).toLocaleString('th-TH')}
+              {t.requester_name} · {formatThaiDateTime(t.created_at)}
             </p>
             {t.status === 'rejected' && t.admin_note && (
               <p className="text-sm mt-2 p-2 rounded bg-rose-50 text-rose-900 border border-rose-100">

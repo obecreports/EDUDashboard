@@ -19,6 +19,8 @@ import {
   type ReportSubjectDetails,
   type ReportSubjectKey,
 } from '@/lib/reports/subjects';
+import { formatThaiDate } from '@/lib/format/date';
+import { ThaiDateField } from '@/components/ui/ThaiDateField';
 
 type SchoolOpt = {
   id: string;
@@ -320,7 +322,7 @@ export function NewReportClient({
                 .filter((e) => e.id)
                 .map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.date} · {e.school_name} · {e.activity}
+                    {formatThaiDate(e.date)} · {e.school_name} · {e.activity}
                   </option>
                 ))}
             </select>
@@ -334,7 +336,7 @@ export function NewReportClient({
             </div>
             <strong className="report-selected-school__name">{selectedEvent.school_name}</strong>
             <span className="report-selected-school__meta">
-              {selectedEvent.date} · {selectedEvent.activity}
+              {formatThaiDate(selectedEvent.date)} · {selectedEvent.activity}
             </span>
           </div>
         ) : null}
@@ -364,7 +366,7 @@ export function NewReportClient({
                       else pickSchool(h.school_id);
                     }}
                   >
-                    {h.school_name} · {h.date}
+                    {h.school_name} · {formatThaiDate(h.date)}
                   </button>
                 );
               })}
@@ -484,7 +486,7 @@ export function NewReportClient({
           <div className="flex flex-wrap gap-2 mt-2">
             {(
               [
-                ['yesterday', 'เมื่อวาน'],
+                ['yesterday', 'ของเมื่อวาน'],
                 ['today', 'วันนี้'],
                 ['tomorrow', 'พรุ่งนี้'],
               ] as const
@@ -501,13 +503,11 @@ export function NewReportClient({
           </div>
           <label className="grid gap-1 text-sm font-semibold mt-3">
             หรือเลือกเองจากปฏิทิน
-            <input
-              type="date"
-              className="form-input"
+            <ThaiDateField
               value={reportDate}
-              onChange={(e) => {
+              onChange={(ymd) => {
                 setDatePreset('custom');
-                setReportDate(e.target.value);
+                setReportDate(ymd);
               }}
             />
           </label>

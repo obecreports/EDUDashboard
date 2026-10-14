@@ -4,6 +4,13 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { createCalendarEventAction } from '@/app/actions/visits';
 import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
 import { VISIT_ACTIVITIES, normalizeActivity, normalizeStatus } from '@/lib/visits/labels';
+import {
+  formatThaiDate,
+  formatThaiDateWithWeekday,
+  formatThaiMonthName,
+  formatThaiMonthYear,
+} from '@/lib/format/date';
+import { ThaiDateField } from '@/components/ui/ThaiDateField';
 import { CalendarDays, CalendarRange, ChevronDown, List, Plus, Search, X } from 'lucide-react';
 
 type SchoolOpt = { id: string; name: string; area_id: string; area_name: string; province: string };
@@ -20,15 +27,6 @@ function addDays(ymdStr: string, days: number) {
   const d = new Date(ymdStr + 'T12:00:00');
   d.setDate(d.getDate() + days);
   return ymd(d);
-}
-
-function formatThaiDate(dateStr: string) {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('th-TH', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
 }
 
 function monthBounds(year: number, monthIndex: number) {
@@ -83,7 +81,7 @@ function SchoolComboBox({
   if (disabled || schools.length === 0) {
     return (
       <div className="senior-cal__combo senior-cal__combo--empty" aria-disabled>
-        ไม่มีโรงเรียนภายใต้ความรับผิดชอบ
+        ไม่มีโรงเรียนของฉัน
       </div>
     );
   }
@@ -167,6 +165,7 @@ export function StaffCalendarClient({
   const [pickMonth, setPickMonth] = useState(now.getMonth());
   const [showModal, setShowModal] = useState(false);
   const [schoolId, setSchoolId] = useState('');
+  const [modalDate, setModalDate] = useState(today);
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -186,10 +185,7 @@ export function StaffCalendarClient({
       return { ...b, label: 'รายการกิจกรรมเดือนนี้' };
     }
     const b = monthBounds(pickYear, pickMonth);
-    const monthLabel = new Date(pickYear, pickMonth, 1).toLocaleDateString('th-TH', {
-      month: 'long',
-      year: 'numeric',
-    });
+    const monthLabel = formatThaiMonthYear(new Date(pickYear, pickMonth, 1));
     return { ...b, label: `รายการกิจกรรม${monthLabel}` };
   }, [mode, today, pickYear, pickMonth, now]);
 
@@ -208,7 +204,7 @@ export function StaffCalendarClient({
     <div className="senior-cal space-y-5">
       {!hasSchools && (
         <div className="senior-cal__empty-state" role="status">
-          ไม่มีโรงเรียนภายใต้ความรับผิดชอบ
+          ไม่มีโรงเรียนของฉัน
         </div>
       )}
 
@@ -252,6 +248,7 @@ export function StaffCalendarClient({
           onClick={() => {
             setMsg(null);
             setSchoolId('');
+            setModalDate(today);
             setShowModal(true);
           }}
         >
@@ -271,7 +268,7 @@ export function StaffCalendarClient({
             >
               {Array.from({ length: 12 }, (_, i) => (
                 <option key={i} value={i}>
-                  {new Date(2020, i, 1).toLocaleDateString('th-TH', { month: 'long' })}
+                  {formatThaiMonthName(i)}
                 </option>
               ))}
             </select>
@@ -297,12 +294,12 @@ export function StaffCalendarClient({
         <h2 className="senior-cal__agenda-title m-0">{range.label}</h2>
         <p className="senior-cal__empty m-0" style={{ marginTop: '-0.5rem' }}>
           {range.start === range.end
-            ? formatThaiDate(range.start)
+            ? formatThaiDateWithWeekday(range.start)
             : `${formatThaiDate(range.start)} – ${formatThaiDate(range.end)}`}
         </p>
 
         {!hasSchools ? (
-          <p className="senior-cal__empty m-0">ไม่มีโรงเรียนภายใต้ความรับผิดชอบ</p>
+          <p className="senior-cal__empty m-0">ไม่มีโรงเรียนของฉัน</p>
         ) : agenda.length === 0 ? (
           <p className="senior-cal__empty m-0">
             ยังไม่มีกิจกรรมในช่วงนี้ — กด “เพิ่มวันลงพื้นที่” เพื่อสร้างรายการ
@@ -372,7 +369,7 @@ export function StaffCalendarClient({
             </div>
 
             {!hasSchools ? (
-              <p className="senior-cal__empty m-0">ไม่มีโรงเรียนภายใต้ความรับผิดชอบ</p>
+              <p className="senior-cal__empty m-0">ไม่มีโรงเรียนของฉัน</p>
             ) : (
               <form
                 className="space-y-5"
@@ -412,12 +409,12 @@ export function StaffCalendarClient({
 
                 <label className="senior-cal__field">
                   วันที่ลงพื้นที่
-                  <input
+                  <ThaiDateField
                     name="date"
-                    type="date"
-                    className="form-input senior-cal__input"
                     required
-                    defaultValue={today}
+                    className="form-input senior-cal__input"
+                    value={modalDate}
+                    onChange={setModalDate}
                   />
                 </label>
 

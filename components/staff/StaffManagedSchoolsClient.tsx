@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
+  Award,
   Building2,
   Clock3,
   LayoutGrid,
@@ -13,7 +14,21 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import type { SchoolFull } from '@/lib/types';
-import { DEV_STATUS, STRATEGY_LABELS, statusFromScore, type DevStatusKey } from '@/lib/theme/status';
+import {
+  DEV_STATUS,
+  DEV_STATUS_ORDER,
+  STRATEGY_LABELS,
+  statusFromScore,
+  type DevStatusKey,
+} from '@/lib/theme/status';
+
+function statusIcon(key: DevStatusKey) {
+  if (key === 'develop') return AlertTriangle;
+  if (key === 'fair') return TrendingUp;
+  if (key === 'good') return Clock3;
+  if (key === 'veryGood') return Star;
+  return Award;
+}
 
 type Props = {
   schools: SchoolFull[];
@@ -54,10 +69,11 @@ export function StaffManagedSchoolsClient({ schools, staffName }: Props) {
   const counts = useMemo(() => {
     const c: Record<DevStatusKey | 'all', number> = {
       all: schools.length,
-      urgent: 0,
-      accelerate: 0,
-      progressing: 0,
-      strong: 0,
+      develop: 0,
+      fair: 0,
+      good: 0,
+      veryGood: 0,
+      excellent: 0,
     };
     schools.forEach((s) => {
       c[statusFromScore(s.overallScore).key] += 1;
@@ -117,9 +133,9 @@ export function StaffManagedSchoolsClient({ schools, staffName }: Props) {
       <header className="ed-page-hero">
         <div className="ed-page-hero__inner">
           <div>
-            <h1>โรงเรียนในความดูแลของฉัน</h1>
+            <h1>โรงเรียนของฉัน</h1>
             <p>
-              โรงเรียนทั้งหมด {schools.length} แห่ง ในความดูแลของ{staffName || 'อาสาสมัคร'}
+              โรงเรียนทั้งหมด {schools.length} แห่ง · {staffName || 'อาสาสมัคร'}
             </p>
           </div>
           <p className="ed-card p-3 max-w-sm text-sm text-slate-600 m-0">
@@ -136,15 +152,18 @@ export function StaffManagedSchoolsClient({ schools, staffName }: Props) {
             </div>
             <div>
               <div className="status-card__value text-tm-blue">{counts.all}</div>
-              <div className="status-card__label">โรงเรียนในความดูแล</div>
+              <div className="status-card__label">โรงเรียนของฉัน</div>
             </div>
           </div>
-          {(Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => {
+          {DEV_STATUS_ORDER.map((k) => {
             const meta = DEV_STATUS[k];
-            const Icon =
-              k === 'urgent' ? AlertTriangle : k === 'accelerate' ? TrendingUp : k === 'progressing' ? Clock3 : Star;
+            const Icon = statusIcon(k);
             return (
-              <div key={k} className="status-card" style={{ borderColor: meta.border, background: meta.bg }}>
+              <div
+                key={k}
+                className="status-card"
+                style={{ borderColor: meta.border, background: meta.bg }}
+              >
                 <div className="status-card__icon" style={{ background: '#fff', color: meta.color }}>
                   <Icon size={18} />
                 </div>
@@ -181,14 +200,17 @@ export function StaffManagedSchoolsClient({ schools, staffName }: Props) {
                 />
                 ทั้งหมด ({counts.all})
               </label>
-              {(Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => (
+              {DEV_STATUS_ORDER.map((k) => (
                 <label key={k} className="ed-check">
                   <input
                     type="checkbox"
                     checked={statusFilter.has(k)}
                     onChange={() => toggleStatus(k)}
                   />
-                  {DEV_STATUS[k].label} ({counts[k]})
+                  <span style={{ color: DEV_STATUS[k].color, fontWeight: 700 }}>
+                    {DEV_STATUS[k].label}
+                  </span>
+                  <span className="text-slate-500"> ({counts[k]})</span>
                 </label>
               ))}
             </div>

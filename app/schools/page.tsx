@@ -65,7 +65,7 @@ async function SchoolsBody({
   if (staffMode && profile && (r === 'super_overseer' || r === 'overseer')) {
     const profiles = await fetchAllUserProfiles().catch(() => []);
     if (r === 'super_overseer') {
-      domainPeopleLabel = 'ผู้รับผิดชอบพื้นที่ (Overseer / Staff)';
+      domainPeopleLabel = 'ผู้รับผิดชอบพื้นที่ (อาสาสมัคร/องคมนตรี · ศึกษานิเทศก์)';
       domainPeople = profiles
         .filter(
           (u) =>

@@ -49,6 +49,7 @@ const ICONS: Record<string, LucideIcon> = {
   '/schools/public': School,
   '/thailand-map': Map,
   '/calendar': CalendarDays,
+  '/calendar/new': CalendarDays,
   '/reports/new': FilePlus2,
   '/reports': FileText,
   '/dashboard': Briefcase,
@@ -60,10 +61,10 @@ const ICONS: Record<string, LucideIcon> = {
   '/admin/settings': Settings,
 };
 
-/** ภาพรวมด้านต่างๆ — 3 pillars + 5 angles (connextED) */
+/** ภาพรวมด้านต่างๆ — 3 pillars + SMS evaluation */
 const OVERVIEW_GROUP: NavItem[] = [
   { href: '/pillars', label: 'ภาพรวม 3 เสาหลัก', roles: [] },
-  { href: '/strategy', label: 'ภาพรวม 5 ด้าน (connextED)', roles: [] },
+  { href: '/strategy', label: 'ผลการประเมินตามระบบ SMS', roles: [] },
 ];
 
 /** ข้อมูลรายละเอียด — map + school list */
@@ -85,8 +86,9 @@ const AUTH_TICKETS_HREF = '/tickets' as const;
 /** รายงาน — ส่งรายงาน + ดูผลรายงาน */
 const REPORTS_HREFS = ['/reports/new', '/reports'] as const;
 
-/** จัดการโรงเรียน — domain schools + calendar (logged-in field roles) */
-const MANAGE_SCHOOLS_HREFS = ['/schools', '/calendar'] as const;
+/** จัดการโรงเรียน — domain schools + schedule (logged-in field roles) */
+const MANAGE_SCHOOLS_HREFS = ['/schools', '/calendar', '/calendar/new'] as const;
+const MANAGE_SCHEDULE_SECTION = 'นัดหมายโรงเรียน';
 
 /** Admin main bar around groups — settings only for super_admin */
 const ADMIN_MAIN_BEFORE = ['/schools'] as const;
@@ -133,7 +135,7 @@ export function AppNavbar({
     const item = catalog.find((i) => i.href === href) ?? NAV_CATALOG.find((i) => i.href === href);
     if (!item) return undefined;
     if (href === '/schools' && isAuthenticated && isFieldRole(normalizedRole)) {
-      return { ...item, label: 'โรงเรียนภายใต้ขอบเขต' };
+      return { ...item, label: 'โรงเรียนของฉัน' };
     }
     return item;
   };
@@ -212,6 +214,13 @@ export function AppNavbar({
     }
     if (href === '/reports/new') {
       return pathname === '/reports/new' || pathname.startsWith('/reports/new/');
+    }
+    // /calendar must not highlight when on /calendar/new
+    if (href === '/calendar') {
+      return pathname === '/calendar';
+    }
+    if (href === '/calendar/new') {
+      return pathname === '/calendar/new' || pathname.startsWith('/calendar/new/');
     }
     return (
       pathname === href ||
@@ -350,6 +359,42 @@ export function AppNavbar({
     );
   };
 
+  const renderManageMenuItems = (variant: 'dropdown' | 'drawer') => {
+    const schoolItem = manageGroup.find((i) => i.href === '/schools');
+    const scheduleItems = manageGroup.filter(
+      (i) => i.href === '/calendar' || i.href === '/calendar/new'
+    );
+    return (
+      <>
+        {schoolItem ? (
+          variant === 'drawer' ? (
+            <li key={`drawer-mg-${schoolItem.href}`}>{renderLink(schoolItem, 'drawer')}</li>
+          ) : (
+            renderLink(schoolItem, 'dropdown')
+          )
+        ) : null}
+        {scheduleItems.length > 0 ? (
+          variant === 'drawer' ? (
+            <li className="ed-nav-drawer__group-label ed-nav-drawer__group-label--sub">
+              {MANAGE_SCHEDULE_SECTION}
+            </li>
+          ) : (
+            <div className="role-menu__meta" role="presentation">
+              {MANAGE_SCHEDULE_SECTION}
+            </div>
+          )
+        ) : null}
+        {scheduleItems.map((item) =>
+          variant === 'drawer' ? (
+            <li key={`drawer-mg-${item.href}`}>{renderLink(item, 'drawer')}</li>
+          ) : (
+            renderLink(item, 'dropdown')
+          )
+        )}
+      </>
+    );
+  };
+
   const renderGroup = (
     key: Exclude<OpenMenu, null>,
     label: string,
@@ -371,7 +416,9 @@ export function AppNavbar({
       </button>
       {openMenu === key && (
         <div className="role-menu ed-nav-explore__menu" role="menu">
-          {items.map((item) => renderLink(item, 'dropdown'))}
+          {key === 'manage'
+            ? renderManageMenuItems('dropdown')
+            : items.map((item) => renderLink(item, 'dropdown'))}
         </div>
       )}
     </li>
@@ -438,9 +485,7 @@ export function AppNavbar({
       {showManageGroup && (
         <>
           <li className="ed-nav-drawer__group-label">จัดการโรงเรียน</li>
-          {manageGroup.map((item) => (
-            <li key={`drawer-mg-${item.href}`}>{renderLink(item, 'drawer')}</li>
-          ))}
+          {renderManageMenuItems('drawer')}
         </>
       )}
       {showReportsGroup && (

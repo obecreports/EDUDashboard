@@ -20,7 +20,7 @@ const EXPLORE = [
   },
   {
     href: '/strategy',
-    label: 'ภาพรวม 5 ด้าน (connextED)',
+    label: 'ผลการประเมินตามระบบ SMS',
     desc: 'คะแนนเฉลี่ยและการกระจายสถานะ',
     icon: Hexagon,
   },
@@ -91,7 +91,7 @@ export function HomeLanding({ denied }: { denied?: boolean }) {
               เกี่ยวกับโครงการ <ArrowRight size={18} />
             </Link>
             <Link href="/strategy" className="ed-btn ed-btn--outline home-landing__cta-ghost">
-              ภาพรวม 5 ด้าน (connextED) <ArrowRight size={18} />
+              ผลการประเมินตามระบบ SMS <ArrowRight size={18} />
             </Link>
           </div>
         </div>

@@ -226,7 +226,7 @@ export function StaffScopeMap({ schools, height = 420 }: Props) {
   if (schools.length === 0) {
     return (
       <div className="staff-scope-map staff-scope-map--empty" style={{ height }}>
-        ไม่มีโรงเรียนภายใต้ความรับผิดชอบ
+        ไม่มีโรงเรียนของฉัน
       </div>
     );
   }
