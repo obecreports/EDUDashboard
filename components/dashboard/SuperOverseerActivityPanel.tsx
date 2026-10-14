@@ -424,24 +424,24 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       const areaMap = byProv.get(province)!;
       if (!areaMap.has(area)) areaMap.set(area, new Map());
       const schoolMap = areaMap.get(area)!;
-      const leaf =
+      const leaf: SchoolLeaf =
         schoolMap.get(sid) ??
-        ({
+        {
           school: school ?? {
             id: sid,
             name: e.school_name || sid,
             province,
-            district: school?.district || '',
+            district: '',
             area_name: area,
           },
           bookings: 0,
           complete: 0,
           lastDate: '',
-          byWho: [],
+          byWho: [] as { id: string; name: string }[],
           hasActivity: false,
           level: 0,
           pct: 0,
-        } satisfies SchoolLeaf);
+        };
       leaf.bookings += 1;
       leaf.hasActivity = true;
       if (!leaf.lastDate || e.date > leaf.lastDate) leaf.lastDate = e.date;
