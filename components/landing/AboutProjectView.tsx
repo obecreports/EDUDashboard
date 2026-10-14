@@ -195,10 +195,10 @@ export function AboutProjectView({
           <header className="about-panel__head">
             <h2>
               <Landmark size={20} aria-hidden />
-              3 เสาหลัก และ 5 กลยุทธ์
+              3 เสาหลัก และ 5 ด้าน (connextED)
             </h2>
             <Link href="/strategy" className="about-panel__link">
-              ดูรายละเอียด 5 กลยุทธ์ <ArrowRight size={14} />
+              ดูรายละเอียด 5 ด้าน (connextED) <ArrowRight size={14} />
             </Link>
           </header>
           <div className="about-pillars">
@@ -215,7 +215,7 @@ export function AboutProjectView({
               <span>การมีส่วนร่วมของทุกภาคส่วน</span>
             </div>
           </div>
-          <p className="about-strategies__title">5 กลยุทธ์หลักในการขับเคลื่อน</p>
+          <p className="about-strategies__title">5 ด้านหลัก (connextED) ในการขับเคลื่อน</p>
           <div className="about-strategies">
             {STRATEGY_LABELS.map((s, i) => {
               const Icon = STRATEGY_ICONS[i] ?? School;

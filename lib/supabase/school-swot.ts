@@ -33,6 +33,7 @@ type CommentRow = {
   report_date?: string | null;
   edited_at?: string | null;
   image_urls?: string[] | null;
+  calendar_event_id?: string | null;
 };
 
 function toSchoolId(schoolId: string | number): number | null {
@@ -49,6 +50,7 @@ function mapComment(row: CommentRow): SchoolComment {
   const reportDate = row.report_date ? String(row.report_date).slice(0, 10) : null;
   return {
     id: row.id,
+    school_id: row.school_id != null ? String(row.school_id) : undefined,
     staff_id: row.staff_id ?? '',
     staff_name: row.staff_name?.trim() || 'เจ้าหน้าที่',
     text: row.comment_text,
@@ -58,11 +60,13 @@ function mapComment(row: CommentRow): SchoolComment {
     image_urls: Array.isArray(row.image_urls)
       ? row.image_urls.map(String).filter(Boolean)
       : [],
+    calendar_event_id: row.calendar_event_id ?? null,
+    report_date: reportDate,
   };
 }
 
 const COMMENT_SELECT =
-  'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls';
+  'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls, calendar_event_id';
 
 const SWOT_SELECT =
   'school_id, categories, internal_strengths, internal_weaknesses, external_strengths, external_threats, updated_at';
@@ -260,6 +264,32 @@ export async function upsertSchoolSwot(params: {
   }
 }
 
+export async function fetchAllSchoolComments(): Promise<SchoolComment[]> {
+  try {
+    const supabase = await createClient();
+    let { data, error } = await supabase
+      .from('school_staff_comments')
+      .select(COMMENT_SELECT)
+      .order('created_at', { ascending: false })
+      .limit(5000);
+    if (error && /calendar_event_id/i.test(error.message)) {
+      const retry = await supabase
+        .from('school_staff_comments')
+        .select(
+          'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls'
+        )
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      data = retry.data as typeof data;
+      error = retry.error;
+    }
+    if (error || !data) return [];
+    return (data as CommentRow[]).map(mapComment);
+  } catch {
+    return [];
+  }
+}
+
 export async function insertSchoolStaffComment(params: {
   schoolId: string | number;
   staffId: string | null;
@@ -268,6 +298,7 @@ export async function insertSchoolStaffComment(params: {
   tags?: string[];
   reportDate?: string | null;
   imageUrls?: string[];
+  calendarEventId?: string | null;
 }): Promise<{ ok: true; comment: SchoolComment } | { ok: false; error: string }> {
   const id = toSchoolId(params.schoolId);
   if (id == null) return { ok: false, error: 'รหัสโรงเรียนไม่ถูกต้อง' };
@@ -286,6 +317,7 @@ export async function insertSchoolStaffComment(params: {
 
   try {
     const supabase = await createClient();
+    const calendarEventId = params.calendarEventId?.trim() || null;
     const payload: Record<string, unknown> = {
       school_id: id,
       staff_id: staffId,
@@ -294,6 +326,7 @@ export async function insertSchoolStaffComment(params: {
       tags,
       report_date: reportDate,
       image_urls: imageUrls,
+      calendar_event_id: calendarEventId,
     };
     let { data, error } = await supabase
       .from('school_staff_comments')
@@ -302,7 +335,21 @@ export async function insertSchoolStaffComment(params: {
       .single();
 
     // Fallback if newer columns missing
-    if (error && /image_urls|tags|report_date/i.test(error.message)) {
+    if (error && /image_urls|tags|report_date|calendar_event_id/i.test(error.message)) {
+      if (/calendar_event_id/i.test(error.message)) {
+        delete payload.calendar_event_id;
+        const withoutCal = await supabase
+          .from('school_staff_comments')
+          .insert(payload)
+          .select(
+            'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls'
+          )
+          .single();
+        if (!withoutCal.error && withoutCal.data) {
+          return { ok: true, comment: mapComment(withoutCal.data as CommentRow) };
+        }
+        error = withoutCal.error ?? error;
+      }
       const slim: Record<string, unknown> = {
         school_id: id,
         staff_id: staffId,

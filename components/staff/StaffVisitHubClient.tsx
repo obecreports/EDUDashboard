@@ -365,46 +365,56 @@ export function StaffVisitHubClient({
           </div>
         </div>
 
-        <div className="ed-visit-layout">
-          <aside className="space-y-4">
-            <section className="ed-card p-4">
-              <div className="flex items-center justify-between mb-3">
-                <strong>{monthLabel}</strong>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    className="navbar__link"
-                    onClick={() => {
-                      const next = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
-                      setCursor(next);
-                      setPreset('custom');
-                      setRange(rangeForPreset('custom', next));
-                    }}
-                  >
-                    ‹
-                  </button>
-                  <button
-                    type="button"
-                    className="navbar__link"
-                    onClick={() => {
-                      const next = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-                      setCursor(next);
-                      setPreset('custom');
-                      setRange(rangeForPreset('custom', next));
-                    }}
-                  >
-                    ›
-                  </button>
+        <div className="ed-visit-layout ed-visit-layout--split">
+          <div className="ed-visit-layout__cal space-y-3">
+            <section className="ed-card p-4 ed-month-cal-wrap">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <strong className="text-lg">{monthLabel}</strong>
+                <div className="flex items-center gap-2">
+                  <div className="cal-owner-legend m-0">
+                    <span>
+                      <i style={{ background: '#166534' }} /> นัดของฉัน
+                    </span>
+                    <span>
+                      <i style={{ background: '#991b1b' }} /> นัดของผู้อื่น
+                    </span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className="navbar__link"
+                      onClick={() => {
+                        const next = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+                        setCursor(next);
+                        setPreset('custom');
+                        setRange(rangeForPreset('custom', next));
+                      }}
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      className="navbar__link"
+                      onClick={() => {
+                        const next = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+                        setCursor(next);
+                        setPreset('custom');
+                        setRange(rangeForPreset('custom', next));
+                      }}
+                    >
+                      ›
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="ed-mini-cal">
+              <div className="ed-month-cal">
                 {['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'].map((d) => (
-                  <div key={d} className="ed-mini-cal__head">
+                  <div key={d} className="ed-month-cal__head">
                     {d}
                   </div>
                 ))}
                 {Array.from({ length: startPad }).map((_, i) => (
-                  <div key={`pad-${i}`} />
+                  <div key={`pad-${i}`} className="ed-month-cal__pad" />
                 ))}
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
@@ -416,18 +426,20 @@ export function StaffVisitHubClient({
                   const hasOther = dayEvents.some((e) => e.staff_id !== currentUserId);
                   const ownerClass =
                     hasMine && hasOther
-                      ? 'ed-mini-cal__day--has-both'
+                      ? 'ed-month-cal__day--has-both'
                       : hasMine
-                        ? 'ed-mini-cal__day--has-mine'
+                        ? 'ed-month-cal__day--has-mine'
                         : hasOther
-                          ? 'ed-mini-cal__day--has-other'
+                          ? 'ed-month-cal__day--has-other'
                           : '';
+                  const peek = dayEvents.slice(0, 2);
+                  const more = dayEvents.length - peek.length;
                   return (
                     <button
                       key={dateStr}
                       type="button"
-                      className={`ed-mini-cal__day ${isToday ? 'ed-mini-cal__day--today' : ''} ${
-                        inRange ? 'ed-mini-cal__day--range' : ''
+                      className={`ed-month-cal__day ${isToday ? 'ed-month-cal__day--today' : ''} ${
+                        inRange ? 'ed-month-cal__day--range' : ''
                       } ${ownerClass}`}
                       onClick={() => {
                         setPreset('custom');
@@ -437,150 +449,154 @@ export function StaffVisitHubClient({
                         }
                       }}
                     >
-                      <span className="ed-mini-cal__day-num">{day}</span>
-                      {dayEvents.length > 1 ? (
-                        <span className="ed-mini-cal__day-count" aria-label={`${dayEvents.length} นัด`}>
-                          {dayEvents.length}
-                        </span>
-                      ) : null}
+                      <span className="ed-month-cal__day-num">{day}</span>
+                      <div className="ed-month-cal__peeks">
+                        {peek.map((e) => {
+                          const mine = e.staff_id === currentUserId;
+                          return (
+                            <span
+                              key={e.id}
+                              className={`ed-month-cal__peek ${
+                                mine ? 'ed-month-cal__peek--mine' : 'ed-month-cal__peek--other'
+                              }`}
+                              title={`${e.school_name || 'โรงเรียน'} · ${normalizeActivity(String(e.activity))}`}
+                            >
+                              {e.school_name || 'ไม่ระบุโรงเรียน'}
+                            </span>
+                          );
+                        })}
+                        {more > 0 ? (
+                          <span className="ed-month-cal__more">+{more} นัด</span>
+                        ) : null}
+                      </div>
                     </button>
                   );
                 })}
               </div>
-              <div className="cal-owner-legend mt-3">
-                <span>
-                  <i style={{ background: '#166534' }} /> นัดของฉัน
-                </span>
-                <span>
-                  <i style={{ background: '#991b1b' }} /> นัดของผู้อื่น
-                </span>
-              </div>
             </section>
 
-            <section className="ed-card p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="ed-section-title text-base m-0">รายการลงพื้นที่ (เร็วๆ นี้)</h2>
-              </div>
-              {upcoming.length === 0 ? (
-                <p className="text-sm text-slate-500 m-0">ยังไม่มีนัดหมาย</p>
-              ) : (
-                upcoming.map((e) => {
-                  const st = normalizeStatus(e.status_th ?? e.status);
-                  const mine = e.staff_id === currentUserId;
-                  return (
-                    <button
-                      key={e.id}
-                      type="button"
-                      className={`ed-visit-item ${mine ? 'ed-visit-item--mine' : 'ed-visit-item--other'}`}
-                      onClick={() => {
-                        setPreset('custom');
-                        setRange({ from: e.date, to: e.date });
-                        setExpandedIds(new Set([e.id]));
-                        const d = new Date(e.date + 'T12:00:00');
-                        setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
-                      }}
-                    >
-                      <div className="ed-visit-item__date">{formatThaiShort(e.date)}</div>
-                      <div className="min-w-0 text-left">
-                        <div className="font-semibold truncate">{e.school_name || 'ไม่ระบุโรงเรียน'}</div>
-                        <div className="text-xs text-slate-500">
-                          {normalizeActivity(String(e.activity))}
-                          {' · '}
-                          <span className={mine ? 'owner-name--mine' : 'owner-name--other'}>
-                            {mine ? 'ของฉัน' : 'ผู้อื่น'}
-                          </span>
-                        </div>
-                      </div>
-                      <span className={`cal-badge ${st === 'เยี่ยมชมเสร็จสิ้น' ? 'cal-badge--done' : 'cal-badge--sched'}`}>
-                        {st}
-                      </span>
-                    </button>
-                  );
-                })
-              )}
-            </section>
-          </aside>
+            {upcoming.length > 0 ? (
+              <section className="ed-card p-3 ed-upcoming-strip">
+                <div className="ed-upcoming-strip__label">เร็วๆ นี้</div>
+                <div className="ed-upcoming-strip__rail">
+                  {upcoming.map((e) => {
+                    const mine = e.staff_id === currentUserId;
+                    return (
+                      <button
+                        key={e.id}
+                        type="button"
+                        className={`ed-upcoming-chip ${mine ? 'ed-upcoming-chip--mine' : 'ed-upcoming-chip--other'}`}
+                        onClick={() => {
+                          setPreset('custom');
+                          setRange({ from: e.date, to: e.date });
+                          setExpandedIds(new Set([e.id]));
+                          const d = new Date(e.date + 'T12:00:00');
+                          setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+                        }}
+                      >
+                        <strong>{formatThaiShort(e.date)}</strong>
+                        <span className="truncate">{e.school_name || 'ไม่ระบุโรงเรียน'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+          </div>
 
-          <section className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+          <aside className="ed-visit-layout__detail">
+            <div className="visit-detail-panel__header">
               <h2 className="ed-section-title text-base m-0">
-                นัดหมายในช่วงที่เลือก ({rangedEvents.length})
+                รายละเอียดนัดหมาย ({rangedEvents.length})
               </h2>
-              <span className="text-xs text-slate-500">
-                {formatThaiShort(range.from)} – {formatThaiShort(range.to)} · คลิกการ์ดเพื่อขยาย
+              <span className="visit-detail-panel__range">
+                {formatThaiShort(range.from)} – {formatThaiShort(range.to)}
               </span>
             </div>
 
             {rangedEvents.length === 0 ? (
-              <div className="ed-card p-5 text-slate-500">ไม่มีนัดหมายในช่วงวันที่นี้</div>
+              <div className="ed-card p-4 text-slate-500 text-sm">ไม่มีนัดหมายในช่วงวันที่นี้</div>
             ) : (
-              <>
-              {pagedEvents.map((e) => {
-                const open = expandedIds.has(e.id);
-                const st = normalizeStatus(e.status_th ?? e.status);
-                const school = schools.find((s) => s.id === e.school_id);
-                const schoolStatus = statusFromScore(school?.overallScore);
-                const booker = personLabel(e.staff_id);
-                return (
-                  <article
-                    key={e.id}
-                    className={`ed-card visit-booking-card ${open ? 'is-open' : ''} ${
-                      booker.isMe ? 'visit-booking-card--mine' : 'visit-booking-card--other'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      className="visit-booking-card__head"
-                      aria-expanded={open}
-                      onClick={() => toggleExpand(e.id)}
+              <div className="visit-detail-panel__list">
+                {pagedEvents.map((e) => {
+                  const open = expandedIds.has(e.id);
+                  const st = normalizeStatus(e.status_th ?? e.status);
+                  const school = schools.find((s) => s.id === e.school_id);
+                  const schoolStatus = statusFromScore(school?.overallScore);
+                  const booker = personLabel(e.staff_id);
+                  const schoolName = e.school_name || school?.name || 'โรงเรียน';
+                  const activity = normalizeActivity(String(e.activity));
+                  const location =
+                    [school?.district, school?.province || e.province].filter(Boolean).join(' · ') ||
+                    '—';
+                  return (
+                    <article
+                      key={e.id}
+                      className={`ed-card visit-booking-card visit-booking-card--panel ${
+                        open ? 'is-open' : ''
+                      } ${booker.isMe ? 'visit-booking-card--mine' : 'visit-booking-card--other'}`}
                     >
-                      <div className="visit-booking-card__date">{formatThaiShort(e.date)}</div>
-                      <div className="min-w-0 text-left flex-1">
-                        <div className="font-bold text-tm-blue truncate">
-                          {e.school_name || school?.name || 'โรงเรียน'}
-                        </div>
-                        <div className="text-xs text-slate-500 truncate">
-                          {normalizeActivity(String(e.activity))}
-                          {' · '}
-                          <span className={booker.isMe ? 'owner-name--mine' : 'owner-name--other'}>
-                            {booker.name}
+                      <button
+                        type="button"
+                        className="visit-booking-card__head visit-booking-card__head--panel"
+                        aria-expanded={open}
+                        onClick={() => toggleExpand(e.id)}
+                      >
+                        <div className="visit-booking-card__meta">
+                          <span className="visit-booking-card__date">{formatThaiShort(e.date)}</span>
+                          <span
+                            className={`cal-badge ${
+                              st === 'เยี่ยมชมเสร็จสิ้น' ? 'cal-badge--done' : 'cal-badge--sched'
+                            }`}
+                          >
+                            {st}
                           </span>
-                          {booker.role ? ` · ${booker.role}` : ''}
+                          <ChevronDown
+                            size={16}
+                            className={`visit-booking-card__chevron ${open ? 'is-open' : ''}`}
+                          />
                         </div>
-                      </div>
-                      <span className={`cal-badge ${st === 'เยี่ยมชมเสร็จสิ้น' ? 'cal-badge--done' : 'cal-badge--sched'}`}>
-                        {st}
-                      </span>
-                      <ChevronDown
-                        size={16}
-                        className={`visit-booking-card__chevron ${open ? 'is-open' : ''}`}
-                      />
-                    </button>
-                    {open && (
-                      <div className="visit-booking-card__body space-y-3">
-                        <div className="flex flex-wrap gap-4 justify-between">
-                          <div className="text-sm text-slate-600 space-y-1">
-                            <div className="flex items-center gap-1">
-                              <UserRound size={14} />
-                              ผู้จอง:{' '}
-                              <strong className={booker.isMe ? 'owner-name--mine' : 'owner-name--other'}>
-                                {booker.name}
-                              </strong>
-                              {booker.role ? ` (${booker.role})` : ''}
+                        <div className="visit-booking-card__title">{schoolName}</div>
+                        <div className="visit-booking-card__sub">{activity}</div>
+                      </button>
+                      {open && (
+                        <div className="visit-booking-card__body visit-booking-card__body--panel">
+                          <dl className="visit-booking-card__facts">
+                            <div className="visit-booking-card__fact">
+                              <dt>
+                                <UserRound size={14} aria-hidden /> ผู้จอง
+                              </dt>
+                              <dd>
+                                <span
+                                  className={
+                                    booker.isMe ? 'owner-name--mine' : 'owner-name--other'
+                                  }
+                                >
+                                  {booker.name}
+                                </span>
+                                {booker.role ? (
+                                  <span className="visit-booking-card__role">{booker.role}</span>
+                                ) : null}
+                              </dd>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <MapPin size={14} />
-                              {[school?.district, school?.province || e.province].filter(Boolean).join(' · ') || '—'}
+                            <div className="visit-booking-card__fact">
+                              <dt>
+                                <MapPin size={14} aria-hidden /> ที่ตั้ง
+                              </dt>
+                              <dd>{location}</dd>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <Phone size={14} />
-                              {school?.phone || '—'}
+                            <div className="visit-booking-card__fact">
+                              <dt>
+                                <Phone size={14} aria-hidden /> โทรศัพท์
+                              </dt>
+                              <dd>{school?.phone || '—'}</dd>
                             </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-xl font-extrabold text-tm-blue">
+                          </dl>
+
+                          <div className="visit-booking-card__score">
+                            <div className="visit-booking-card__score-value">
                               {(school?.overallScore ?? 0).toFixed(2)}
-                              <span className="text-sm text-slate-400"> / 5</span>
+                              <span> / 5</span>
                             </div>
                             <span
                               className="ed-badge"
@@ -589,83 +605,64 @@ export function StaffVisitHubClient({
                               {schoolStatus.label}
                             </span>
                           </div>
+
+                          {e.notes ? (
+                            <p className="visit-booking-card__notes">{e.notes}</p>
+                          ) : null}
+
+                          <div className="visit-booking-card__actions">
+                            <Link
+                              href={e.school_id ? `/schools/${e.school_id}` : '/schools'}
+                              className="ed-btn ed-btn--primary ed-btn--sm"
+                            >
+                              ดูรายละเอียดโรงเรียน
+                            </Link>
+                            <Link
+                              href={
+                                e.school_id
+                                  ? `/reports/new?school_id=${encodeURIComponent(e.school_id)}`
+                                  : '/reports/new'
+                              }
+                              className="ed-btn ed-btn--outline ed-btn--sm"
+                            >
+                              <MessageSquarePlus size={14} /> เพิ่มความคิดเห็น
+                            </Link>
+                          </div>
                         </div>
-                        {e.notes && (
-                          <p className="text-sm m-0 rounded-xl bg-slate-50 border border-slate-100 p-3">
-                            {e.notes}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                          <Link
-                            href={e.school_id ? `/schools/${e.school_id}` : '/schools'}
-                            className="ed-btn ed-btn--primary ed-btn--sm"
-                          >
-                            ดูรายละเอียดโรงเรียน
-                          </Link>
-                          <Link
-                            href={
-                              e.school_id
-                                ? `/reports/new?school_id=${encodeURIComponent(e.school_id)}`
-                                : '/reports/new'
-                            }
-                            className="ed-btn ed-btn--outline ed-btn--sm"
-                          >
-                            <MessageSquarePlus size={14} /> เพิ่มความคิดเห็น
-                          </Link>
-                        </div>
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
-              {rangedEvents.length > SCHEDULE_PAGE_SIZE ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                  <span className="text-xs text-slate-500">
-                    แสดง {(listPage - 1) * SCHEDULE_PAGE_SIZE + 1}–
-                    {Math.min(listPage * SCHEDULE_PAGE_SIZE, rangedEvents.length)} จาก{' '}
-                    {rangedEvents.length} รายการ
-                  </span>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <button
-                      type="button"
-                      className="ed-btn ed-btn--outline ed-btn--sm"
-                      disabled={listPage <= 1}
-                      onClick={() => setListPage((p) => Math.max(1, p - 1))}
-                    >
-                      ก่อนหน้า
-                    </button>
-                    {Array.from({ length: totalListPages }, (_, i) => i + 1)
-                      .filter((n) => {
-                        if (totalListPages <= 5) return true;
-                        const start = Math.max(1, Math.min(listPage - 2, totalListPages - 4));
-                        return n >= start && n < start + 5;
-                      })
-                      .map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          className={`ed-btn ed-btn--sm ${
-                            n === listPage ? 'ed-btn--primary' : 'ed-btn--outline'
-                          }`}
-                          onClick={() => setListPage(n)}
-                        >
-                          {n}
-                        </button>
-                      ))}
-                    <button
-                      type="button"
-                      className="ed-btn ed-btn--outline ed-btn--sm"
-                      disabled={listPage >= totalListPages}
-                      onClick={() => setListPage((p) => Math.min(totalListPages, p + 1))}
-                    >
-                      ถัดไป
-                    </button>
+                      )}
+                    </article>
+                  );
+                })}
+                {rangedEvents.length > SCHEDULE_PAGE_SIZE ? (
+                  <div className="visit-detail-panel__pager">
+                    <span className="text-xs text-slate-500">
+                      แสดง {(listPage - 1) * SCHEDULE_PAGE_SIZE + 1}–
+                      {Math.min(listPage * SCHEDULE_PAGE_SIZE, rangedEvents.length)} จาก{' '}
+                      {rangedEvents.length}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        className="ed-btn ed-btn--outline ed-btn--sm"
+                        disabled={listPage <= 1}
+                        onClick={() => setListPage((p) => Math.max(1, p - 1))}
+                      >
+                        ก่อนหน้า
+                      </button>
+                      <button
+                        type="button"
+                        className="ed-btn ed-btn--outline ed-btn--sm"
+                        disabled={listPage >= totalListPages}
+                        onClick={() => setListPage((p) => Math.min(totalListPages, p + 1))}
+                      >
+                        ถัดไป
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ) : null}
-              </>
+                ) : null}
+              </div>
             )}
-          </section>
+          </aside>
         </div>
       </div>
 

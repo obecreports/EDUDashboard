@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Building2,
   Clock3,
+  Filter,
   LayoutGrid,
   List,
   MapPin,
@@ -13,14 +14,32 @@ import {
   Star,
   TrendingUp,
 } from 'lucide-react';
-import type { SchoolFull } from '@/lib/types';
+import type { SchoolFull, UserRole } from '@/lib/types';
 import { PageBanner } from '@/components/layout/PageBanner';
 import { PAGE_BANNERS } from '@/lib/types';
 import { schoolCoverImage } from '@/lib/schools/images';
-import { DEV_STATUS, STRATEGY_LABELS, statusFromScore, type DevStatusKey } from '@/lib/theme/status';
+import {
+  DEV_STATUS,
+  STRATEGY_LABELS,
+  scorePastelLevel,
+  statusFromScore,
+  type DevStatusKey,
+} from '@/lib/theme/status';
 import { THREE_PILLAR_LABELS } from '@/lib/mock/pillars';
+import { HierarchicalFilterDropdown } from '@/components/ui/HierarchicalFilterDropdown';
+import type { FilterTreeNode } from '@/components/ui/HierarchicalFilterDropdown';
+import { normalizeRole } from '@/lib/types';
+
+export type DomainPersonOption = {
+  id: string;
+  full_name: string;
+  role: UserRole;
+  schoolIds: string[];
+  reports_to?: string | null;
+};
 
 type VisitFilter = 'all' | 'never' | 'planned' | 'visited';
+type StatusFilterKey = DevStatusKey | 'all';
 type ScoreMode = 'five' | 'three';
 type SortKey =
   | 'score-asc'
@@ -36,6 +55,17 @@ type SortKey =
   | 'p2'
   | 'p3';
 
+type AppliedFilters = {
+  q: string;
+  statusFilter: Set<StatusFilterKey>;
+  visitFilter: Set<VisitFilter>;
+  province: string;
+  district: string;
+  size: string;
+  personIds: string[];
+  area: string;
+};
+
 type Props = {
   schools: SchoolFull[];
   mode?: 'guest' | 'staff';
@@ -45,11 +75,34 @@ type Props = {
   inScopeIds?: string[];
   staffName?: string;
   initialQuery?: string;
+  /** Dashboard deep-link: urgent | accelerate | progressing | strong | all */
+  initialStatus?: string;
+  initialPersonIds?: string[];
+  initialProvince?: string;
+  initialArea?: string;
+  initialVisit?: string;
   /** Dashboard: only show these schools */
   scopeOnly?: boolean;
+  /** Tag-picker: filter by responsible person's territory */
+  domainPeople?: DomainPersonOption[];
+  domainPeopleLabel?: string;
 };
 
+function parseInitialVisit(raw?: string): Set<VisitFilter> {
+  if (raw === 'never' || raw === 'planned' || raw === 'visited') {
+    return new Set<VisitFilter>([raw]);
+  }
+  return new Set<VisitFilter>(['all']);
+}
+
 const PAGE_SIZE = 12;
+const STATUS_KEYS = new Set<string>(['urgent', 'accelerate', 'progressing', 'strong']);
+
+function parseInitialStatus(raw?: string): Set<StatusFilterKey> {
+  if (!raw || raw === 'all') return new Set<StatusFilterKey>(['all']);
+  if (STATUS_KEYS.has(raw)) return new Set<StatusFilterKey>([raw as DevStatusKey]);
+  return new Set<StatusFilterKey>(['all']);
+}
 
 export function ManagedSchoolsClient({
   schools,
@@ -58,19 +111,42 @@ export function ManagedSchoolsClient({
   inScopeIds = [],
   staffName = 'อาสาสมัคร',
   initialQuery = '',
+  initialStatus,
+  initialPersonIds = [],
+  initialProvince = '',
+  initialArea = '',
+  initialVisit,
   scopeOnly = false,
+  domainPeople = [],
+  domainPeopleLabel = 'ผู้รับผิดชอบพื้นที่',
 }: Props) {
+  const bootStatus = parseInitialStatus(initialStatus);
+  const bootVisit = parseInitialVisit(initialVisit);
+  const bootPeople = initialPersonIds.filter(Boolean);
   const [q, setQ] = useState(initialQuery);
-  const [statusFilter, setStatusFilter] = useState<Set<DevStatusKey | 'all'>>(new Set(['all']));
-  const [visitFilter, setVisitFilter] = useState<Set<VisitFilter>>(new Set(['all']));
-  const [province, setProvince] = useState('');
+  const [statusFilter, setStatusFilter] = useState<Set<StatusFilterKey>>(() => new Set(bootStatus));
+  const [visitFilter, setVisitFilter] = useState<Set<VisitFilter>>(() => new Set(bootVisit));
+  const [province, setProvince] = useState(initialProvince);
   const [district, setDistrict] = useState('');
   const [size, setSize] = useState('');
+  const [area, setArea] = useState(initialArea);
+  const [personIds, setPersonIds] = useState<string[]>(() => [...bootPeople]);
+  const [applied, setApplied] = useState<AppliedFilters>(() => ({
+    q: initialQuery,
+    statusFilter: new Set(bootStatus),
+    visitFilter: new Set(bootVisit),
+    province: initialProvince,
+    district: '',
+    size: '',
+    personIds: [...bootPeople],
+    area: initialArea,
+  }));
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [sort, setSort] = useState<SortKey>('name');
   const [scoreMode, setScoreMode] = useState<ScoreMode>('five');
   const [page, setPage] = useState(1);
   const inScope = useMemo(() => new Set(inScopeIds), [inScopeIds]);
+  const peopleById = useMemo(() => new Map(domainPeople.map((p) => [p.id, p])), [domainPeople]);
 
   /** Staff domain list is always scope-only; guest sees the provided catalog */
   const poolSchools = useMemo(() => {
@@ -124,8 +200,8 @@ export function ManagedSchoolsClient({
 
   const filtered = useMemo(() => {
     let list = [...poolSchools];
-    if (q.trim()) {
-      const needle = q.trim().toLowerCase();
+    if (applied.q.trim()) {
+      const needle = applied.q.trim().toLowerCase();
       list = list.filter(
         (s) =>
           s.school_name_th?.toLowerCase().includes(needle) ||
@@ -134,15 +210,32 @@ export function ManagedSchoolsClient({
           String(s.school_id).includes(needle)
       );
     }
-    if (showScores && !statusFilter.has('all')) {
-      list = list.filter((s) => statusFilter.has(statusFromScore(s.overallScore).key));
+    if (showScores && !applied.statusFilter.has('all')) {
+      list = list.filter((s) => applied.statusFilter.has(statusFromScore(s.overallScore).key));
     }
-    if (!visitFilter.has('all')) {
-      list = list.filter((s) => visitFilter.has((s.visitStatus ?? 'never') as VisitFilter));
+    if (!applied.visitFilter.has('all')) {
+      list = list.filter((s) => applied.visitFilter.has((s.visitStatus ?? 'never') as VisitFilter));
     }
-    if (province) list = list.filter((s) => s.province === province);
-    if (district) list = list.filter((s) => s.district === district);
-    if (size) list = list.filter((s) => s.school_size === size);
+    if (applied.province) list = list.filter((s) => s.province === applied.province);
+    if (applied.district) list = list.filter((s) => s.district === applied.district);
+    if (applied.area) {
+      const needle = applied.area.trim();
+      list = list.filter(
+        (s) =>
+          (s.area_name && s.area_name === needle) ||
+          (s.Gov_Domain?.area_name && s.Gov_Domain.area_name === needle) ||
+          (s.district && s.district === needle)
+      );
+    }
+    if (applied.size) list = list.filter((s) => s.school_size === applied.size);
+    if (applied.personIds.length > 0) {
+      const allowed = new Set<string>();
+      for (const id of applied.personIds) {
+        const person = peopleById.get(id);
+        person?.schoolIds.forEach((sid) => allowed.add(sid));
+      }
+      list = list.filter((s) => allowed.has(String(s.school_id)));
+    }
 
     list.sort((a, b) => {
       if (sort === 'name') return (a.school_name_th || '').localeCompare(b.school_name_th || '', 'th');
@@ -167,23 +260,37 @@ export function ManagedSchoolsClient({
       return sb - sa;
     });
     return list;
-  }, [
-    poolSchools,
-    q,
-    statusFilter,
-    visitFilter,
-    province,
-    district,
-    size,
-    sort,
-    showScores,
-    scoreMode,
-  ]);
+  }, [poolSchools, applied, sort, showScores, scoreMode, peopleById]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const toggleStatus = (key: DevStatusKey | 'all') => {
+  const applyFilters = (overrides?: Partial<{
+    q: string;
+    statusFilter: Set<StatusFilterKey>;
+    visitFilter: Set<VisitFilter>;
+    province: string;
+    district: string;
+    size: string;
+    personIds: string[];
+    area: string;
+  }>) => {
+    const nextVisit = overrides?.visitFilter ?? new Set(visitFilter);
+    setApplied({
+      q: overrides?.q ?? q,
+      statusFilter: overrides?.statusFilter ?? new Set(statusFilter),
+      visitFilter: nextVisit,
+      province: overrides?.province ?? province,
+      district: overrides?.district ?? district,
+      size: overrides?.size ?? size,
+      personIds: overrides?.personIds ?? [...personIds],
+      area: overrides?.area ?? area,
+    });
+    if (!nextVisit.has('all')) setSort('activity');
+    setPage(1);
+  };
+
+  const toggleStatus = (key: StatusFilterKey) => {
     if (key === 'all') {
       setStatusFilter(new Set(['all']));
       return;
@@ -194,13 +301,11 @@ export function ManagedSchoolsClient({
     else next.add(key);
     if (next.size === 0) next.add('all');
     setStatusFilter(next);
-    setPage(1);
   };
 
   const toggleVisit = (key: VisitFilter) => {
     if (key === 'all') {
       setVisitFilter(new Set(['all']));
-      setPage(1);
       return;
     }
     const next = new Set(visitFilter);
@@ -209,9 +314,6 @@ export function ManagedSchoolsClient({
     else next.add(key);
     if (next.size === 0) next.add('all');
     setVisitFilter(next);
-    // Visit filters pair with last-activity ordering (calendar bookings)
-    if (!next.has('all')) setSort('activity');
-    setPage(1);
   };
 
   const reset = () => {
@@ -221,13 +323,80 @@ export function ManagedSchoolsClient({
     setProvince('');
     setDistrict('');
     setSize('');
+    setArea('');
+    setPersonIds([]);
+    setApplied({
+      q: '',
+      statusFilter: new Set(['all']),
+      visitFilter: new Set(['all']),
+      province: '',
+      district: '',
+      size: '',
+      personIds: [],
+      area: '',
+    });
     setPage(1);
+  };
+
+  const domainPeopleTree = useMemo((): FilterTreeNode[] => {
+    const overseers = domainPeople.filter((p) => normalizeRole(p.role) === 'overseer');
+    const staff = domainPeople.filter((p) => normalizeRole(p.role) === 'staff');
+    if (overseers.length === 0) {
+      return staff.map((p) => ({
+        id: p.id,
+        label: p.full_name,
+        hint: `${p.schoolIds.length} รร.`,
+      }));
+    }
+    const under = new Map<string, DomainPersonOption[]>();
+    for (const s of staff) {
+      const boss = s.reports_to || '';
+      const list = under.get(boss) ?? [];
+      list.push(s);
+      under.set(boss, list);
+    }
+    const nodes: FilterTreeNode[] = overseers
+      .slice()
+      .sort((a, b) => a.full_name.localeCompare(b.full_name, 'th'))
+      .map((ov) => ({
+        id: ov.id,
+        label: ov.full_name,
+        hint: `Overseer · ${ov.schoolIds.length} รร.`,
+        children: (under.get(ov.id) ?? [])
+          .slice()
+          .sort((a, b) => a.full_name.localeCompare(b.full_name, 'th'))
+          .map((st) => ({
+            id: st.id,
+            label: st.full_name,
+            hint: `Staff · ${st.schoolIds.length} รร.`,
+          })),
+      }));
+    // Orphan staff
+    for (const s of staff) {
+      if (s.reports_to && under.has(s.reports_to) && overseers.some((o) => o.id === s.reports_to)) {
+        continue;
+      }
+      if (nodes.some((n) => n.id === s.id)) continue;
+      nodes.push({
+        id: s.id,
+        label: s.full_name,
+        hint: `Staff · ${s.schoolIds.length} รร.`,
+      });
+    }
+    return nodes;
+  }, [domainPeople]);
+
+  const personSelectedSet = useMemo(() => new Set(personIds), [personIds]);
+
+  /** Status summary cards: set filter + apply immediately */
+  const jumpStatus = (key: StatusFilterKey) => {
+    const next = new Set<StatusFilterKey>([key]);
+    setStatusFilter(next);
+    applyFilters({ statusFilter: next });
   };
 
   const onProvinceChange = (value: string) => {
     setProvince(value);
-    setPage(1);
-    // Clear sibling filters that are no longer valid under the new selection
     const nextPool = poolSchools.filter((s) => (!value || s.province === value) && (!size || s.school_size === size));
     const nextDistricts = new Set(nextPool.map((s) => s.district).filter(Boolean));
     const nextSizes = new Set(
@@ -242,7 +411,6 @@ export function ManagedSchoolsClient({
 
   const onDistrictChange = (value: string) => {
     setDistrict(value);
-    setPage(1);
     const nextProvinces = new Set(
       poolSchools
         .filter((s) => (!value || s.district === value) && (!size || s.school_size === size))
@@ -261,7 +429,6 @@ export function ManagedSchoolsClient({
 
   const onSizeChange = (value: string) => {
     setSize(value);
-    setPage(1);
     const nextProvinces = new Set(
       poolSchools
         .filter((s) => (!value || s.school_size === value) && (!district || s.district === district))
@@ -295,7 +462,12 @@ export function ManagedSchoolsClient({
 
       <div className="page-shell py-5 space-y-5">
         <div className="managed-status-row">
-          <div className="status-card" style={{ borderColor: '#BFDBFE' }}>
+          <button
+            type="button"
+            className="status-card status-card--link"
+            style={{ borderColor: '#BFDBFE' }}
+            onClick={() => jumpStatus('all')}
+          >
             <div className="status-card__icon" style={{ background: '#DBEAFE', color: '#0B4DA2' }}>
               <Building2 size={20} />
             </div>
@@ -305,7 +477,7 @@ export function ManagedSchoolsClient({
                 {mode === 'staff' ? 'โรงเรียนในความดูแล' : 'โรงเรียนทั้งหมด'}
               </div>
             </div>
-          </div>
+          </button>
           {(Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => {
             const meta = DEV_STATUS[k];
             const Icon =
@@ -316,8 +488,15 @@ export function ManagedSchoolsClient({
                   : k === 'progressing'
                     ? Clock3
                     : Star;
+            const active = applied.statusFilter.has(k) && !applied.statusFilter.has('all');
             return (
-              <div key={k} className="status-card" style={{ borderColor: meta.border, background: meta.bg }}>
+              <button
+                key={k}
+                type="button"
+                className={`status-card status-card--link ${active ? 'status-card--active' : ''}`}
+                style={{ borderColor: meta.border, background: meta.bg }}
+                onClick={() => jumpStatus(k)}
+              >
                 <div className="status-card__icon" style={{ background: '#fff', color: meta.color }}>
                   <Icon size={18} />
                 </div>
@@ -327,7 +506,7 @@ export function ManagedSchoolsClient({
                   </div>
                   <div className="status-card__label">{meta.label}</div>
                 </div>
-              </div>
+              </button>
             );
           })}
           <div className="status-card managed-status-quote">
@@ -335,125 +514,171 @@ export function ManagedSchoolsClient({
           </div>
         </div>
 
-        <div className="ed-managed-layout">
-          <aside className="ed-card p-4 space-y-4 h-fit managed-filters">
-            <label className="block text-sm font-semibold">
-              ค้นหา
-              <input
-                className="form-input"
-                value={q}
-                onChange={(e) => {
-                  setQ(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="ชื่อโรงเรียน จังหวัด หรือรหัส"
-              />
-            </label>
+        <div className="ed-managed-layout ed-managed-layout--stack">
+          <section className="ed-card p-4 managed-filters managed-filters--horizontal">
+            <div className="managed-filters__row">
+              <label className="managed-filters__field managed-filters__field--grow">
+                <span className="managed-filters__label">ค้นหา</span>
+                <input
+                  className="form-input"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') applyFilters();
+                  }}
+                  placeholder="ชื่อโรงเรียน จังหวัด หรือรหัส"
+                />
+              </label>
+              <label className="managed-filters__field">
+                <span className="managed-filters__label">จังหวัด</span>
+                <select
+                  className="form-input"
+                  value={province}
+                  onChange={(e) => onProvinceChange(e.target.value)}
+                >
+                  <option value="">ทั้งหมด</option>
+                  {provinces.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="managed-filters__field">
+                <span className="managed-filters__label">อำเภอ / เขต</span>
+                <select
+                  className="form-input"
+                  value={district}
+                  onChange={(e) => onDistrictChange(e.target.value)}
+                  disabled={Boolean(province) && districts.length === 0}
+                >
+                  <option value="">ทั้งหมด{province ? ` ใน${province}` : ''}</option>
+                  {districts.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="managed-filters__field">
+                <span className="managed-filters__label">ขนาดโรงเรียน</span>
+                <select
+                  className="form-input"
+                  value={size}
+                  onChange={(e) => onSizeChange(e.target.value)}
+                  disabled={sizes.length === 0}
+                >
+                  <option value="">ทั้งหมด</option>
+                  {sizes.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="managed-filters__field">
+                <span className="managed-filters__label">เขตพื้นที่ (Gov)</span>
+                <input
+                  className="form-input"
+                  value={area}
+                  onChange={(e) => setArea(e.target.value)}
+                  placeholder="ชื่อเขตพื้นที่การศึกษา"
+                  list="gov-area-list"
+                />
+                <datalist id="gov-area-list">
+                  {[
+                    ...new Set(
+                      poolSchools
+                        .map((s) => s.area_name || s.Gov_Domain?.area_name || '')
+                        .filter(Boolean)
+                    ),
+                  ]
+                    .sort((a, b) => a.localeCompare(b, 'th'))
+                    .map((a) => (
+                      <option key={a} value={a} />
+                    ))}
+                </datalist>
+              </label>
+            </div>
 
             {showScores && (
-              <div>
-                <div className="text-sm font-bold mb-2">สถานะการพัฒนา</div>
-                <label className="ed-check">
-                  <input
-                    type="checkbox"
-                    checked={statusFilter.has('all')}
-                    onChange={() => toggleStatus('all')}
-                  />
-                  ทั้งหมด ({counts.all})
-                </label>
-                {(Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => (
-                  <label key={k} className="ed-check">
+              <div className="managed-filters__chips">
+                <span className="managed-filters__chips-label">สถานะการพัฒนา</span>
+                <div className="managed-filters__chip-row">
+                  <label className="ed-check ed-check--inline">
                     <input
                       type="checkbox"
-                      checked={statusFilter.has(k)}
-                      onChange={() => toggleStatus(k)}
+                      checked={statusFilter.has('all')}
+                      onChange={() => toggleStatus('all')}
                     />
-                    {DEV_STATUS[k].label} ({counts[k]})
+                    ทั้งหมด ({counts.all})
                   </label>
-                ))}
+                  {(Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => (
+                    <label key={k} className="ed-check ed-check--inline">
+                      <input
+                        type="checkbox"
+                        checked={statusFilter.has(k)}
+                        onChange={() => toggleStatus(k)}
+                      />
+                      {DEV_STATUS[k].label} ({counts[k]})
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
 
-            <div>
-              <div className="text-sm font-bold mb-2">สถานะการลงพื้นที่</div>
-              <p className="text-[11px] text-slate-500 m-0 mb-2">
+            {domainPeople.length > 0 && (
+              <div className="managed-filters__chips">
+                <span className="managed-filters__chips-label">{domainPeopleLabel}</span>
+                <HierarchicalFilterDropdown
+                  label="ผู้รับผิดชอบ"
+                  tree={domainPeopleTree}
+                  selected={personSelectedSet}
+                  onChange={(next) => setPersonIds([...next])}
+                  emptyLabel="ทุกคน"
+                  className="domain-person-dd"
+                />
+                <p className="text-[11px] text-slate-500 m-0">
+                  ขยาย/ยุบตามสายบังคับบัญชา · กดกรองผลลัพธ์เพื่อแสดงโรงเรียนในพื้นที่ที่เลือก
+                </p>
+              </div>
+            )}
+
+            <div className="managed-filters__chips">
+              <span className="managed-filters__chips-label">สถานะการลงพื้นที่</span>
+              <div className="managed-filters__chip-row">
+                {(
+                  [
+                    ['all', 'ทั้งหมด'],
+                    ['never', 'ยังไม่เคยลงพื้นที่'],
+                    ['planned', 'นัดหมายแล้ว'],
+                    ['visited', 'ลงพื้นที่แล้ว'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label key={key} className="ed-check ed-check--inline">
+                    <input
+                      type="checkbox"
+                      checked={visitFilter.has(key)}
+                      onChange={() => toggleVisit(key)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500 m-0">
                 อิงจากนัดหมายในปฏิทิน / กิจกรรมล่าสุดของโรงเรียน
               </p>
-              {(
-                [
-                  ['all', 'ทั้งหมด'],
-                  ['never', 'ยังไม่เคยลงพื้นที่'],
-                  ['planned', 'นัดหมายแล้ว'],
-                  ['visited', 'ลงพื้นที่แล้ว'],
-                ] as const
-              ).map(([key, label]) => (
-                <label key={key} className="ed-check">
-                  <input
-                    type="checkbox"
-                    checked={visitFilter.has(key)}
-                    onChange={() => toggleVisit(key)}
-                  />
-                  {label}
-                </label>
-              ))}
             </div>
 
-            <label className="block text-sm font-semibold">
-              จังหวัด
-              <select
-                className="form-input"
-                value={province}
-                onChange={(e) => onProvinceChange(e.target.value)}
-              >
-                <option value="">ทั้งหมด</option>
-                {provinces.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm font-semibold">
-              อำเภอ / เขต
-              <select
-                className="form-input"
-                value={district}
-                onChange={(e) => onDistrictChange(e.target.value)}
-                disabled={Boolean(province) && districts.length === 0}
-              >
-                <option value="">ทั้งหมด{province ? ` ใน${province}` : ''}</option>
-                {districts.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm font-semibold">
-              ขนาดโรงเรียน
-              <select
-                className="form-input"
-                value={size}
-                onChange={(e) => onSizeChange(e.target.value)}
-                disabled={sizes.length === 0}
-              >
-                <option value="">ทั้งหมด</option>
-                {sizes.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <button
-              type="button"
-              className="ed-btn ed-btn--outline w-full justify-center"
-              onClick={reset}
-            >
-              <RefreshCw size={16} /> ล้างตัวกรอง
-            </button>
-          </aside>
+            <div className="managed-filters__actions">
+              <button type="button" className="ed-btn ed-btn--primary" onClick={() => applyFilters()}>
+                <Filter size={16} /> กรองผลลัพธ์
+              </button>
+              <button type="button" className="ed-btn ed-btn--outline" onClick={reset}>
+                <RefreshCw size={16} /> ล้างตัวกรอง
+              </button>
+            </div>
+          </section>
 
           <section
             className={`space-y-3 schools-list-panel ${
@@ -480,7 +705,7 @@ export function ManagedSchoolsClient({
                       setPage(1);
                     }}
                   >
-                    คะแนน 5 กลยุทธ์
+                    คะแนน 5 ด้าน (connextED)
                   </button>
                   <button
                     type="button"
@@ -498,7 +723,7 @@ export function ManagedSchoolsClient({
               {showScores && (
                 <p className="schools-list-panel__mode-hint m-0">
                   {scoreMode === 'five'
-                    ? 'กำลังแสดงคะแนนตาม 5 กลยุทธ์ — พื้นหลังโทนน้ำเงิน'
+                    ? 'กำลังแสดงคะแนนตาม 5 ด้าน (connextED) — พื้นหลังโทนน้ำเงิน'
                     : 'กำลังแสดงคะแนนตาม 3 เสาหลัก — พื้นหลังโทนเขียวอมฟ้า'}
                 </p>
               )}
@@ -574,8 +799,14 @@ export function ManagedSchoolsClient({
                     s.area_name ||
                     s.Gov_Domain?.area_name ||
                     (s.area_id != null ? String(s.area_id) : '');
+                  const pastel = showScores ? scorePastelLevel(displayScore) : null;
                   return (
-                    <article key={String(s.school_id)} className="ed-school-list-row">
+                    <article
+                      key={String(s.school_id)}
+                      className={`ed-school-list-row ${
+                        pastel != null ? `score-pastel score-pastel--${pastel}` : ''
+                      }`}
+                    >
                       <div className="ed-school-list-row__main min-w-0">
                         <Link
                           href={`/schools/${s.school_id}`}
@@ -639,10 +870,13 @@ export function ManagedSchoolsClient({
                     s.area_name ||
                     s.Gov_Domain?.area_name ||
                     (s.area_id != null ? String(s.area_id) : '');
+                  const pastel = showScores ? scorePastelLevel(displayScore) : null;
                   return (
                     <article
                       key={String(s.school_id)}
-                      className="ed-card ed-school-card overflow-hidden"
+                      className={`ed-card ed-school-card overflow-hidden ${
+                        pastel != null ? `score-pastel score-pastel--${pastel}` : ''
+                      }`}
                     >
                       <div
                         className="ed-school-card__cover"

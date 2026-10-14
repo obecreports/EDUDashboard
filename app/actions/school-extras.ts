@@ -135,6 +135,7 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
 
   const schoolId = String(formData.get('school_id') || '');
   const reportDate = String(formData.get('report_date') || '').trim();
+  const calendarEventId = String(formData.get('calendar_event_id') || '').trim();
   let boxes: { text: string; tags?: string[] }[] = [];
   try {
     boxes = JSON.parse(String(formData.get('boxes') || '[]')) as {
@@ -166,6 +167,9 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
     }))
     .filter((b) => b.text);
 
+  if (!calendarEventId) {
+    return { ok: false as const, error: 'ต้องเลือกรายการนัดหมายในปฏิทินก่อนบันทึกรายงาน' };
+  }
   if (!schoolId || cleaned.length === 0) {
     return { ok: false as const, error: 'กรุณากรอกความคิดเห็นอย่างน้อย 1 ข้อ' };
   }
@@ -204,6 +208,7 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
         tags: b.tags,
         reportDate: reportDate || null,
         imageUrls: i === 0 ? imageUrls : [],
+        calendarEventId,
       });
       if (!db.ok) return { ok: false as const, error: db.error };
       comments.push({ ...db.comment, tags: b.tags });

@@ -1,10 +1,17 @@
 import type { SchoolFull } from '@/lib/types';
 import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
+import {
+  eventHasMappedReport,
+  type ReportActivityLink,
+} from '@/lib/activity/complete';
 
-/** Merge calendar bookings into school visitStatus + lastActivityAt */
+/** Merge calendar bookings into school visitStatus + lastActivityAt.
+ *  "visited" prefers schedule+report mapping when reports are provided.
+ */
 export function enrichSchoolsWithVisits(
   schools: SchoolFull[],
-  events: StaffCalendarEvent[]
+  events: StaffCalendarEvent[],
+  reports: ReportActivityLink[] = []
 ): SchoolFull[] {
   if (!events.length) return schools;
 
@@ -21,7 +28,9 @@ export function enrichSchoolsWithVisits(
     const evs = bySchool.get(String(s.school_id));
     if (!evs?.length) return s;
 
-    const completed = evs.some(
+    const mappedComplete =
+      reports.length > 0 && evs.some((e) => eventHasMappedReport(e, reports));
+    const statusComplete = evs.some(
       (e) => e.status === 'completed' || e.status_th === 'เยี่ยมชมเสร็จสิ้น'
     );
     const planned = evs.some(
@@ -32,7 +41,7 @@ export function enrichSchoolsWithVisits(
     );
 
     let visitStatus: SchoolFull['visitStatus'] = s.visitStatus ?? 'never';
-    if (completed) visitStatus = 'visited';
+    if (mappedComplete || statusComplete) visitStatus = 'visited';
     else if (planned) visitStatus = 'planned';
 
     const latest = evs

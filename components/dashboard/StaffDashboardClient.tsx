@@ -13,9 +13,16 @@ import {
 } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import { AlertTriangle, Building2, Clock3, Star, TrendingUp } from 'lucide-react';
-import type { SchoolFull } from '@/lib/types';
+import type { SchoolFull, UserRole } from '@/lib/types';
+import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
 import { DualRadarChart } from '@/components/schools/SchoolRadarChart';
 import { DashboardWelcome } from '@/components/dashboard/DashboardWelcome';
+import {
+  SuperOverseerActivityPanel,
+  type ActivityPerson,
+  type ActivitySchool,
+} from '@/components/dashboard/SuperOverseerActivityPanel';
+import type { ReportActivityLink } from '@/lib/activity/complete';
 import { DEV_STATUS, STRATEGY_LABELS, statusFromScore, type DevStatusKey } from '@/lib/theme/status';
 import { THREE_PILLAR_LABELS } from '@/lib/mock/pillars';
 
@@ -25,18 +32,29 @@ export function StaffDashboardClient({
   schools,
   nationalSchools,
   roleLabel,
+  role,
   staffName,
   birthday,
   namePrefix,
+  calendarEvents = [],
+  activityPeople = [],
+  activitySchools = [],
+  activityReports = [],
 }: {
   schools: SchoolFull[];
   /** All-project schools for national average shadow on charts */
   nationalSchools?: SchoolFull[];
   roleLabel: string;
+  role?: UserRole;
   staffName?: string;
   birthday?: string | null;
   namePrefix?: string | null;
+  calendarEvents?: StaffCalendarEvent[];
+  activityPeople?: ActivityPerson[];
+  activitySchools?: ActivitySchool[];
+  activityReports?: ReportActivityLink[];
 }) {
+  const isSuperOverseer = role === 'super_overseer';
   const counts = useMemo(() => {
     const c: Record<DevStatusKey | 'all', number> = {
       all: schools.length,
@@ -162,20 +180,36 @@ export function StaffDashboardClient({
       <div>
         <h2 className="ed-section-title m-0 text-base">แดชบอร์ด · {roleLabel}</h2>
         <p className="text-sm text-slate-600 m-0 mt-1">
-          สรุปคะแนน 5 กลยุทธ์และ 3 เสาหลัก · โรงเรียนภายใต้ขอบเขต {schools.length} แห่ง
+          สรุปคะแนน 5 ด้าน (connextED) และ 3 เสาหลัก · โรงเรียนภายใต้ขอบเขต {schools.length} แห่ง
         </p>
       </div>
 
+      {isSuperOverseer ? (
+        <SuperOverseerActivityPanel
+          events={calendarEvents}
+          people={activityPeople}
+          schools={activitySchools}
+          reports={activityReports}
+        />
+      ) : null}
+
       <div className="managed-status-row">
-        <div className="status-card" style={{ borderColor: '#BFDBFE' }}>
-          <div className="status-card__icon" style={{ background: '#DBEAFE', color: '#0B4DA2' }}>
+        <Link
+          href="/schools?status=all"
+          className="status-card status-card--link"
+          style={{ borderColor: 'var(--tm-gold)' }}
+        >
+          <div
+            className="status-card__icon"
+            style={{ background: 'var(--tm-gold-50)', color: 'var(--tm-blue)' }}
+          >
             <Building2 size={20} />
           </div>
           <div>
             <div className="status-card__value text-tm-blue">{counts.all}</div>
             <div className="status-card__label">โรงเรียนภายใต้ขอบเขต</div>
           </div>
-        </div>
+        </Link>
         {(Object.keys(DEV_STATUS) as DevStatusKey[]).map((k) => {
           const meta = DEV_STATUS[k];
           const Icon =
@@ -187,7 +221,12 @@ export function StaffDashboardClient({
                   ? Clock3
                   : Star;
           return (
-            <div key={k} className="status-card" style={{ borderColor: meta.border, background: meta.bg }}>
+            <Link
+              key={k}
+              href={`/schools?status=${encodeURIComponent(k)}`}
+              className="status-card status-card--link"
+              style={{ borderColor: meta.border, background: meta.bg }}
+            >
               <div className="status-card__icon" style={{ background: '#fff', color: meta.color }}>
                 <Icon size={18} />
               </div>
@@ -197,7 +236,7 @@ export function StaffDashboardClient({
                 </div>
                 <div className="status-card__label">{meta.label}</div>
               </div>
-            </div>
+            </Link>
           );
         })}
       </div>
@@ -294,7 +333,7 @@ export function StaffDashboardClient({
           <section className="ed-card p-4 space-y-4 schools-list-panel schools-list-panel--five">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h2 className="ed-section-title text-base m-0">5 กลยุทธ์</h2>
+                <h2 className="ed-section-title text-base m-0">5 ด้าน (connextED)</h2>
                 <p className="text-sm text-slate-500 m-0 mt-1">เปรียบเทียบกับค่าเฉลี่ยทั้งประเทศ</p>
               </div>
               <div className="text-right">
@@ -371,7 +410,7 @@ export function StaffDashboardClient({
             </section>
             <section className="ed-card p-4 space-y-3 schools-list-panel schools-list-panel--five">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="ed-section-title text-base m-0">Top 10 · 5 กลยุทธ์</h2>
+                <h2 className="ed-section-title text-base m-0">Top 10 · 5 ด้าน (connextED)</h2>
                 <Link href="/schools" className="ed-btn ed-btn--outline ed-btn--sm">
                   ดูรายชื่อโรงเรียน
                 </Link>

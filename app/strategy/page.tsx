@@ -83,7 +83,7 @@ async function StrategyBody() {
     <div className="strategy-page">
       <PageBanner
         src={PAGE_BANNERS.strategy}
-        title="ภาพรวมการดำเนินงานตาม 5 กลยุทธ์"
+        title="ภาพรวมการดำเนินงานตาม 5 ด้าน (connextED)"
         subtitle={`ข้อมูลภาพรวม ${schools.length.toLocaleString('th-TH')} โรงเรียนในโครงการกองทุนการศึกษา`}
         quote="“การศึกษา คือพลังในการเปลี่ยนแปลงสังคม”"
         quoteMeta={`ข้อมูล ณ วันที่ ${asOf}`}
@@ -119,9 +119,9 @@ async function StrategyBody() {
 
         <div className="ed-analytics-row">
           <section className="ed-card p-4">
-            <h2 className="ed-section-title text-base">คะแนนเฉลี่ย 5 กลยุทธ์</h2>
+            <h2 className="ed-section-title text-base">คะแนนเฉลี่ย 5 ด้าน (connextED)</h2>
             <p className="text-sm text-slate-600 m-0 mb-2">
-              คะแนนเฉลี่ยรวม 5 กลยุทธ์{' '}
+              คะแนนเฉลี่ยรวม 5 ด้าน (connextED){' '}
               <strong className="text-tm-blue">{overallAvg.toFixed(2)}</strong>
               <span className="text-slate-400"> / 5.00</span>
             </p>

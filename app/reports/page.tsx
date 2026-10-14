@@ -59,7 +59,7 @@ export default async function ReportsPage() {
     <div>
       <PageBanner
         src={PAGE_BANNERS.reports}
-        title="รายงานกิจกรรม / ความคิดเห็น"
+        title="รายงานกิจกรรม"
         subtitle="บันทึกความคิดเห็นหรือกิจกรรมต่างๆของโรงเรียน"
         quote="“ทุกโรงเรียนมีศักยภาพ ทุกการสนับสนุนสร้างการเปลี่ยนแปลงได้”"
       />

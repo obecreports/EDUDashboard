@@ -59,16 +59,31 @@ export default async function NewReportPage({
 
   // Suggest only schools from the current user's own schedule (±7 days)
   const bySchool = new Map<string, { school_id: string; school_name: string; date: string }>();
+  const scheduleEvents: {
+    id: string;
+    school_id: string;
+    school_name: string;
+    date: string;
+    activity: string;
+  }[] = [];
   for (const e of myEvents) {
     if (e.staff_id !== profile.id) continue;
     if (!e.school_id || !domainIds.has(String(e.school_id))) continue;
     if (e.date < fromStr || e.date > toStr) continue;
     const key = String(e.school_id);
+    const schoolName = e.school_name || domain.find((d) => d.id === key)?.name || key;
+    scheduleEvents.push({
+      id: e.id,
+      school_id: key,
+      school_name: schoolName,
+      date: e.date,
+      activity: String(e.activity || 'นัดหมาย'),
+    });
     const prev = bySchool.get(key);
     if (!prev || e.date < prev.date) {
       bySchool.set(key, {
         school_id: key,
-        school_name: e.school_name || domain.find((d) => d.id === key)?.name || key,
+        school_name: schoolName,
         date: e.date,
       });
     }
@@ -78,14 +93,15 @@ export default async function NewReportPage({
     <div>
       <PageBanner
         src={PAGE_BANNERS.reports}
-        title="รายงานกิจกรรม / ความคิดเห็น"
-        subtitle="บันทึกความคิดเห็นหรือกิจกรรมต่างๆของโรงเรียน"
+        title="รายงานกิจกรรม"
+        subtitle="บันทึกความคิดเห็นผูกกับนัดหมายในปฏิทิน"
         quote="“ทุกโรงเรียนมีศักยภาพ ทุกการสนับสนุนสร้างการเปลี่ยนแปลงได้”"
       />
       <NewReportClient
         schools={domain}
         initialSchoolId={draft?.school_id || sp.school_id || ''}
         scheduleHints={[...bySchool.values()].slice(0, 12)}
+        scheduleEvents={scheduleEvents}
         initialDraft={draft}
       />
     </div>

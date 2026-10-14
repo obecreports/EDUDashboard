@@ -169,12 +169,13 @@ export const NAV_CATALOG: NavItem[] = [
   { href: '/', label: 'หน้าหลัก', roles: PUBLIC_ROLES, end: true },
   { href: '/about', label: 'เกี่ยวกับโครงการ', roles: PUBLIC_ROLES },
   { href: '/pillars', label: 'ภาพรวม 3 เสาหลัก', roles: PUBLIC_ROLES },
-  { href: '/strategy', label: 'ภาพรวม 5 กลยุทธ์', roles: PUBLIC_ROLES },
+  { href: '/strategy', label: 'ภาพรวม 5 ด้าน (connextED)', roles: PUBLIC_ROLES },
   { href: '/thailand-map', label: 'แผนที่', roles: PUBLIC_ROLES },
   { href: '/schools', label: 'โรงเรียนในโครงการ', roles: PUBLIC_ROLES },
   { href: '/dashboard', label: 'แดชบอร์ด', roles: FIELD_ROLES },
   { href: '/calendar', label: 'ปฏิทินกิจกรรม', roles: FIELD_ROLES },
-  { href: '/reports', label: 'รายงาน', roles: FIELD_ROLES },
+  { href: '/reports/new', label: 'ส่งรายงาน', roles: FIELD_ROLES },
+  { href: '/reports', label: 'ดูผลรายงาน', roles: FIELD_ROLES },
   { href: '/tickets', label: 'คำขอแก้ไขข้อมูล', roles: FIELD_ROLES },
   { href: '/admin/accounts', label: 'จัดการบัญชี', roles: ADMIN_ROLES },
   { href: '/admin/domain', label: 'มอบหมายพื้นที่จัดการ', roles: ADMIN_ROLES },
@@ -193,13 +194,16 @@ export const PAGE_BANNERS = {
   reports: '/images/banners/banner_schools.jpg',
 } as const;
 
-/** Report comment category hashtags */
-export const REPORT_HASHTAGS = [
-  'ส่วนที่ดี',
-  'ส่วนที่ต้องปรับปรุง',
-  'ข้อเสนอแนะ',
-  'ชื่นชม',
+/** Fixed report subject guides (locked labels; user fills details under each) */
+export const REPORT_SUBJECTS = [
+  { key: 'good', label: 'ส่วนที่ดี' },
+  { key: 'improve', label: 'ส่วนที่ต้องปรับปรุง' },
+  { key: 'suggest', label: 'ข้อเสนอแนะ' },
+  { key: 'praise', label: 'ชื่นชม' },
 ] as const;
+
+/** @deprecated kept for display of legacy tagged comments */
+export const REPORT_HASHTAGS = REPORT_SUBJECTS.map((s) => s.label);
 
 /** Default school photo (individual uploads override via `coverImageUrl`) */
 export const SCHOOL_DEFAULT_IMAGE = '/images/school_default.jpg';

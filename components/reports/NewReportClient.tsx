@@ -3,14 +3,22 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ImagePlus, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ImagePlus, X } from 'lucide-react';
 import { postSchoolCommentsBatchAction } from '@/app/actions/school-extras';
 import { deleteReportDraftAction, saveReportDraftAction } from '@/app/actions/reports';
-import { REPORT_HASHTAGS } from '@/lib/types';
+import { REPORT_SUBJECTS } from '@/lib/types';
 import type { ReportDraft } from '@/lib/auth/mock-users';
 import { REPORT_IMAGE_MAX } from '@/lib/media/compress-image';
 import { uploadReportImage } from '@/lib/media/storage-upload';
 import { mediaThumbUrl } from '@/lib/media/image-display';
+import {
+  assembleReportComment,
+  emptySubjectDetails,
+  hasAnySubjectDetail,
+  parseReportComment,
+  type ReportSubjectDetails,
+  type ReportSubjectKey,
+} from '@/lib/reports/subjects';
 
 type SchoolOpt = {
   id: string;
@@ -25,10 +33,13 @@ type ScheduleHint = {
   date: string;
 };
 
-type DraftBox = {
-  key: string;
-  text: string;
-  tags: string[];
+/** Full schedule row — report must map to one of these */
+export type ScheduleEventOpt = {
+  id: string;
+  school_id: string;
+  school_name: string;
+  date: string;
+  activity: string;
 };
 
 function todayYmd() {
@@ -42,19 +53,23 @@ function shiftYmd(base: string, delta: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function newBox(): DraftBox {
-  return { key: `box-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, text: '', tags: [] };
+function detailsFromDraft(draft: ReportDraft | null | undefined): ReportSubjectDetails {
+  if (!draft?.boxes?.length) return emptySubjectDetails();
+  const joined = draft.boxes.map((b) => b.text).filter(Boolean).join('\n\n');
+  return parseReportComment(joined);
 }
 
 export function NewReportClient({
   schools,
   initialSchoolId = '',
   scheduleHints = [],
+  scheduleEvents = [],
   initialDraft = null,
 }: {
   schools: SchoolOpt[];
   initialSchoolId?: string;
   scheduleHints?: ScheduleHint[];
+  scheduleEvents?: ScheduleEventOpt[];
   initialDraft?: ReportDraft | null;
 }) {
   const router = useRouter();
@@ -67,24 +82,35 @@ export function NewReportClient({
   const [province, setProvince] = useState(initialDraft?.province || seed?.province || '');
   const [district, setDistrict] = useState(initialDraft?.district || seed?.district || '');
   const [schoolId, setSchoolId] = useState(initialDraft?.school_id || initialSchoolId);
+  const [calendarEventId, setCalendarEventId] = useState('');
   const [datePreset, setDatePreset] = useState<'yesterday' | 'today' | 'tomorrow' | 'custom'>(
     'today'
   );
   const [reportDate, setReportDate] = useState(initialDraft?.report_date || todayYmd);
-  const [boxes, setBoxes] = useState<DraftBox[]>(() => {
-    if (initialDraft?.boxes?.length) {
-      return initialDraft.boxes.map((b, i) => ({
-        key: `box-${i}-${Date.now()}`,
-        text: b.text,
-        tags: b.tags ?? [],
-      }));
-    }
-    return [newBox()];
-  });
+  const [subjects, setSubjects] = useState<ReportSubjectDetails>(() =>
+    detailsFromDraft(initialDraft)
+  );
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [uploadingImgs, setUploadingImgs] = useState(false);
+
+  const scheduleOptions = useMemo(() => {
+    if (scheduleEvents.length) {
+      return [...scheduleEvents].sort((a, b) => b.date.localeCompare(a.date));
+    }
+    // Fallback: synthesize from hints (no event id → cannot submit until real events pass)
+    return scheduleHints.map((h, i) => ({
+      id: '',
+      school_id: h.school_id,
+      school_name: h.school_name,
+      date: h.date,
+      activity: 'นัดหมาย',
+      _i: i,
+    })) as ScheduleEventOpt[];
+  }, [scheduleEvents, scheduleHints]);
+
+  const selectedEvent = scheduleOptions.find((e) => e.id && e.id === calendarEventId);
 
   const provinces = useMemo(() => {
     let list = schools;
@@ -124,14 +150,8 @@ export function NewReportClient({
     else setReportDate(t);
   };
 
-  const toggleTag = (boxKey: string, tag: string) => {
-    setBoxes((prev) =>
-      prev.map((b) => {
-        if (b.key !== boxKey) return b;
-        const has = b.tags.includes(tag);
-        return { ...b, tags: has ? b.tags.filter((t) => t !== tag) : [...b.tags, tag] };
-      })
-    );
+  const setSubjectDetail = (key: ReportSubjectKey, value: string) => {
+    setSubjects((prev) => ({ ...prev, [key]: value }));
   };
 
   const pickSchool = (id: string) => {
@@ -144,16 +164,31 @@ export function NewReportClient({
     }
   };
 
+  const pickScheduleEvent = (eventId: string) => {
+    setCalendarEventId(eventId);
+    const ev = scheduleOptions.find((e) => e.id === eventId);
+    if (!ev) return;
+    setReportDate(ev.date);
+    setDatePreset('custom');
+    pickSchool(ev.school_id);
+    setMsg(null);
+  };
+
   const clearSchool = () => {
     setSchoolId('');
     setQ('');
+    setCalendarEventId('');
     setMsg(null);
   };
 
   const submitAll = () => {
-    const pendingBoxes = boxes.filter((b) => b.text.trim());
-    if (!schoolId || pendingBoxes.length === 0) {
-      setMsg('เลือกโรงเรียนและกรอกความคิดเห็นอย่างน้อย 1 ข้อ');
+    const comment = assembleReportComment(subjects);
+    if (!calendarEventId) {
+      setMsg('ต้องเลือกรายการนัดหมายในปฏิทินก่อน — รายงานต้องผูกกับตารางกิจกรรม');
+      return;
+    }
+    if (!schoolId || !comment) {
+      setMsg('เลือกโรงเรียนและกรอกรายละเอียดอย่างน้อย 1 หัวข้อ');
       return;
     }
     setMsg(null);
@@ -162,10 +197,8 @@ export function NewReportClient({
         const fd = new FormData();
         fd.set('school_id', schoolId);
         fd.set('report_date', reportDate);
-        fd.set(
-          'boxes',
-          JSON.stringify(pendingBoxes.map((b) => ({ text: b.text.trim(), tags: b.tags })))
-        );
+        fd.set('calendar_event_id', calendarEventId);
+        fd.set('boxes', JSON.stringify([{ text: comment, tags: [] }]));
         fd.set('image_urls', JSON.stringify(imageUrls));
         const res = await postSchoolCommentsBatchAction(fd);
         if (!res.ok) {
@@ -177,10 +210,10 @@ export function NewReportClient({
           dfd.set('draft_id', draftId);
           await deleteReportDraftAction(dfd);
         }
-        setBoxes([newBox()]);
+        setSubjects(emptySubjectDetails());
         setImageUrls([]);
         setDraftId('');
-        setMsg(`บันทึกแล้ว ${res.count} รายการ`);
+        setMsg('บันทึกความคิดเห็นแล้ว');
         router.push('/reports');
         router.refresh();
       } catch (e) {
@@ -197,6 +230,7 @@ export function NewReportClient({
     setMsg(null);
     start(async () => {
       try {
+        const comment = assembleReportComment(subjects);
         const fd = new FormData();
         if (draftId) fd.set('draft_id', draftId);
         fd.set('school_id', schoolId);
@@ -204,10 +238,7 @@ export function NewReportClient({
         fd.set('province', selected.province);
         fd.set('district', selected.district);
         fd.set('report_date', reportDate);
-        fd.set(
-          'boxes',
-          JSON.stringify(boxes.map((b) => ({ text: b.text, tags: b.tags })))
-        );
+        fd.set('boxes', JSON.stringify([{ text: comment, tags: [] }]));
         const res = await saveReportDraftAction(fd);
         if (!res.ok) {
           setMsg(res.error || 'บันทึกร่างไม่สำเร็จ');
@@ -262,9 +293,56 @@ export function NewReportClient({
 
       <div className="ed-card p-5 space-y-4">
         <div>
-          <h2 className="ed-section-title text-base m-0">ค้นหาโรงเรียนที่จะรายงาน</h2>
+          <h2 className="ed-section-title text-base m-0">ผูกกับนัดหมายในปฏิทิน</h2>
           <p className="text-sm text-slate-600 m-0 mt-1">
-            กรองจังหวัด/อำเภอ/โรงเรียน หรือพิมพ์ชื่อ · แนะนำจากนัดหมาย ±7 วัน
+            รายงานต้องเลือกจากตารางนัดหมายของคุณ — ระบบจะตั้งโรงเรียนและวันที่ตามนัดนั้น
+          </p>
+        </div>
+
+        {scheduleOptions.filter((e) => e.id).length === 0 ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            ยังไม่มีนัดหมายในช่วงนี้ —{' '}
+            <Link href="/calendar/new" className="font-bold underline">
+              สร้างนัดหมายก่อน
+            </Link>{' '}
+            แล้วกลับมารายงาน
+          </div>
+        ) : (
+          <label className="grid gap-1 text-sm font-semibold">
+            เลือกรายการนัดหมาย *
+            <select
+              className="form-input"
+              value={calendarEventId}
+              onChange={(e) => pickScheduleEvent(e.target.value)}
+            >
+              <option value="">— เลือกนัดหมาย —</option>
+              {scheduleOptions
+                .filter((e) => e.id)
+                .map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.date} · {e.school_name} · {e.activity}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+
+        {selectedEvent ? (
+          <div className="report-selected-school" role="status">
+            <div className="report-selected-school__head">
+              <span className="report-selected-school__label">นัดหมายที่ผูกแล้ว</span>
+            </div>
+            <strong className="report-selected-school__name">{selectedEvent.school_name}</strong>
+            <span className="report-selected-school__meta">
+              {selectedEvent.date} · {selectedEvent.activity}
+            </span>
+          </div>
+        ) : null}
+
+        <div>
+          <h2 className="ed-section-title text-base m-0">ค้นหาโรงเรียน (ทางเลือก)</h2>
+          <p className="text-sm text-slate-600 m-0 mt-1">
+            ใช้เมื่อต้องการกรองรายการนัด — การบันทึกยังต้องผูกนัดหมายด้านบน
           </p>
         </div>
 
@@ -272,16 +350,24 @@ export function NewReportClient({
           <div>
             <div className="text-sm font-bold mb-2">แนะนำจากตารางนัด (±7 วัน)</div>
             <div className="report-suggest-list">
-              {scheduleHints.map((h) => (
-                <button
-                  key={`${h.school_id}-${h.date}`}
-                  type="button"
-                  className="report-suggest-chip"
-                  onClick={() => pickSchool(h.school_id)}
-                >
-                  {h.school_name} · {h.date}
-                </button>
-              ))}
+              {scheduleHints.map((h) => {
+                const match = scheduleOptions.find(
+                  (e) => e.school_id === h.school_id && e.date === h.date && e.id
+                );
+                return (
+                  <button
+                    key={`${h.school_id}-${h.date}`}
+                    type="button"
+                    className="report-suggest-chip"
+                    onClick={() => {
+                      if (match?.id) pickScheduleEvent(match.id);
+                      else pickSchool(h.school_id);
+                    }}
+                  >
+                    {h.school_name} · {h.date}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -513,58 +599,29 @@ export function NewReportClient({
         </div>
 
         <div className="space-y-3">
-          <h2 className="ed-section-title text-base m-0">ความคิดเห็น (มากกว่า 1 หัวข้อได้)</h2>
+          <h2 className="ed-section-title text-base m-0">ความคิดเห็นตามหัวข้อ</h2>
           <p className="text-xs text-slate-500 m-0">
-            แต่ละกล่องเลือกแฮชแท็กของตนเอง · บันทึกทั้งหมดพร้อมกัน หรือบันทึกเป็นร่างก่อน
+            หัวข้อถูกกำหนดไว้แล้ว — กรอกรายละเอียดใต้หัวข้อที่ต้องการ (ไม่จำเป็นต้องกรอกครบทุกหัวข้อ)
+            · บันทึกเป็นความคิดเห็นเดียว
           </p>
 
-          {boxes.map((box, idx) => (
-            <div key={box.key} className="report-comment-box">
-              <div className="flex items-center justify-between gap-2">
-                <strong className="text-sm text-tm-blue">ความคิดเห็น #{idx + 1}</strong>
-                {boxes.length > 1 && (
-                  <button
-                    type="button"
-                    className="navbar__link text-xs"
-                    onClick={() => setBoxes((prev) => prev.filter((b) => b.key !== box.key))}
-                  >
-                    <Trash2 size={14} /> ลบกล่อง
-                  </button>
-                )}
+          <div className="report-guided-box">
+            {REPORT_SUBJECTS.map((s) => (
+              <div key={s.key} className="report-guided-box__row">
+                <div className="report-guided-box__subject" aria-hidden={false}>
+                  - {s.label}
+                </div>
+                <textarea
+                  className="form-input report-guided-box__detail"
+                  rows={3}
+                  value={subjects[s.key]}
+                  onChange={(e) => setSubjectDetail(s.key, e.target.value)}
+                  placeholder="… กรอกรายละเอียดใต้หัวข้อนี้"
+                  aria-label={`รายละเอียด${s.label}`}
+                />
               </div>
-              <div className="report-hashtag-pick" role="group" aria-label="แฮชแท็ก">
-                {REPORT_HASHTAGS.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    className={box.tags.includes(tag) ? 'is-on' : ''}
-                    onClick={() => toggleTag(box.key, tag)}
-                  >
-                    #{tag}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                className="form-input"
-                rows={4}
-                value={box.text}
-                onChange={(e) =>
-                  setBoxes((prev) =>
-                    prev.map((b) => (b.key === box.key ? { ...b, text: e.target.value } : b))
-                  )
-                }
-                placeholder="พิมพ์รายละเอียด…"
-              />
-            </div>
-          ))}
-
-          <button
-            type="button"
-            className="ed-btn ed-btn--outline ed-btn--sm w-fit"
-            onClick={() => setBoxes((prev) => [...prev, newBox()])}
-          >
-            <Plus size={14} /> เพิ่มกล่องความคิดเห็น
-          </button>
+            ))}
+          </div>
         </div>
 
         {msg && <p className="text-sm text-tm-blue m-0">{msg}</p>}
@@ -573,10 +630,12 @@ export function NewReportClient({
           <button
             type="button"
             className="ed-btn ed-btn--primary"
-            disabled={pending || !schoolId}
+            disabled={
+              pending || !schoolId || !calendarEventId || !hasAnySubjectDetail(subjects)
+            }
             onClick={submitAll}
           >
-            {pending ? 'กำลังบันทึก…' : 'บันทึกความคิดเห็นทั้งหมด'}
+            {pending ? 'กำลังบันทึก…' : 'บันทึกความคิดเห็น'}
           </button>
           <button
             type="button"

@@ -324,6 +324,12 @@ export type SchoolComment = {
   tags?: string[];
   /** Compressed public Storage URLs */
   image_urls?: string[];
+  /** Linked calendar / site-visit event id */
+  calendar_event_id?: string | null;
+  /** School id when loaded from DB batch */
+  school_id?: string;
+  /** Explicit report date (YYYY-MM-DD) when available */
+  report_date?: string | null;
 };
 
 export type SchoolAchievements = {

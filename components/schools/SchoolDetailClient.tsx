@@ -500,7 +500,7 @@ export function SchoolDetailClient({
         { id: 'visits', label: 'การลงพื้นที่', icon: CalendarDays },
         ...(showScores
           ? [
-              { id: 'scores' as const, label: '5 กลยุทธ์', icon: Award },
+              { id: 'scores' as const, label: '5 ด้าน (connextED)', icon: Award },
               { id: 'pillars' as const, label: '3 เสาหลัก', icon: Sparkles },
             ]
           : []),
@@ -779,7 +779,9 @@ export function SchoolDetailClient({
               type="button"
               role="tab"
               aria-selected={active}
-              className={`school-tab ${active ? 'school-tab--active' : ''}`}
+              className={`school-tab ${active ? 'school-tab--active' : ''} ${
+                t.id === 'pillars' ? 'school-tab--pillars' : ''
+              } ${t.id === 'scores' ? 'school-tab--scores' : ''}`}
               onClick={() => setTab(t.id)}
             >
               <Icon size={18} />
@@ -848,7 +850,7 @@ export function SchoolDetailClient({
                         <Award size={22} />
                       </div>
                       <div>
-                        <div className="kpi-card__label">คะแนนรวม 5 กลยุทธ์</div>
+                        <div className="kpi-card__label">คะแนนรวม 5 ด้าน (connextED)</div>
                         <div className="kpi-card__value" style={{ color: scoreColor(overall) }}>
                           {overall.toFixed(2)}
                         </div>
@@ -897,7 +899,7 @@ export function SchoolDetailClient({
                   style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}
                 >
                   <div className="panel-card space-y-3">
-                    <h2 className="section-heading text-base m-0">5 กลยุทธ์</h2>
+                    <h2 className="section-heading text-base m-0">5 ด้าน (connextED)</h2>
                     <OverallGauge score={overall} />
                     <div className="space-y-2 pt-2">
                       {gScores.map((g) => (
@@ -1205,7 +1207,7 @@ export function SchoolDetailClient({
             style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}
           >
             <div className="panel-card">
-              <h2 className="section-heading text-base m-0 mb-3">คะแนนรวม 5 กลยุทธ์</h2>
+              <h2 className="section-heading text-base m-0 mb-3">คะแนนรวม 5 ด้าน (connextED)</h2>
               <OverallGauge score={overall} />
             </div>
             <div className="panel-card">
@@ -1219,7 +1221,7 @@ export function SchoolDetailClient({
           </div>
 
           <div className="panel-card space-y-3">
-            <h2 className="section-heading text-base m-0">กลุ่มผลการประเมิน 5 กลยุทธ์</h2>
+            <h2 className="section-heading text-base m-0">กลุ่มผลการประเมิน 5 ด้าน (connextED)</h2>
             <div className="score-grid-2">
               {gScores.map((g) => (
                 <ScoreBar key={g.code} label={g.label} score={g.value} showCode={false} />
@@ -1241,16 +1243,16 @@ export function SchoolDetailClient({
       )}
 
       {tab === 'pillars' && (
-        <div className="space-y-4">
+        <div className="space-y-4 school-pillars-panel">
           <div
             className="grid gap-4"
             style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}
           >
-            <div className="panel-card">
+            <div className="panel-card school-pillars-panel__card">
               <h2 className="section-heading text-base m-0 mb-3">คะแนนรวม 3 เสาหลัก</h2>
               <OverallGauge score={three.overall} max={100} />
             </div>
-            <div className="panel-card">
+            <div className="panel-card school-pillars-panel__card">
               <h2 className="section-heading text-base">ภาพรวม 3 เสาหลัก</h2>
               <DualRadarChart
                 labels={[

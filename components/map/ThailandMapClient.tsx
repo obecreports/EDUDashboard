@@ -52,7 +52,7 @@ const HEAT_METRIC_LABELS: Record<HeatMetric, string> = {
   pillar1: 'เสาหลักที่ 1',
   pillar2: 'เสาหลักที่ 2',
   pillar3: 'เสาหลักที่ 3',
-  strategyOverall: '5 กลยุทธ์ (รวม)',
+  strategyOverall: 'รวม 5 ด้าน (connextED)',
   learner: 'ด้านผู้เรียน',
   participation: 'ด้านการมีส่วนร่วม',
   teacherAdmin: 'ด้านครูและผู้บริหาร',
@@ -115,6 +115,7 @@ const NORMAL_FILL_COLOR: maplibregl.ExpressionSpecification = [
   '#bae6fd',
 ];
 
+/** School-count heatmap — warm amber scale */
 const HEATMAP_FILL_COLOR: maplibregl.ExpressionSpecification = [
   'case',
   ['boolean', ['feature-state', 'hover'], false],
@@ -139,6 +140,77 @@ const HEATMAP_FILL_COLOR: maplibregl.ExpressionSpecification = [
     '#9a3412',
   ],
 ];
+
+/** Score heatmap (3 pillars / 5 angles) — pastel red → green */
+const SCORE_HEATMAP_FILL_COLOR: maplibregl.ExpressionSpecification = [
+  'case',
+  ['boolean', ['feature-state', 'hover'], false],
+  '#34d399',
+  ['boolean', ['feature-state', 'selected'], false],
+  '#10b981',
+  [
+    'interpolate',
+    ['linear'],
+    ['coalesce', ['feature-state', 'density'], 0],
+    0,
+    '#fef2f2',
+    0.2,
+    '#fecaca',
+    0.4,
+    '#fed7aa',
+    0.55,
+    '#fef08a',
+    0.7,
+    '#bbf7d0',
+    0.85,
+    '#86efac',
+    1,
+    '#6ee7b7',
+  ],
+];
+
+function heatmapFillForMetric(metric: HeatMetric): maplibregl.ExpressionSpecification {
+  return metric === 'schools' ? HEATMAP_FILL_COLOR : SCORE_HEATMAP_FILL_COLOR;
+}
+
+/** Default school dots (normal / school-count view) */
+const DEFAULT_CIRCLE_COLOR: maplibregl.ExpressionSpecification = [
+  'case',
+  ['boolean', ['feature-state', 'hover'], false],
+  '#fbbf24',
+  '#e11d48',
+];
+
+/**
+ * Score-view school dots — same 5 pastel bands as scorePastelLevel / school cards
+ * (density 0–1 = score / heatScaleMax).
+ */
+const SCORE_CIRCLE_COLOR: maplibregl.ExpressionSpecification = [
+  'case',
+  ['boolean', ['feature-state', 'hover'], false],
+  '#34d399',
+  [
+    'step',
+    ['coalesce', ['feature-state', 'density'], 0],
+    '#fecaca',
+    0.2,
+    '#fed7aa',
+    0.4,
+    '#fde047',
+    0.6,
+    '#bbf7d0',
+    0.8,
+    '#6ee7b7',
+  ],
+];
+
+function circleColorForMetric(
+  viewMode: MapViewMode,
+  metric: HeatMetric
+): maplibregl.ExpressionSpecification {
+  if (viewMode === 'heatmap' && metric !== 'schools') return SCORE_CIRCLE_COLOR;
+  return DEFAULT_CIRCLE_COLOR;
+}
 
 function popupHtml(title: string, lines: string[]) {
   return `<div class="map-popup"><div class="map-popup__title">${title}</div><p class="map-popup__meta">${lines.join('<br/>')}</p></div>`;
@@ -645,12 +717,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
             8,
             5,
           ],
-          'circle-color': [
-            'case',
-            ['boolean', ['feature-state', 'hover'], false],
-            '#fbbf24',
-            '#e11d48',
-          ],
+          'circle-color': DEFAULT_CIRCLE_COLOR,
           'circle-stroke-width': 1.5,
           'circle-stroke-color': '#fff',
         },
@@ -853,7 +920,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     map.setPaintProperty(
       'province-fill',
       'fill-color',
-      provinceHeat ? HEATMAP_FILL_COLOR : NORMAL_FILL_COLOR
+      provinceHeat ? heatmapFillForMetric(heatMetric) : NORMAL_FILL_COLOR
     );
     map.setPaintProperty(
       'province-fill',
@@ -898,7 +965,7 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
         'district-fill',
         'fill-color',
         districtHeat
-          ? HEATMAP_FILL_COLOR
+          ? heatmapFillForMetric(heatMetric)
           : ([
               'case',
               ['boolean', ['feature-state', 'hover'], false],
@@ -934,6 +1001,14 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
             ] as maplibregl.ExpressionSpecification)
       );
     }
+
+    if (map.getLayer('schools-circle')) {
+      map.setPaintProperty(
+        'schools-circle',
+        'circle-color',
+        circleColorForMetric(viewMode, heatMetric)
+      );
+    }
   }, [viewMode, selectedProvince, ready, heatMetric]);
 
   useEffect(() => {
@@ -942,6 +1017,31 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     const src = map.getSource('schools') as GeoJSONSource | undefined;
     src?.setData(geojson);
   }, [geojson, ready]);
+
+  /** Per-school density for score-view dots (aligns with heatmap / card pastels) */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !map.getSource('schools')) return;
+
+    const scoreMode = viewMode === 'heatmap' && heatMetric !== 'schools';
+    const scale = heatScaleMax(heatMetric);
+
+    for (const s of schools) {
+      if (!Number(s.longitude) || !Number(s.latitude)) continue;
+      const id = String(s.school_id);
+      const prev = map.getFeatureState({ source: 'schools', id });
+      const raw = scoreMode ? schoolHeatValue(s, heatMetric) : 0;
+      const density = scoreMode ? Math.max(0, Math.min(1, raw / scale)) : 0;
+      map.setFeatureState(
+        { source: 'schools', id },
+        {
+          hover: Boolean(prev?.hover),
+          density,
+          heatValue: raw,
+        }
+      );
+    }
+  }, [schools, ready, viewMode, heatMetric]);
 
   /** Sync MapLibre when province selection changes (sidebar or map click) */
   useEffect(() => {
@@ -1274,120 +1374,47 @@ export function ThailandMapClient({ schools }: { schools: SchoolFull[] }) {
     }
   };
 
+  const viewSelectValue = viewMode === 'normal' ? 'normal' : heatMetric;
+
+  const onViewSelectChange = (value: string) => {
+    if (value === 'normal') {
+      setViewMode('normal');
+      setHeatMetric('schools');
+      return;
+    }
+    setViewMode('heatmap');
+    setHeatMetric(value as HeatMetric);
+  };
+
   const heatToolbar = (
     <>
-      <span className="map-view-bar__label">มุมมองแผนที่</span>
-      <button
-        type="button"
-        className={`map-view-bar__btn ${viewMode === 'normal' ? 'is-active' : ''}`}
-        onClick={() => {
-          setViewMode('normal');
-          setHeatMetric('schools');
-        }}
+      <label className="map-view-bar__label" htmlFor="map-view-select">
+        มุมมองแผนที่
+      </label>
+      <select
+        id="map-view-select"
+        className="map-view-bar__select"
+        value={viewSelectValue}
+        onChange={(e) => onViewSelectChange(e.target.value)}
+        aria-label="เลือกมุมมองแผนที่"
       >
-        มุมมองปกติ
-      </button>
-      <button
-        type="button"
-        className={`map-view-bar__btn ${
-          viewMode === 'heatmap' && heatMetric === 'schools' ? 'is-active' : ''
-        }`}
-        onClick={() => {
-          setViewMode('heatmap');
-          setHeatMetric('schools');
-        }}
-        title="เปรียบเทียบจำนวนโรงเรียนรายจังหวัด"
-      >
-        ความหนาแน่นโรงเรียน
-      </button>
-      <button
-        type="button"
-        className={`map-view-bar__btn ${
-          viewMode === 'heatmap' && heatMetric.startsWith('pillar') ? 'is-active' : ''
-        }`}
-        onClick={() => {
-          setViewMode('heatmap');
-          setHeatMetric('pillarOverall');
-        }}
-        title="Heatmap ตามคะแนน 3 เสาหลัก"
-      >
-        คะแนน 3 เสาหลัก
-      </button>
-      <button
-        type="button"
-        className={`map-view-bar__btn ${
-          viewMode === 'heatmap' &&
-          (heatMetric === 'strategyOverall' ||
-            heatMetric === 'learner' ||
-            heatMetric === 'participation' ||
-            heatMetric === 'teacherAdmin' ||
-            heatMetric === 'curriculum' ||
-            heatMetric === 'infrastructure')
-            ? 'is-active'
-            : ''
-        }`}
-        onClick={() => {
-          setViewMode('heatmap');
-          setHeatMetric('strategyOverall');
-        }}
-        title="Heatmap ตามคะแนน 5 กลยุทธ์"
-      >
-        คะแนน 5 กลยุทธ์
-      </button>
-      {viewMode === 'heatmap' && heatMetric.startsWith('pillar') && (
-        <div className="map-view-bar__sub">
-          {(
-            [
-              ['pillarOverall', 'รวม'],
-              ['pillar1', 'เสา 1'],
-              ['pillar2', 'เสา 2'],
-              ['pillar3', 'เสา 3'],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              className={`map-view-bar__btn map-view-bar__btn--sm ${
-                heatMetric === key ? 'is-active' : ''
-              }`}
-              onClick={() => setHeatMetric(key)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-      {viewMode === 'heatmap' &&
-        (heatMetric === 'strategyOverall' ||
-          heatMetric === 'learner' ||
-          heatMetric === 'participation' ||
-          heatMetric === 'teacherAdmin' ||
-          heatMetric === 'curriculum' ||
-          heatMetric === 'infrastructure') && (
-          <div className="map-view-bar__sub">
-            {(
-              [
-                ['strategyOverall', 'รวม'],
-                ['learner', 'ผู้เรียน'],
-                ['participation', 'มีส่วนร่วม'],
-                ['teacherAdmin', 'ครู/ผู้บริหาร'],
-                ['curriculum', 'หลักสูตร'],
-                ['infrastructure', 'โครงสร้าง'],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`map-view-bar__btn map-view-bar__btn--sm ${
-                  heatMetric === key ? 'is-active' : ''
-                }`}
-                onClick={() => setHeatMetric(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
+        <option value="normal">มุมมองปกติ</option>
+        <option value="schools">ความหนาแน่นโรงเรียน</option>
+        <optgroup label="คะแนน 3 เสาหลัก">
+          <option value="pillarOverall">{HEAT_METRIC_LABELS.pillarOverall}</option>
+          <option value="pillar1">{HEAT_METRIC_LABELS.pillar1}</option>
+          <option value="pillar2">{HEAT_METRIC_LABELS.pillar2}</option>
+          <option value="pillar3">{HEAT_METRIC_LABELS.pillar3}</option>
+        </optgroup>
+        <optgroup label="คะแนน 5 ด้าน (connextED)">
+          <option value="strategyOverall">{HEAT_METRIC_LABELS.strategyOverall}</option>
+          <option value="learner">{HEAT_METRIC_LABELS.learner}</option>
+          <option value="participation">{HEAT_METRIC_LABELS.participation}</option>
+          <option value="teacherAdmin">{HEAT_METRIC_LABELS.teacherAdmin}</option>
+          <option value="curriculum">{HEAT_METRIC_LABELS.curriculum}</option>
+          <option value="infrastructure">{HEAT_METRIC_LABELS.infrastructure}</option>
+        </optgroup>
+      </select>
     </>
   );
 

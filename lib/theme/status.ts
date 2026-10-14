@@ -52,6 +52,19 @@ export function statusFromScore(score: number | undefined | null): DevStatusMeta
   return DEV_STATUS.strong;
 }
 
+/** 5 pastel bands red→green for school card backgrounds (0–5 or 0–100). */
+export type ScorePastelLevel = 0 | 1 | 2 | 3 | 4;
+
+export function scorePastelLevel(score: number | undefined | null): ScorePastelLevel {
+  const raw = score ?? 0;
+  const s = raw > 5 ? raw / 20 : raw;
+  if (s < 1) return 0;
+  if (s < 2) return 1;
+  if (s < 3) return 2;
+  if (s < 4) return 3;
+  return 4;
+}
+
 export const STRATEGY_LABELS = [
   { key: 'learner', short: 'S', label: 'ด้านผู้เรียน', color: '#EF4444' },
   { key: 'participation', short: 'M', label: 'ด้านการมีส่วนร่วม', color: '#22C55E' },

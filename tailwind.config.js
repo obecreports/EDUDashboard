@@ -9,14 +9,17 @@ module.exports = {
     extend: {
       colors: {
         tm: {
-          blue: '#0B4DA2',
-          'blue-dark': '#1E40AF',
-          'blue-deeper': '#0F2F6B',
-          'blue-50': '#EFF6FF',
-          'blue-100': '#DBEAFE',
-          seafoam: '#0D9488',
-          'seafoam-dark': '#0F766E',
-          'seafoam-50': '#F0FDFA',
+          blue: '#0A2A5C',
+          'blue-dark': '#071E42',
+          'blue-deeper': '#04152E',
+          'blue-50': '#F4F7FB',
+          'blue-100': '#E4EBF5',
+          gold: '#C5A572',
+          'gold-dark': '#A8894F',
+          'gold-50': '#FBF7EF',
+          seafoam: '#C5A572',
+          'seafoam-dark': '#A8894F',
+          'seafoam-50': '#FBF7EF',
         },
       },
       fontFamily: {
