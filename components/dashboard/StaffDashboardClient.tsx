@@ -22,6 +22,8 @@ import {
   type ActivityPerson,
   type ActivitySchool,
 } from '@/components/dashboard/SuperOverseerActivityPanel';
+import { SuperOverseerComparePanel } from '@/components/dashboard/SuperOverseerComparePanel';
+import type { CompareScoresByYear } from '@/lib/supabase/schools';
 import type { ReportActivityLink } from '@/lib/activity/complete';
 import {
   DEV_STATUS,
@@ -31,6 +33,11 @@ import {
   type DevStatusKey,
 } from '@/lib/theme/status';
 import { THREE_PILLAR_LABELS } from '@/lib/mock/pillars';
+import {
+  SCORE_YEAR_CURRENT,
+  SCORE_YEAR_PREVIOUS,
+  scoreYearToBeLabel,
+} from '@/lib/scores/years';
 
 function statusIcon(key: DevStatusKey) {
   if (key === 'develop') return AlertTriangle;
@@ -54,6 +61,7 @@ export function StaffDashboardClient({
   activityPeople = [],
   activitySchools = [],
   activityReports = [],
+  compareScoresByYear,
 }: {
   schools: SchoolFull[];
   /** All-project schools for national average shadow on charts */
@@ -67,6 +75,8 @@ export function StaffDashboardClient({
   activityPeople?: ActivityPerson[];
   activitySchools?: ActivitySchool[];
   activityReports?: ReportActivityLink[];
+  /** Exact-year SMS + 3-pillar maps for SO comparison charts */
+  compareScoresByYear?: CompareScoresByYear;
 }) {
   const isSuperOverseer = role === 'super_overseer';
   const counts = useMemo(() => {
@@ -141,6 +151,38 @@ export function StaffDashboardClient({
       disciplineMorality: avgKey('disciplineMorality'),
     };
   }, [nationPool]);
+
+  /** SO radar: previous-year averages from exact school_year maps (YoY, not vs national). */
+  const prevYearThreeAvg = useMemo(() => {
+    const empty = { qualitySchool: 0, qualityGraduation: 0, disciplineMorality: 0, overall: 0 };
+    const yearMap = compareScoresByYear?.[SCORE_YEAR_PREVIOUS];
+    if (!yearMap || !schools.length) return empty;
+    const rows = schools
+      .map((s) => yearMap[String(s.school_id)]?.three)
+      .filter(Boolean) as { qualitySchool: number; qualityGraduation: number; disciplineMorality: number; overall: number }[];
+    if (!rows.length) return empty;
+    const avg = (pick: (r: (typeof rows)[0]) => number) =>
+      rows.reduce((a, r) => a + pick(r), 0) / rows.length;
+    return {
+      qualitySchool: avg((r) => r.qualitySchool),
+      qualityGraduation: avg((r) => r.qualityGraduation),
+      disciplineMorality: avg((r) => r.disciplineMorality),
+      overall: avg((r) => r.overall),
+    };
+  }, [compareScoresByYear, schools]);
+
+  const prevYearFiveAvg = useMemo(() => {
+    const yearMap = compareScoresByYear?.[SCORE_YEAR_PREVIOUS];
+    if (!yearMap || !schools.length) return STRATEGY_LABELS.map(() => 0);
+    const rows = schools
+      .map((s) => yearMap[String(s.school_id)]?.sms)
+      .filter(Boolean) as NonNullable<(typeof yearMap)[string]>['sms'][];
+    if (!rows.length) return STRATEGY_LABELS.map(() => 0);
+    return STRATEGY_LABELS.map((p) => rows.reduce((a, r) => a + (r[p.key] ?? 0), 0) / rows.length);
+  }, [compareScoresByYear, schools]);
+
+  const currYearLabel = scoreYearToBeLabel(SCORE_YEAR_CURRENT);
+  const prevYearLabel = scoreYearToBeLabel(SCORE_YEAR_PREVIOUS);
 
   const statusColors = DEV_STATUS_ORDER.map((k) => DEV_STATUS[k].color);
 
@@ -258,65 +300,90 @@ export function StaffDashboardClient({
         </div>
       ) : (
         <>
-          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-            <section className="ed-card p-4">
-              <h2 className="ed-section-title text-base m-0 mb-3">สัดส่วนสถานะการพัฒนา</h2>
-              <div style={{ height: 240 }}>
-                <Doughnut
-                  data={statusDonut}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { position: 'bottom' } },
-                  }}
-                />
-              </div>
-            </section>
-            <section className="ed-card p-4">
-              <h2 className="ed-section-title text-base m-0 mb-3">จำนวนตามสถานะ</h2>
-              <div style={{ height: 240 }}>
-                <Bar
-                  data={statusBar}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
-                  }}
-                />
-              </div>
-            </section>
-          </div>
+          {isSuperOverseer ? (
+            <SuperOverseerComparePanel
+              schools={schools}
+              scoresByYear={compareScoresByYear}
+            />
+          ) : (
+            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+              <section className="ed-card p-4">
+                <h2 className="ed-section-title text-base m-0 mb-3">สัดส่วนสถานะการพัฒนา</h2>
+                <div style={{ height: 240 }}>
+                  <Doughnut
+                    data={statusDonut}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: { legend: { position: 'bottom' } },
+                    }}
+                  />
+                </div>
+              </section>
+              <section className="ed-card p-4">
+                <h2 className="ed-section-title text-base m-0 mb-3">จำนวนตามสถานะ</h2>
+                <div style={{ height: 240 }}>
+                  <Bar
+                    data={statusBar}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: { legend: { display: false } },
+                      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                    }}
+                  />
+                </div>
+              </section>
+            </div>
+          )}
 
           <section className="ed-card p-4 space-y-4 schools-list-panel schools-list-panel--three">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="ed-section-title text-base m-0">3 เสาหลัก</h2>
-                <p className="text-sm text-slate-500 m-0 mt-1">เปรียบเทียบกับค่าเฉลี่ยทั้งประเทศ</p>
+                <p className="text-sm text-slate-500 m-0 mt-1">
+                  {isSuperOverseer
+                    ? `เปรียบเทียบปี ${prevYearLabel} กับปี ${currYearLabel}`
+                    : 'เปรียบเทียบกับค่าเฉลี่ยทั้งประเทศ'}
+                </p>
               </div>
               <div className="text-right">
                 <div className="text-2xl font-extrabold text-tm-blue">{threeAvg.overall.toFixed(1)}</div>
-                <div className="text-xs text-slate-500">เฉลี่ยในความดูแล / 100</div>
+                <div className="text-xs text-slate-500">
+                  {isSuperOverseer ? `ปี ${currYearLabel} · / 100` : 'เฉลี่ยในความดูแล / 100'}
+                </div>
               </div>
             </div>
             <DualRadarChart
-              labels={[
-                THREE_PILLAR_LABELS.qualitySchool,
-                THREE_PILLAR_LABELS.qualityGraduation,
-                THREE_PILLAR_LABELS.disciplineMorality,
-              ]}
+              labels={
+                isSuperOverseer
+                  ? ['เสาหลัก 1', 'เสาหลัก 2', 'เสาหลัก 3']
+                  : [
+                      THREE_PILLAR_LABELS.qualitySchool,
+                      THREE_PILLAR_LABELS.qualityGraduation,
+                      THREE_PILLAR_LABELS.disciplineMorality,
+                    ]
+              }
               schoolScores={[
                 threeAvg.qualitySchool,
                 threeAvg.qualityGraduation,
                 threeAvg.disciplineMorality,
               ]}
-              nationalScores={[
-                nationalThreeAvg.qualitySchool,
-                nationalThreeAvg.qualityGraduation,
-                nationalThreeAvg.disciplineMorality,
-              ]}
-              schoolLabel="เฉลี่ยในความดูแล"
-              nationalLabel="เฉลี่ยทั้งประเทศ"
+              nationalScores={
+                isSuperOverseer
+                  ? [
+                      prevYearThreeAvg.qualitySchool,
+                      prevYearThreeAvg.qualityGraduation,
+                      prevYearThreeAvg.disciplineMorality,
+                    ]
+                  : [
+                      nationalThreeAvg.qualitySchool,
+                      nationalThreeAvg.qualityGraduation,
+                      nationalThreeAvg.disciplineMorality,
+                    ]
+              }
+              schoolLabel={isSuperOverseer ? `ปี ${currYearLabel}` : 'เฉลี่ยในความดูแล'}
+              nationalLabel={isSuperOverseer ? `ปี ${prevYearLabel}` : 'เฉลี่ยทั้งประเทศ'}
               maxScale={100}
               tickValues={[0, 50, 100]}
             />
@@ -329,12 +396,21 @@ export function StaffDashboardClient({
                 ] as const
               ).map(([key, label, color]) => (
                 <div key={key} className="rounded-xl border border-slate-100 bg-white/80 p-3 text-center">
-                  <div className="text-xs font-semibold text-slate-500 mb-1">{label}</div>
+                  <div className="text-xs font-semibold text-slate-600 mb-1 leading-snug">{label}</div>
                   <div className="text-xl font-extrabold" style={{ color }}>
                     {threeAvg[key].toFixed(1)}
+                    {isSuperOverseer ? (
+                      <span className="text-xs font-semibold text-slate-400 ml-1">
+                        ปี {currYearLabel}
+                      </span>
+                    ) : null}
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-1">
-                    ประเทศ {nationalThreeAvg[key].toFixed(1)}
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    {isSuperOverseer
+                      ? `ปี ${prevYearLabel}: ${prevYearThreeAvg[key].toFixed(1)} · Δ ${(
+                          threeAvg[key] - prevYearThreeAvg[key]
+                        ).toFixed(1)}`
+                      : `ประเทศ ${nationalThreeAvg[key].toFixed(1)}`}
                   </div>
                 </div>
               ))}
@@ -345,19 +421,25 @@ export function StaffDashboardClient({
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="ed-section-title text-base m-0">ผลการประเมินตามระบบ SMS</h2>
-                <p className="text-sm text-slate-500 m-0 mt-1">เปรียบเทียบกับค่าเฉลี่ยทั้งประเทศ</p>
+                <p className="text-sm text-slate-500 m-0 mt-1">
+                  {isSuperOverseer
+                    ? `เปรียบเทียบปี ${prevYearLabel} กับปี ${currYearLabel}`
+                    : 'เปรียบเทียบกับค่าเฉลี่ยทั้งประเทศ'}
+                </p>
               </div>
               <div className="text-right">
                 <div className="text-2xl font-extrabold text-tm-blue">{fiveOverall.toFixed(2)}</div>
-                <div className="text-xs text-slate-500">เฉลี่ยในความดูแล / 5.00</div>
+                <div className="text-xs text-slate-500">
+                  {isSuperOverseer ? `ปี ${currYearLabel} · / 5.00` : 'เฉลี่ยในความดูแล / 5.00'}
+                </div>
               </div>
             </div>
             <DualRadarChart
               labels={STRATEGY_LABELS.map((p) => p.label.replace(/^ด้าน/, ''))}
               schoolScores={fiveAvg}
-              nationalScores={nationalFiveAvg}
-              schoolLabel="เฉลี่ยในความดูแล"
-              nationalLabel="เฉลี่ยทั้งประเทศ"
+              nationalScores={isSuperOverseer ? prevYearFiveAvg : nationalFiveAvg}
+              schoolLabel={isSuperOverseer ? `ปี ${currYearLabel}` : 'เฉลี่ยในความดูแล'}
+              nationalLabel={isSuperOverseer ? `ปี ${prevYearLabel}` : 'เฉลี่ยทั้งประเทศ'}
               maxScale={5}
             />
             <div className="grid gap-3 sm:grid-cols-5">
@@ -368,7 +450,9 @@ export function StaffDashboardClient({
                     {(fiveAvg[i] ?? 0).toFixed(2)}
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1">
-                    ประเทศ {(nationalFiveAvg[i] ?? 0).toFixed(2)}
+                    {isSuperOverseer
+                      ? `ปี ${prevYearLabel} ${(prevYearFiveAvg[i] ?? 0).toFixed(2)}`
+                      : `ประเทศ ${(nationalFiveAvg[i] ?? 0).toFixed(2)}`}
                   </div>
                 </div>
               ))}

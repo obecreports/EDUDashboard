@@ -10,6 +10,7 @@ import {
   type SchoolPillarScoreRow,
 } from '@/lib/supabase/school-pillars';
 import {
+  normalizeScoreYearCe,
   pickScoreRowExactYear,
   pickScoreRowForYear,
   SCORE_YEAR_CURRENT,
@@ -181,10 +182,16 @@ async function loadAllSchools(): Promise<SchoolFull[]> {
   });
   const scoreMap = new Map<string, Record<string, unknown>>();
   for (const [id, rows] of scoreBySchool) {
-    const picked = pickScoreRowForYear(
-      rows as { school_year?: string | null }[],
-      SCORE_YEAR_CURRENT
-    );
+    // Exact current year first; fall back only when no 2026/current row exists
+    const picked =
+      pickScoreRowExactYear(
+        rows as { school_year?: string | null }[],
+        SCORE_YEAR_CURRENT
+      ) ??
+      pickScoreRowForYear(
+        rows as { school_year?: string | null }[],
+        SCORE_YEAR_CURRENT
+      );
     if (picked) scoreMap.set(id, picked as Record<string, unknown>);
   }
 
@@ -265,7 +272,7 @@ const SCHOOLS_REVALIDATE = 120;
 
 /** Deduped per-request + ISR cache across navigations */
 export const fetchSchools = cache(async (): Promise<SchoolFull[]> => {
-  return unstable_cache(loadAllSchools, ['schools-legacy-star-v5-year', SCORE_YEAR_CURRENT], {
+  return unstable_cache(loadAllSchools, ['schools-legacy-star-v6-year', SCORE_YEAR_CURRENT], {
     revalidate: SCHOOLS_REVALIDATE,
     tags: ['schools', 'school-pillars'],
   })();
@@ -284,3 +291,182 @@ export const fetchSchoolById = cache(async (schoolId: string | number): Promise<
 });
 
 export const fetchGovDomains = cache(async () => loadGovDomainsRaw());
+
+export type SchoolCompareYearScores = {
+  three: ThreePillarScores;
+  sms: PillarScores;
+  overall: number;
+};
+
+/** @deprecated use SchoolCompareYearScores */
+export type SchoolComparePrevScores = SchoolCompareYearScores;
+
+/** Year → school_id → scores (exact year rows only; no fallback). */
+export type CompareScoresByYear = Record<string, Record<string, SchoolCompareYearScores>>;
+
+/** CE year + Buddhist Era string variants for DB filters. */
+function yearFilterValues(ce: string): string[] {
+  const n = Number(ce);
+  if (!Number.isFinite(n)) return [ce];
+  return [String(n), String(n + 543)];
+}
+
+function numScore(v: unknown): number {
+  const n = parseFloat(String(v ?? '').replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** SMS angles from School_Score G01–G05 (same mapping as school detail). */
+function smsFromSchoolScoreRow(score: Record<string, unknown>): {
+  sms: PillarScores;
+  overall: number;
+} {
+  const sms: PillarScores = {
+    learner: numScore(score.G01 ?? score.g01),
+    participation: numScore(score.G02 ?? score.g02),
+    teacherAdmin: numScore(score.G03 ?? score.g03),
+    curriculum: numScore(score.G04 ?? score.g04),
+    infrastructure: numScore(score.G05 ?? score.g05),
+  };
+  const overallFromDb = numScore(score.overall);
+  const overall =
+    overallFromDb > 0
+      ? overallFromDb
+      : (sms.learner +
+          sms.participation +
+          sms.teacherAdmin +
+          sms.curriculum +
+          sms.infrastructure) /
+        5;
+  return { sms, overall: Number.isFinite(overall) ? overall : 0 };
+}
+
+/** 3 pillars from school_pillar_scores pillar_1–pillar_3 only (no indicator fallback). */
+function threeFromPillarRow(row: SchoolPillarScoreRow | null | undefined): ThreePillarScores {
+  if (!row) return { ...EMPTY_THREE_PILLAR };
+  const qualitySchool = numScore(row.pillar_1);
+  const qualityGraduation = numScore(row.pillar_2);
+  const disciplineMorality = numScore(row.pillar_3);
+  const overallFromDb = numScore(row.overall);
+  const overall =
+    overallFromDb > 0
+      ? overallFromDb
+      : qualitySchool || qualityGraduation || disciplineMorality
+        ? Math.round(((qualitySchool + qualityGraduation + disciplineMorality) / 3) * 10) / 10
+        : 0;
+  return { qualitySchool, qualityGraduation, disciplineMorality, overall };
+}
+
+const EMPTY_SMS: PillarScores = {
+  learner: 0,
+  participation: 0,
+  teacherAdmin: 0,
+  curriculum: 0,
+  infrastructure: 0,
+};
+
+/** Paginate Supabase reads (default max 1000 rows/request). */
+async function fetchAllPaged<T extends Record<string, unknown>>(
+  queryFactory: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
+): Promise<T[]> {
+  const pageSize = 1000;
+  const out: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await queryFactory(from, from + pageSize - 1);
+    if (error) break;
+    const batch = data ?? [];
+    out.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+  return out;
+}
+
+/**
+ * Load compare maps for one CE year from:
+ * - school_pillar_scores: pillar_1..pillar_3 + school_year
+ * - School_Score: G01..G05 + school_year
+ */
+async function loadCompareScoresForYear(
+  yearCe: string
+): Promise<Record<string, SchoolCompareYearScores>> {
+  const supabase = createAnonClient();
+  const yearVals = yearFilterValues(yearCe);
+  const out: Record<string, SchoolCompareYearScores> = {};
+
+  const [smsRows, pillarRows] = await Promise.all([
+    fetchAllPaged<Record<string, unknown>>(async (from, to) =>
+      supabase
+        .from('School_Score')
+        .select('school_id, school_year, G01, G02, G03, G04, G05, overall')
+        .in('school_year', yearVals)
+        .range(from, to)
+    ),
+    fetchAllPaged<SchoolPillarScoreRow & Record<string, unknown>>(async (from, to) =>
+      supabase
+        .from('school_pillar_scores')
+        .select('school_id, school_year, pillar_1, pillar_2, pillar_3, overall')
+        .in('school_year', yearVals)
+        .range(from, to)
+    ),
+  ]);
+
+  for (const row of smsRows) {
+    if (row.school_id == null) continue;
+    // Guard: only keep rows that normalize to this CE year
+    if (normalizeScoreYearCe(row.school_year as string | number | null) !== yearCe) continue;
+    const id = String(row.school_id);
+    const { sms, overall } = smsFromSchoolScoreRow(row);
+    const prev = out[id];
+    out[id] = {
+      three: prev?.three ?? { ...EMPTY_THREE_PILLAR },
+      sms,
+      overall,
+    };
+  }
+
+  for (const row of pillarRows) {
+    if (row.school_id == null) continue;
+    if (normalizeScoreYearCe(row.school_year) !== yearCe) continue;
+    const id = String(row.school_id);
+    const three = threeFromPillarRow(row);
+    const prev = out[id];
+    out[id] = {
+      three,
+      sms: prev?.sms ?? { ...EMPTY_SMS },
+      overall: prev?.overall ?? three.overall,
+    };
+  }
+
+  return out;
+}
+
+/**
+ * Exact-year SMS + 3-pillar maps for YoY compare (2024 + 2025).
+ * Paginates past Supabase 1000-row limit; filters by school_year (CE or BE).
+ */
+export const fetchCompareScoresByYear = cache(async (): Promise<CompareScoresByYear> => {
+  return unstable_cache(
+    async () => {
+      const [prev, curr] = await Promise.all([
+        loadCompareScoresForYear(SCORE_YEAR_PREVIOUS),
+        loadCompareScoresForYear(SCORE_YEAR_CURRENT),
+      ]);
+      return {
+        [SCORE_YEAR_PREVIOUS]: prev,
+        [SCORE_YEAR_CURRENT]: curr,
+      };
+    },
+    ['schools-compare-by-year-v5', SCORE_YEAR_CURRENT, SCORE_YEAR_PREVIOUS],
+    { revalidate: SCHOOLS_REVALIDATE, tags: ['schools', 'school-pillars'] }
+  )();
+});
+
+/** Previous year only — kept for callers; prefer fetchCompareScoresByYear. */
+export const fetchPreviousYearCompareScores = cache(
+  async (): Promise<Record<string, SchoolCompareYearScores>> => {
+    const byYear = await fetchCompareScoresByYear();
+    return byYear[SCORE_YEAR_PREVIOUS] ?? {};
+  }
+);

@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { getSessionProfile } from '@/lib/auth/session';
-import { fetchSchools } from '@/lib/supabase/schools';
+import { fetchCompareScoresByYear, fetchSchools } from '@/lib/supabase/schools';
 import { isFieldRole, schoolsInScope } from '@/lib/auth/scope';
+import { SCORE_YEAR_CURRENT, SCORE_YEAR_PREVIOUS } from '@/lib/scores/years';
 import { normalizeRole, ROLE_LABELS } from '@/lib/types';
 import { StaffDashboardClient } from '@/components/dashboard/StaffDashboardClient';
 import { ManagedSchoolsSkeleton } from '@/components/ui/PageSkeleton';
@@ -20,11 +21,20 @@ async function DashboardBody() {
   }
 
   const isSO = r === 'super_overseer';
-  const [all, calendarEvents, profiles, comments] = await Promise.all([
+  const [all, calendarEvents, profiles, comments, compareScoresByYear] = await Promise.all([
     fetchSchools().catch(() => []),
     listAllCookieCalendarEvents().catch(() => []),
     isSO ? fetchAllUserProfiles().catch(() => []) : Promise.resolve([]),
     isSO ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
+    isSO
+      ? fetchCompareScoresByYear().catch((err) => {
+          console.error('[dashboard] fetchCompareScoresByYear failed', err);
+          return {
+            [SCORE_YEAR_PREVIOUS]: {},
+            [SCORE_YEAR_CURRENT]: {},
+          };
+        })
+      : Promise.resolve({}),
   ]);
   const scoped = schoolsInScope(profile, all);
 
@@ -75,6 +85,7 @@ async function DashboardBody() {
       activityPeople={activityPeople}
       activitySchools={activitySchools}
       activityReports={activityReports}
+      compareScoresByYear={isSO ? compareScoresByYear : undefined}
     />
   );
 }

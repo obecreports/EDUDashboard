@@ -634,7 +634,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
   const totalComplete = countCompleteEvents(filteredEvents, filteredReports);
 
   return (
-    <section className="ed-card p-3 space-y-2 so-activity so-activity--compact">
+    <section className="ed-card p-4 space-y-3 so-activity">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="ed-section-title text-base m-0 flex items-center gap-2">

@@ -2688,43 +2688,45 @@ a {
   background: #f3ead8;
 }
 .so-activity {
-  font-size: 0.72rem;
+  font-size: 0.9rem;
+  font-family: inherit;
 }
 .so-activity.so-activity--compact {
-  padding: 0.55rem 0.65rem !important;
-  gap: 0.4rem !important;
+  padding: 1rem 1.1rem !important;
+  gap: 0.75rem !important;
 }
 .so-activity .ed-section-title {
-  font-size: 0.8rem !important;
+  font-size: 1rem !important;
+  font-weight: 800;
 }
 .so-activity .ed-section-title svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
 }
 .so-activity__kpis {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 0.45rem;
 }
 .so-activity__kpis > div,
 .so-activity__kpis .so-metric {
-  min-width: 2.8rem;
-  padding: 0.15rem 0.3rem;
-  border-radius: 0.35rem;
+  min-width: 4.2rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 0.45rem;
   background: var(--tm-gold-50);
   border: 1px solid var(--tm-gold);
   display: grid;
-  gap: 0;
+  gap: 0.1rem;
 }
 .so-activity__kpis strong,
 .so-activity__kpis .so-metric strong {
-  font-size: 0.72rem;
+  font-size: 1.05rem;
   color: var(--tm-blue);
-  line-height: 1.1;
+  line-height: 1.15;
 }
 .so-activity__kpis span,
 .so-activity__kpis .so-metric span {
-  font-size: 0.5rem;
+  font-size: 0.72rem;
   color: var(--text-secondary);
   font-weight: 600;
 }
@@ -2783,12 +2785,12 @@ a {
   background: var(--tm-gold-50);
 }
 .so-metric strong {
-  font-size: 0.68rem;
+  font-size: 0.9rem;
   color: var(--tm-blue);
-  line-height: 1.1;
+  line-height: 1.15;
 }
 .so-metric span {
-  font-size: 0.48rem;
+  font-size: 0.68rem;
   font-weight: 700;
   color: var(--text-secondary);
 }
@@ -2873,14 +2875,14 @@ a {
   gap: 0;
 }
 .so-tree__main strong {
-  font-size: 0.7rem;
+  font-size: 0.88rem;
   color: var(--tm-blue);
-  line-height: 1.2;
+  line-height: 1.25;
 }
 .so-tree__meta {
-  font-size: 0.55rem;
+  font-size: 0.75rem;
   color: var(--text-secondary);
-  line-height: 1.2;
+  line-height: 1.25;
 }
 .so-tree__metrics {
   display: flex;
@@ -2893,8 +2895,8 @@ a {
   background: #fcfcfa;
 }
 .so-tree__last {
-  margin-left: 0.25rem;
-  font-size: 0.55rem;
+  margin-left: 0.35rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -2914,30 +2916,30 @@ a {
   gap: 0.3rem;
 }
 .so-activity__search {
-  max-width: 10rem;
-  min-height: 1.55rem;
-  font-size: 0.7rem;
+  max-width: 14rem;
+  min-height: 2rem;
+  font-size: 0.85rem;
   padding: 0.15rem 0.4rem;
 }
 .so-activity .score-mode-switch button,
 .so-track-switch button {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: 0.68rem;
-  padding: 0.2rem 0.5rem;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.75rem;
   white-space: nowrap;
 }
 .so-track-switch button svg {
   flex-shrink: 0;
 }
 .so-perf-legend {
-  font-size: 0.65rem !important;
+  font-size: 0.8rem !important;
   gap: 0.25rem !important;
 }
 .so-perf-chip {
-  font-size: 0.6rem !important;
-  padding: 0.08rem 0.35rem !important;
+  font-size: 0.72rem !important;
+  padding: 0.15rem 0.45rem !important;
 }
 .so-filter-dd {
   position: relative;
@@ -3113,17 +3115,17 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.72rem;
+  gap: 0.4rem;
+  font-size: 0.8rem;
   color: var(--text-secondary);
   font-weight: 600;
 }
 .so-perf-chip {
   display: inline-flex;
   align-items: center;
-  padding: 0.12rem 0.45rem;
+  padding: 0.15rem 0.5rem;
   border-radius: 999px;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 700;
   border: 1px solid transparent;
 }
@@ -4941,6 +4943,117 @@ body.nav-drawer-open {
   border-color: var(--tm-white-gold);
   background: linear-gradient(180deg, #f3ead8 0%, var(--tm-white-gold-50) 28%, #ffffff 62%);
   box-shadow: 0 0 0 1px rgba(197, 165, 114, 0.14);
+}
+
+/* Super Overseer comparison panel */
+.so-compare__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.75rem;
+}
+.so-compare__chip-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+.so-compare__chip-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-right: 0.15rem;
+}
+.so-compare__chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.so-compare__chip.is-active {
+  background: var(--tm-blue);
+  border-color: var(--tm-blue);
+  color: #fff;
+}
+.so-compare__chip--pillar.is-active {
+  background: var(--tm-white-gold-dark);
+  border-color: var(--tm-white-gold-dark);
+}
+.so-compare__chip--angle.is-active {
+  background: var(--tm-red-gold-dark);
+  border-color: var(--tm-red-gold-dark);
+}
+.so-compare__place {
+  min-width: 12rem;
+}
+.so-compare__charts {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+.so-compare__chart-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 0.75rem);
+  background: #fff;
+  padding: 1rem 1.1rem 0.85rem;
+}
+.so-compare__chart-card--pillars {
+  border-color: var(--tm-white-gold);
+  background: linear-gradient(180deg, var(--tm-white-gold-50) 0%, #fff 55%);
+}
+.so-compare__chart-card--sms {
+  border-color: var(--tm-red-gold);
+  background: linear-gradient(180deg, var(--tm-red-gold-50) 0%, #fff 55%);
+}
+.so-compare__chart-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--tm-blue);
+}
+.so-compare__chart-hint {
+  margin: 0.2rem 0 0.65rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.so-compare__chart-body {
+  height: 320px;
+}
+.so-compare__legend-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.so-compare__legend-key li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+}
+.so-compare__legend-swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 0.2rem;
+  flex-shrink: 0;
+}
+.so-compare__legend-code {
+  font-weight: 800;
+  color: var(--tm-blue);
+}
+.so-compare__legend-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14rem;
 }
 .schools-list-panel--guest {
   border-color: #e2e8f0;

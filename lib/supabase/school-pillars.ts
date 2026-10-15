@@ -156,13 +156,12 @@ export function indicatorScoresFromRow(
 /**
  * Fetch school_pillar_scores for one data year (default = live year).
  * Map key = school_id. Empty if table missing / unreachable.
- * Previous-year requests use exact match only (no fallback to other years).
+ * Exact year only (no fallback) so YoY never mixes 2025/2026 rows.
  */
 export async function fetchAllPillarScores(
   schoolYear: string = SCORE_YEAR_CURRENT
 ): Promise<Map<string, SchoolPillarScoreRow>> {
   const out = new Map<string, SchoolPillarScoreRow>();
-  const exactOnly = schoolYear === SCORE_YEAR_PREVIOUS;
   try {
     const supabase = createAnonClient();
     const { data, error } = await supabase.from('school_pillar_scores').select('*');
@@ -177,9 +176,7 @@ export async function fetchAllPillarScores(
       bySchool.set(id, list);
     }
     for (const [id, rows] of bySchool) {
-      const picked = exactOnly
-        ? pickScoreRowExactYear(rows, schoolYear)
-        : pickScoreRowForYear(rows, schoolYear);
+      const picked = pickScoreRowExactYear(rows, schoolYear);
       if (picked) out.set(id, picked);
     }
   } catch {

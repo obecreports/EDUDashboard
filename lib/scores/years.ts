@@ -7,10 +7,10 @@
  */
 
 /** Live score year stored in DB (A.D.). */
-export const SCORE_YEAR_CURRENT = '2026';
+export const SCORE_YEAR_CURRENT = '2025';
 
 /** Prior year for YoY charts when rows exist (A.D.). */
-export const SCORE_YEAR_PREVIOUS = '2025';
+export const SCORE_YEAR_PREVIOUS = '2024';
 
 /** Normalize any stored year to CE string. Accepts CE or legacy BE (>2400). */
 export function normalizeScoreYearCe(
