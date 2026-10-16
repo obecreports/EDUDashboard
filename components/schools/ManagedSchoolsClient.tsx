@@ -484,9 +484,9 @@ export function ManagedSchoolsClient({
               </button>
             );
           })}
-          <div className="status-card managed-status-quote">
+          {/* <div className="status-card managed-status-quote">
             ร่วมกันสนับสนุน ให้โรงเรียนก้าวไปข้างหน้า
-          </div>
+          </div> */}
         </div>
 
         <div className="ed-managed-layout ed-managed-layout--stack">

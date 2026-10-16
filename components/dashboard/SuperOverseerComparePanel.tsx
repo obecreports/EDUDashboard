@@ -448,8 +448,8 @@ export function SuperOverseerComparePanel({
           ))}
         </div>
 
-        <div className="so-compare__chip-group" role="group" aria-label="5 มุม SMS">
-          <span className="so-compare__chip-label">5 มุม</span>
+        <div className="so-compare__chip-group" role="group" aria-label="SMS 5 ด้าน">
+          <span className="so-compare__chip-label">SMS 5 ด้าน</span>
           {STRATEGY_LABELS.map((s) => (
             <button
               key={s.key}
@@ -478,7 +478,7 @@ export function SuperOverseerComparePanel({
         </div>
 
         <div className="so-compare__chart-card">
-          <h3 className="so-compare__chart-title">เปรียบเทียบจำนวนบุคลากร</h3>
+          <h3 className="so-compare__chart-title">เปรียบเทียบจำนวนบุคลากร (ครู)</h3>
           <p className="so-compare__chart-hint">
             แยกตามโรงเรียน · คลิกสีในตำนานเพื่อแสดง/ซ่อน
           </p>
@@ -498,7 +498,7 @@ export function SuperOverseerComparePanel({
         </div>
 
         <div className="so-compare__chart-card so-compare__chart-card--sms">
-          <h3 className="so-compare__chart-title">เปรียบเทียบคะแนน 5 มุม (SMS)</h3>
+          <h3 className="so-compare__chart-title">เปรียบเทียบคะแนน SMS 5 ด้าน</h3>
           <p className="so-compare__chart-hint">
             แยกตามโรงเรียน × ปี · / 5 · คลิกสีในตำนานเพื่อแสดง/ซ่อน
           </p>
