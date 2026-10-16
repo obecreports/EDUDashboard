@@ -17,6 +17,8 @@ export interface MockUserSeed {
   id: string;
   email: string;
   full_name: string;
+  /** Thai salutation / rank (คำนำหน้า) */
+  name_prefix?: string | null;
   position: string;
   role: UserRole;
   assigned_zone: string | null;
@@ -35,97 +37,120 @@ export interface MockUserSeed {
  * Stable UAT UUIDs — must match supabase/migrations/007_uat_seed_users.sql
  * (auth.users + user_profiles). Schedule / report FKs use these ids.
  */
+/** Shared UAT / mock first-login password */
+export const MOCK_LOGIN_PASSWORD = 'login1234';
+
 export const UAT_USER_IDS = {
   staff: 'a1111111-1111-4111-8111-111111111101',
   staff2: 'a1111111-1111-4111-8111-111111111102',
+  /** AS01 · อาสาสมัคร (demo; assists OS10) */
+  volunteer: 'a1111111-1111-4111-8111-111111111103',
+  /** @deprecated use volunteer — same UUID */
   overseer: 'a1111111-1111-4111-8111-111111111103',
-  /** พลเอกดาว์พงษ์ รัตนสุวรรณ */
+  /** sirdawpong · พลเอกดาว์พงษ์ รัตนสุวรรณ */
   super_overseer: 'a1111111-1111-4111-8111-111111111104',
-  /** ดร.ธนุ วงษ์จินดา */
+  /** sirthanu · ดร.ธนุ วงษ์จินดา */
   super_overseer2: 'a1111111-1111-4111-8111-111111111107',
   admin: 'a1111111-1111-4111-8111-111111111105',
   super_admin: 'a1111111-1111-4111-8111-111111111106',
+  /** OS01–OS14 · องคมนตรี (migration 014) */
+  os01: 'a1111111-1111-4111-8111-111111111201',
+  os02: 'a1111111-1111-4111-8111-111111111202',
+  os03: 'a1111111-1111-4111-8111-111111111203',
+  os04: 'a1111111-1111-4111-8111-111111111204',
+  os05: 'a1111111-1111-4111-8111-111111111205',
+  os06: 'a1111111-1111-4111-8111-111111111206',
+  os07: 'a1111111-1111-4111-8111-111111111207',
+  os08: 'a1111111-1111-4111-8111-111111111208',
+  os09: 'a1111111-1111-4111-8111-111111111209',
+  os10: 'a1111111-1111-4111-8111-111111111210',
+  os11: 'a1111111-1111-4111-8111-111111111211',
+  os12: 'a1111111-1111-4111-8111-111111111212',
+  os13: 'a1111111-1111-4111-8111-111111111213',
+  os14: 'a1111111-1111-4111-8111-111111111214',
 } as const;
 
 /**
- * Demo / UAT accounts — passwords verified in-app; profiles live in Supabase.
- * Admin can reassign geo via /admin/domain after seed.
+ * Demo / UAT accounts — `email` stores short login ID (not a mailbox).
+ * Password: MOCK_LOGIN_PASSWORD. Profiles also live in Supabase (014/015).
  */
 export const MOCK_USER_SEEDS: MockUserSeed[] = [
   {
     id: UAT_USER_IDS.staff,
-    email: 'staff@coned.local',
+    email: 'staff01',
     full_name: 'สมชาย ใจดี',
     position: 'ศึกษานิเทศก์',
     role: 'staff',
     assigned_zone: null,
     assigned_provinces: [],
     assigned_districts: [],
-    reports_to: UAT_USER_IDS.overseer,
-    password: 'Staff123!',
+    reports_to: UAT_USER_IDS.volunteer,
+    password: MOCK_LOGIN_PASSWORD,
     tempPassword: null,
     mustChangePassword: false,
     birthday: '1990-10-10',
   },
   {
     id: UAT_USER_IDS.staff2,
-    email: 'staff2@coned.local',
+    email: 'staff02',
     full_name: 'มานี รักงาน',
     position: 'ศึกษานิเทศก์',
     role: 'staff',
     assigned_zone: null,
     assigned_provinces: [],
     assigned_districts: [],
-    reports_to: UAT_USER_IDS.overseer,
-    password: 'Staff123!',
+    reports_to: UAT_USER_IDS.volunteer,
+    password: MOCK_LOGIN_PASSWORD,
     tempPassword: null,
     mustChangePassword: false,
   },
   {
-    id: UAT_USER_IDS.overseer,
-    email: 'overseer@coned.local',
+    id: UAT_USER_IDS.volunteer,
+    email: 'AS01',
     full_name: 'วิภาดา ศรีสุข',
-    position: 'อาสาสมัคร/องคมนตรี',
-    role: 'overseer',
+    position: 'อาสาสมัคร',
+    role: 'volunteer',
     assigned_zone: null,
     assigned_provinces: ['กาญจนบุรี'],
     assigned_districts: [],
-    reports_to: UAT_USER_IDS.super_overseer,
-    password: 'Overseer123!',
+    reports_to: UAT_USER_IDS.os10,
+    password: MOCK_LOGIN_PASSWORD,
     tempPassword: null,
     mustChangePassword: false,
   },
   {
     id: UAT_USER_IDS.super_overseer,
-    email: 'dawpong@coned.local',
-    full_name: 'พลเอกดาว์พงษ์ รัตนสุวรรณ',
-    position: 'องคมนตรี',
-    role: 'super_overseer',
-    assigned_zone: null,
-    assigned_provinces: [],
-    assigned_districts: [],
-    reports_to: null,
-    password: 'Super123!',
-    tempPassword: null,
-    mustChangePassword: false,
-  },
-  {
-    id: UAT_USER_IDS.super_overseer2,
-    email: 'thanu@coned.local',
-    full_name: 'ดร.ธนุ วงษ์จินดา',
+    email: 'sirdawpong',
+    name_prefix: 'พลเอก',
+    full_name: 'ดาว์พงษ์ รัตนสุวรรณ',
     position: 'ผู้กำกับดูแลสูงสุด',
     role: 'super_overseer',
     assigned_zone: null,
     assigned_provinces: [],
     assigned_districts: [],
     reports_to: null,
-    password: 'Super123!',
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.super_overseer2,
+    email: 'sirthanu',
+    name_prefix: 'ดร.',
+    full_name: 'ธนุ วงษ์จินดา',
+    position: 'ผู้กำกับดูแลสูงสุด',
+    role: 'super_overseer',
+    assigned_zone: null,
+    assigned_provinces: [],
+    assigned_districts: [],
+    reports_to: null,
+    password: MOCK_LOGIN_PASSWORD,
     tempPassword: null,
     mustChangePassword: false,
   },
   {
     id: UAT_USER_IDS.admin,
-    email: 'admin@coned.local',
+    email: 'admin',
     full_name: 'อรรถพล ระบบดี',
     position: 'ผู้ดูแลระบบ',
     role: 'admin',
@@ -133,13 +158,13 @@ export const MOCK_USER_SEEDS: MockUserSeed[] = [
     assigned_provinces: [],
     assigned_districts: [],
     reports_to: null,
-    password: 'Admin123!',
+    password: MOCK_LOGIN_PASSWORD,
     tempPassword: null,
     mustChangePassword: false,
   },
   {
     id: UAT_USER_IDS.super_admin,
-    email: 'superadmin@coned.local',
+    email: 'superadmin',
     full_name: 'สุดา ควบคุมทั้งหมด',
     position: 'ผู้ดูแลระบบสูงสุด',
     role: 'super_admin',
@@ -147,11 +172,236 @@ export const MOCK_USER_SEEDS: MockUserSeed[] = [
     assigned_provinces: [],
     assigned_districts: [],
     reports_to: null,
-    password: 'SuperAdmin123!',
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  // —— 14 องคมนตรี (OS01–OS14) ——
+  {
+    id: UAT_USER_IDS.os01,
+    email: 'OS01',
+    name_prefix: 'นาย',
+    full_name: 'อรรถนิติ ดิษฐอำนาจ',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['ฉะเชิงเทรา', 'สระแก้ว'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os02,
+    email: 'OS02',
+    name_prefix: 'พลอากาศเอก',
+    full_name: 'จอม รุ่งสว่าง',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['บุรีรัมย์', 'ศรีสะเกษ', 'สุรินทร์'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os03,
+    email: 'OS03',
+    name_prefix: 'นาย',
+    full_name: 'นุรักษ์ มาประณีต',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['เชียงใหม่', 'เชียงราย', 'แม่ฮ่องสอน'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os04,
+    email: 'OS04',
+    name_prefix: 'พลเอก',
+    full_name: 'บัณฑิตย์ มลายอริศูนย์',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['ลพบุรี'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os05,
+    email: 'OS05',
+    name_prefix: 'นาย',
+    full_name: 'เศรษฐพุฒิ สุทธิวาทนฤพุฒิ',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['มุกดาหาร', 'สกลนคร'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os06,
+    email: 'OS06',
+    name_prefix: 'หม่อมหลวง',
+    full_name: 'ปนัดดา ดิศกุล',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['ราชบุรี', 'อุบลราชธานี'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os07,
+    email: 'OS07',
+    name_prefix: 'พลอากาศเอก',
+    full_name: 'ชลิต พุกผาสุข',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['เพชรบุรี', 'ประจวบคีรีขันธ์'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os08,
+    email: 'OS08',
+    name_prefix: 'พลเอก',
+    full_name: 'ประยุทธ์ จันทร์โอชา',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['แพร่', 'น่าน', 'พะเยา'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os09,
+    email: 'OS09',
+    name_prefix: 'พลเอก',
+    full_name: 'ดาว์พงษ์ รัตนสุวรรณ',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['พระนครศรีอยุธยา'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os10,
+    email: 'OS10',
+    name_prefix: 'พลเอก',
+    full_name: 'ไพบูลย์ คุ้มฉายา',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['กาญจนบุรี', 'สุพรรณบุรี', 'อุทัยธานี'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os11,
+    email: 'OS11',
+    name_prefix: 'พลเอก',
+    full_name: 'กัมปนาท รุดดิษฐ์',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['กำแพงเพชร', 'พิษณุโลก'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os12,
+    email: 'OS12',
+    name_prefix: 'พลเรือเอก',
+    full_name: 'พงษ์เทพ หนูเทพ',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['ตาก', 'สุโขทัย', 'อุตรดิตถ์'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os13,
+    email: 'OS13',
+    name_prefix: 'นาย',
+    full_name: 'อำพน กิตติอำพน',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['หนองบัวลำภู', 'อุดรธานี'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.os14,
+    email: 'OS14',
+    name_prefix: 'พลเอก',
+    full_name: 'เฉลิมชัย สิทธิสาท',
+    position: 'องคมนตรี',
+    role: 'overseer',
+    assigned_zone: null,
+    assigned_provinces: ['นราธิวาส', 'ปัตตานี', 'ยะลา', 'สงขลา'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
     tempPassword: null,
     mustChangePassword: false,
   },
 ];
+
+/** Normalize login ID for lookup (case-insensitive; strips @domain if pasted). */
+export function normalizeLoginId(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const local = trimmed.includes('@') ? trimmed.split('@')[0]! : trimmed;
+  return local.trim().toLowerCase();
+}
+
+export function loginIdsMatch(storedEmail: string, input: string): boolean {
+  const a = normalizeLoginId(storedEmail);
+  const b = normalizeLoginId(input);
+  return Boolean(a) && a === b;
+}
 
 /** True when id is a real UUID suitable for Supabase FKs (UAT / production). */
 export function isDbUserId(id: string | null | undefined): boolean {
@@ -181,6 +431,16 @@ export interface AuthSession {
   reports_to: string | null;
   mustChangePassword: boolean;
   authVia: 'password' | 'temp';
+  /** ms epoch — refreshed on activity; used for idle logout */
+  lastActiveAt?: number;
+}
+
+/** Idle logout: 15 min for staff/overseer/volunteer/admin; 30 min for super_overseer */
+export const IDLE_MS_DEFAULT = 15 * 60 * 1000;
+export const IDLE_MS_SUPER_OVERSEER = 30 * 60 * 1000;
+
+export function idleTimeoutMs(role: UserRole | string | null | undefined): number {
+  return role === 'super_overseer' ? IDLE_MS_SUPER_OVERSEER : IDLE_MS_DEFAULT;
 }
 
 export type StoredUserProfile = {
@@ -273,9 +533,17 @@ export type StaffCalendarEvent = {
   activity: CalendarActivity;
   school_id: string | null;
   school_name: string | null;
+  /** Multi-school visit (same province); school_id is primary */
+  school_ids?: string[];
+  school_names?: string[];
   area_id: string | null;
   area_name: string | null;
   province: string | null;
+  /** Multi-select visit reasons; activity is primary/display */
+  visit_reasons?: string[];
+  /** Team members who see this on their calendar (includes booker) */
+  participant_ids?: string[];
+  group_id?: string | null;
   notes: string;
   created_at: string;
   status?: 'scheduled' | 'completed';
@@ -294,9 +562,32 @@ export function seedCredentials(): CredentialsMap {
   return map;
 }
 
+/**
+ * Cookie must NOT store full seed map (OS01–OS14 blows past ~2.4KB).
+ * Persist only non-seed users and seed accounts whose creds differ from seeds.
+ */
+export function credentialsOverridesOnly(map: CredentialsMap): CredentialsMap {
+  const seeds = seedCredentials();
+  const out: CredentialsMap = {};
+  for (const [id, state] of Object.entries(map)) {
+    const seed = seeds[id];
+    if (!seed) {
+      out[id] = state;
+      continue;
+    }
+    if (
+      state.password !== seed.password ||
+      state.tempPassword !== seed.tempPassword ||
+      Boolean(state.mustChangePassword) !== Boolean(seed.mustChangePassword)
+    ) {
+      out[id] = state;
+    }
+  }
+  return out;
+}
+
 export function findSeedByEmail(email: string): MockUserSeed | undefined {
-  const normalized = email.trim().toLowerCase();
-  return MOCK_USER_SEEDS.find((u) => u.email.toLowerCase() === normalized);
+  return MOCK_USER_SEEDS.find((u) => loginIdsMatch(u.email, email));
 }
 
 export function findSeedById(id: string): MockUserSeed | undefined {

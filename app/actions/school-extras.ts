@@ -17,6 +17,7 @@ import { isFieldRole } from '@/lib/auth/scope';
 import { normalizeRole } from '@/lib/types';
 import {
   insertSchoolStaffComment,
+  updateSchoolStaffComment,
   upsertSchoolSwot,
 } from '@/lib/supabase/school-swot';
 import { normalizeSchoolSwot } from '@/lib/swot/schema';
@@ -167,16 +168,45 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
     }))
     .filter((b) => b.text);
 
-  if (!calendarEventId) {
-    return { ok: false as const, error: 'ต้องเลือกรายการนัดหมายในปฏิทินก่อนบันทึกรายงาน' };
+  let onsiteReasons: string[] = [];
+  try {
+    onsiteReasons = (JSON.parse(String(formData.get('onsite_reasons') || '[]')) as unknown[])
+      .map((r) => String(r || '').trim())
+      .filter(Boolean);
+  } catch {
+    onsiteReasons = [];
   }
-  if (!schoolId || cleaned.length === 0) {
-    return { ok: false as const, error: 'กรุณากรอกความคิดเห็นอย่างน้อย 1 ข้อ' };
+
+  let visitorReasonMap: Record<string, string[]> = {};
+  try {
+    const raw = JSON.parse(String(formData.get('visitor_reason_map') || '{}')) as Record<
+      string,
+      unknown
+    >;
+    for (const [k, v] of Object.entries(raw)) {
+      if (Array.isArray(v)) {
+        visitorReasonMap[k] = v.map((x) => String(x).trim()).filter(Boolean);
+      }
+    }
+  } catch {
+    visitorReasonMap = {};
   }
+
+  const opsNotes = String(formData.get('ops_notes') || '').trim();
+
+  if (!schoolId) {
+    return { ok: false as const, error: 'กรุณาเลือกโรงเรียน' };
+  }
+
+  // 4-section comments are optional — allow empty body when onsite/ops present
+  const bodyBoxes =
+    cleaned.length > 0
+      ? cleaned
+      : [{ text: '', tags: [] as string[] }];
 
   const staffName = gate.profile.full_name || gate.profile.email || 'Staff';
   const baseMs = Date.now();
-  const inputs = cleaned.map((b, i) => {
+  const inputs = bodyBoxes.map((b, i) => {
     const created_at = reportDate
       ? `${reportDate}T${new Date(baseMs + i).toISOString().slice(11)}`
       : new Date(baseMs + i).toISOString();
@@ -198,8 +228,8 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
     }
 
     const comments = [];
-    for (let i = 0; i < cleaned.length; i++) {
-      const b = cleaned[i];
+    for (let i = 0; i < bodyBoxes.length; i++) {
+      const b = bodyBoxes[i]!;
       const db = await insertSchoolStaffComment({
         schoolId,
         staffId: gate.profile.id,
@@ -208,7 +238,10 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
         tags: b.tags,
         reportDate: reportDate || null,
         imageUrls: i === 0 ? imageUrls : [],
-        calendarEventId,
+        calendarEventId: calendarEventId || null,
+        onsiteReasons: i === 0 ? onsiteReasons : [],
+        visitorReasonMap: i === 0 ? visitorReasonMap : {},
+        opsNotes: i === 0 ? opsNotes : null,
       });
       if (!db.ok) return { ok: false as const, error: db.error };
       comments.push({ ...db.comment, tags: b.tags });
@@ -256,15 +289,44 @@ export async function updateSchoolCommentAction(formData: FormData) {
     return { ok: false as const, error: 'ข้อมูลไม่ครบ' };
   }
 
-  const updated = await updateSchoolComment(schoolId, commentId, gate.profile.id, {
+  // Prefer DB update (owner or team participant)
+  const db = await updateSchoolStaffComment({
+    commentId,
+    schoolId,
+    editorId: gate.profile.id,
     text,
     tags,
   });
-  if (!updated) return { ok: false as const, error: 'แก้ไขได้เฉพาะความคิดเห็นของตนเอง' };
+  if (db.ok) {
+    if (!isDbOnlyMode()) {
+      try {
+        await updateSchoolComment(schoolId, commentId, gate.profile.id, { text, tags });
+      } catch {
+        /* cookie mirror optional */
+      }
+    }
+    revalidatePath(`/schools/${schoolId}`);
+    revalidatePath('/reports');
+    return { ok: true as const, comment: db.comment };
+  }
 
-  revalidatePath(`/schools/${schoolId}`);
-  revalidatePath('/reports');
-  return { ok: true as const, comment: updated };
+  // Cookie fallback (owner-only match in store)
+  if (!isDbOnlyMode()) {
+    const updated = await updateSchoolComment(schoolId, commentId, gate.profile.id, {
+      text,
+      tags,
+    });
+    if (updated) {
+      revalidatePath(`/schools/${schoolId}`);
+      revalidatePath('/reports');
+      return { ok: true as const, comment: updated };
+    }
+  }
+
+  return {
+    ok: false as const,
+    error: db.error || 'แก้ไขได้เฉพาะเจ้าของรายงานหรือสมาชิกทีม',
+  };
 }
 
 export async function saveSchoolSwotAction(formData: FormData) {

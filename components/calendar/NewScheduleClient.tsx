@@ -3,10 +3,24 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
-import { createCalendarEventAction } from '@/app/actions/visits';
+import { ArrowLeft, X } from 'lucide-react';
+import {
+  createCalendarEventAction,
+  updateCalendarEventAction,
+} from '@/app/actions/visits';
 import { VISIT_ACTIVITIES } from '@/lib/visits/labels';
 import { ThaiDateField } from '@/components/ui/ThaiDateField';
+import { ROLE_LABELS, type UserRole } from '@/lib/types';
+
+export type ScheduleInitialEvent = {
+  id: string;
+  school_id: string | null;
+  date: string;
+  visit_reasons?: string[];
+  activity?: string;
+  participant_ids?: string[];
+  notes?: string;
+};
 
 type SchoolOpt = {
   id: string;
@@ -17,34 +31,82 @@ type SchoolOpt = {
   area_name: string;
 };
 
+type TeamOpt = {
+  id: string;
+  full_name: string;
+  role: UserRole;
+};
+
 function todayYmd() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function seedReasonsFromEvent(ev: ScheduleInitialEvent | null | undefined) {
+  const raw = ev?.visit_reasons?.length
+    ? ev.visit_reasons
+    : ev?.activity
+      ? [ev.activity]
+      : [VISIT_ACTIVITIES[0]];
+  const known = new Set<string>();
+  let other = '';
+  for (const r of raw) {
+    const t = String(r).trim();
+    if (!t) continue;
+    if ((VISIT_ACTIVITIES as readonly string[]).includes(t)) known.add(t);
+    else {
+      known.add('อื่นๆ');
+      if (!other) other = t;
+    }
+  }
+  if (!known.size) known.add(VISIT_ACTIVITIES[0]!);
+  return { known, other };
+}
+
 export function NewScheduleClient({
   schools,
+  teammates = [],
+  currentUserId,
+  currentUserRole,
   initialSchoolId = '',
   initialDate = '',
+  mode = 'create',
+  initialEvent = null,
 }: {
   schools: SchoolOpt[];
+  teammates?: TeamOpt[];
+  currentUserId: string;
+  currentUserRole: UserRole;
   initialSchoolId?: string;
   initialDate?: string;
+  mode?: 'create' | 'edit';
+  initialEvent?: ScheduleInitialEvent | null;
 }) {
   const router = useRouter();
-  const seed = schools.find((s) => s.id === initialSchoolId);
+  const isEdit = mode === 'edit' && Boolean(initialEvent?.id);
+  const schoolSeedId = initialEvent?.school_id || initialSchoolId;
+  const seed = schools.find((s) => s.id === schoolSeedId);
+  const isSo = currentUserRole === 'super_overseer';
+  const seeded = seedReasonsFromEvent(initialEvent);
   const [q, setQ] = useState(seed?.name ?? '');
   const [province, setProvince] = useState(seed?.province ?? '');
   const [district, setDistrict] = useState(seed?.district ?? '');
-  const [schoolId, setSchoolId] = useState(initialSchoolId);
-  const [date, setDate] = useState(
-    initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : todayYmd
-  );
-  const [activity, setActivity] = useState<string>(VISIT_ACTIVITIES[0]);
-  const [activityOther, setActivityOther] = useState('');
-  const [notes, setNotes] = useState('');
+  const [schoolId, setSchoolId] = useState(schoolSeedId || '');
+  const [date, setDate] = useState(() => {
+    const d = initialEvent?.date || initialDate;
+    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : todayYmd();
+  });
+  const [reasons, setReasons] = useState<Set<string>>(() => seeded.known);
+  const [activityOther, setActivityOther] = useState(seeded.other);
+  const [participantIds, setParticipantIds] = useState<Set<string>>(() => {
+    const ids = (initialEvent?.participant_ids ?? []).filter((id) => id !== currentUserId);
+    return new Set(ids);
+  });
+  const [notes, setNotes] = useState(initialEvent?.notes ?? '');
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
+
+  const selected = schools.find((s) => s.id === schoolId);
 
   const provinces = useMemo(() => {
     let list = schools;
@@ -73,53 +135,100 @@ export function NewScheduleClient({
     return list.sort((a, b) => a.name.localeCompare(b.name, 'th'));
   }, [schools, province, district, q]);
 
-  const selected =
-    filteredSchools.find((s) => s.id === schoolId) ?? schools.find((s) => s.id === schoolId);
+  const selectableTeammates = useMemo(
+    () =>
+      teammates.filter((t) => {
+        if (t.id === currentUserId) return false;
+        if (!isSo && t.role === 'super_overseer') return false;
+        return true;
+      }),
+    [teammates, currentUserId, isSo]
+  );
 
   const pickSchool = (id: string) => {
-    setSchoolId(id);
-    const s = schools.find((x) => x.id === id);
-    if (s) {
-      setProvince(s.province);
-      setDistrict(s.district);
-      setQ(s.name);
+    if (!id) {
+      setSchoolId('');
+      return;
     }
+    const s = schools.find((x) => x.id === id);
+    if (!s) return;
+    setSchoolId(id);
+    setProvince(s.province);
+    setDistrict(s.district);
+    setQ(s.name);
+    setMsg(null);
+  };
+
+  const clearSchool = () => {
+    setSchoolId('');
+    setQ('');
+  };
+
+  const toggleReason = (label: string) => {
+    setReasons((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
+
+  const toggleParticipant = (id: string) => {
+    if (id === currentUserId) return;
+    setParticipantIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const submit = () => {
     if (!selected) {
-      setMsg('เลือกโรงเรียนก่อนบันทึกนัดหมาย');
+      setMsg('เลือกโรงเรียน 1 แห่ง');
       return;
     }
     if (!date) {
       setMsg('เลือกวันที่ทำกิจกรรม');
       return;
     }
-    if (activity === 'อื่นๆ' && !activityOther.trim()) {
+    if (reasons.size === 0) {
+      setMsg('เลือกเหตุผลการลงพื้นที่อย่างน้อย 1 รายการ');
+      return;
+    }
+    if (reasons.has('อื่นๆ') && !activityOther.trim()) {
       setMsg('ระบุชื่อกิจกรรมเมื่อเลือก “อื่นๆ”');
       return;
     }
     setMsg(null);
     start(async () => {
       try {
+        const reasonList = [...reasons].map((r) =>
+          r === 'อื่นๆ' && activityOther.trim() ? activityOther.trim() : r
+        );
         const fd = new FormData();
+        fd.set('school_ids', JSON.stringify([selected.id]));
+        fd.set('school_names', JSON.stringify([selected.name]));
         fd.set('school_id', selected.id);
         fd.set('school_name', selected.name);
         fd.set('area_id', selected.area_id);
         fd.set('area_name', selected.area_name);
         fd.set('province', selected.province);
         fd.set('date', date);
-        fd.set('activity', activity);
+        fd.set('visit_reasons', JSON.stringify(reasonList));
+        fd.set('activity', reasonList[0]!);
+        fd.set('participant_ids', JSON.stringify([...participantIds]));
         fd.set('status', 'นัดหมายแล้ว');
-        const remarkParts: string[] = [];
-        if (activity === 'อื่นๆ' && activityOther.trim()) {
-          remarkParts.push(`กิจกรรม: ${activityOther.trim()}`);
-        }
-        if (notes.trim()) remarkParts.push(notes.trim());
-        fd.set('notes', remarkParts.join('\n'));
-        const res = await createCalendarEventAction(fd);
-        if (!res.ok) {
-          setMsg(('error' in res && res.error) || 'บันทึกไม่สำเร็จ');
+        fd.set('notes', notes.trim());
+        const res = isEdit
+          ? (() => {
+              fd.set('id', initialEvent!.id);
+              return updateCalendarEventAction(fd);
+            })()
+          : createCalendarEventAction(fd);
+        const result = await res;
+        if (!result.ok) {
+          setMsg(('error' in result && result.error) || 'บันทึกไม่สำเร็จ');
           return;
         }
         router.push(`/calendar?date=${encodeURIComponent(date)}`);
@@ -138,10 +247,10 @@ export function NewScheduleClient({
 
       <div className="ed-card p-5 space-y-4">
         <div>
-          <h2 className="ed-section-title text-base m-0">1 · เลือกโรงเรียน</h2>
-          <p className="text-sm text-slate-600 m-0 mt-1">
-            กรองจังหวัด/อำเภอ/โรงเรียน เหมือนหน้าส่งรายงาน
-          </p>
+          <h2 className="ed-section-title text-base m-0">
+            {isEdit ? '1 · แก้ไขโรงเรียน' : '1 · เลือกโรงเรียน'}
+          </h2>
+          <p className="text-sm text-slate-600 m-0 mt-1">เลือกได้ครั้งละ 1 โรงเรียน</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
@@ -151,11 +260,8 @@ export function NewScheduleClient({
               className="form-input"
               value={province}
               onChange={(e) => {
-                const value = e.target.value;
-                setProvince(value);
-                if (district && !schools.some((s) => (!value || s.province === value) && s.district === district)) {
-                  setDistrict('');
-                }
+                setProvince(e.target.value);
+                setDistrict('');
                 setSchoolId('');
                 setQ('');
               }}
@@ -172,11 +278,7 @@ export function NewScheduleClient({
               className="form-input"
               value={district}
               onChange={(e) => {
-                const value = e.target.value;
-                setDistrict(value);
-                if (province && !schools.some((s) => s.province === province && (!value || s.district === value))) {
-                  setProvince('');
-                }
+                setDistrict(e.target.value);
                 setSchoolId('');
                 setQ('');
               }}
@@ -213,12 +315,14 @@ export function NewScheduleClient({
             onChange={(e) => {
               setQ(e.target.value);
               const match = schools.find(
-                (s) => s.name === e.target.value || s.name.toLowerCase() === e.target.value.toLowerCase()
+                (s) =>
+                  s.name === e.target.value ||
+                  s.name.toLowerCase() === e.target.value.toLowerCase()
               );
               if (match) pickSchool(match.id);
               else setSchoolId('');
             }}
-            placeholder="พิมพ์เพื่อค้นหาหรือเลือกจากรายการ"
+            placeholder="พิมพ์เพื่อค้นหาแล้วเลือกจากรายการ"
           />
           <datalist id="schedule-school-list">
             {filteredSchools.slice(0, 80).map((s) => (
@@ -229,7 +333,17 @@ export function NewScheduleClient({
 
         {selected ? (
           <div className="report-selected-school" role="status">
-            <span className="report-selected-school__label">โรงเรียนที่เลือกแล้ว</span>
+            <div className="report-selected-school__head">
+              <span className="report-selected-school__label">โรงเรียนที่เลือก</span>
+              <button
+                type="button"
+                className="report-selected-school__clear"
+                aria-label="ยกเลิกการเลือก"
+                onClick={clearSchool}
+              >
+                <X size={14} />
+              </button>
+            </div>
             <strong className="report-selected-school__name">{selected.name}</strong>
             <span className="report-selected-school__meta">
               {[selected.district, selected.province].filter(Boolean).join(' · ') || '—'}
@@ -242,9 +356,9 @@ export function NewScheduleClient({
 
       <div className="ed-card p-5 space-y-4">
         <div>
-          <h2 className="ed-section-title text-base m-0">2 · วันที่ กิจกรรม และหมายเหตุ</h2>
+          <h2 className="ed-section-title text-base m-0">2 · วันที่ เหตุผล และทีม</h2>
           <p className="text-sm text-slate-600 m-0 mt-1">
-            กำหนดวันลงพื้นที่และรายละเอียดกิจกรรม · นัดหลายรายการในวันเดียวกันได้
+            เลือกเหตุผลการลงพื้นที่ได้หลายรายการ · เพิ่มสมาชิกทีมเพื่อซิงก์ปฏิทิน
           </p>
         </div>
 
@@ -253,24 +367,25 @@ export function NewScheduleClient({
           <ThaiDateField value={date} onChange={setDate} required />
         </label>
 
-        <label className="grid gap-1 text-sm font-semibold">
-          ชื่อกิจกรรม
-          <select
-            className="form-input"
-            value={activity}
-            onChange={(e) => setActivity(e.target.value)}
-          >
+        <fieldset className="grid gap-2 m-0 p-0 border-0">
+          <legend className="text-sm font-semibold mb-1">เหตุผลการลงพื้นที่ (เลือกได้หลายข้อ)</legend>
+          <div className="managed-filters__chip-row">
             {VISIT_ACTIVITIES.map((a) => (
-              <option key={a} value={a}>
+              <label key={a} className="ed-check ed-check--inline">
+                <input
+                  type="checkbox"
+                  checked={reasons.has(a)}
+                  onChange={() => toggleReason(a)}
+                />
                 {a}
-              </option>
+              </label>
             ))}
-          </select>
-        </label>
+          </div>
+        </fieldset>
 
-        {activity === 'อื่นๆ' && (
+        {reasons.has('อื่นๆ') && (
           <label className="grid gap-1 text-sm font-semibold">
-            ระบุชื่อกิจกรรม
+            ระบุเหตุผลอื่นๆ
             <input
               className="form-input"
               value={activityOther}
@@ -278,6 +393,29 @@ export function NewScheduleClient({
               placeholder="เช่น ประชุมผู้ปกครอง"
             />
           </label>
+        )}
+
+        {selectableTeammates.length > 0 && (
+          <fieldset className="grid gap-2 m-0 p-0 border-0">
+            <legend className="text-sm font-semibold mb-1">สมาชิกทีม (ซิงก์ปฏิทิน)</legend>
+            <p className="text-xs text-slate-500 m-0">
+              คุณเป็นผู้บันทึกอัตโนมัติ · เลือกสมาชิกเพิ่มเพื่อให้เห็นนัดในปฏิทินของตน
+              {!isSo ? ' · ไม่สามารถเลือกผู้กำกับดูแลสูงสุด (SO) ได้' : ''}
+            </p>
+            <div className="managed-filters__chip-row">
+              {selectableTeammates.map((t) => (
+                <label key={t.id} className="ed-check ed-check--inline">
+                  <input
+                    type="checkbox"
+                    checked={participantIds.has(t.id)}
+                    onChange={() => toggleParticipant(t.id)}
+                  />
+                  {t.full_name}
+                  <span className="text-slate-400"> ({ROLE_LABELS[t.role]})</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
         )}
 
         <label className="grid gap-1 text-sm font-semibold">
@@ -291,7 +429,11 @@ export function NewScheduleClient({
           />
         </label>
 
-        {msg && <p className="text-sm text-tm-blue m-0">{msg}</p>}
+        {msg && (
+          <p className="text-sm font-medium m-0" style={{ color: '#b91c1c' }}>
+            {msg}
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <button
@@ -300,7 +442,7 @@ export function NewScheduleClient({
             disabled={pending || !schoolId}
             onClick={submit}
           >
-            {pending ? 'กำลังบันทึก…' : 'บันทึกนัดหมาย'}
+            {pending ? 'กำลังบันทึก…' : isEdit ? 'บันทึกการแก้ไข' : 'บันทึกนัดหมาย'}
           </button>
           <Link href="/calendar" className="ed-btn ed-btn--outline">
             ยกเลิก

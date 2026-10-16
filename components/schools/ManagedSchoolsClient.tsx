@@ -1,13 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
   Award,
   Building2,
   Clock3,
-  Filter,
   LayoutGrid,
   List,
   MapPin,
@@ -17,7 +16,7 @@ import {
 } from 'lucide-react';
 import type { SchoolFull, UserRole } from '@/lib/types';
 import { PageBanner } from '@/components/layout/PageBanner';
-import { PAGE_BANNERS } from '@/lib/types';
+import { PAGE_BANNERS, formatPersonLabel, normalizeRole } from '@/lib/types';
 import { schoolCoverImage } from '@/lib/schools/images';
 import {
   DEV_STATUS,
@@ -31,7 +30,6 @@ import {
 import { THREE_PILLAR_LABELS } from '@/lib/mock/pillars';
 import { HierarchicalFilterDropdown } from '@/components/ui/HierarchicalFilterDropdown';
 import type { FilterTreeNode } from '@/components/ui/HierarchicalFilterDropdown';
-import { normalizeRole } from '@/lib/types';
 import { formatThaiDate } from '@/lib/format/date';
 
 function statusIcon(key: DevStatusKey) {
@@ -45,6 +43,7 @@ function statusIcon(key: DevStatusKey) {
 export type DomainPersonOption = {
   id: string;
   full_name: string;
+  name_prefix?: string | null;
   role: UserRole;
   schoolIds: string[];
   reports_to?: string | null;
@@ -66,17 +65,6 @@ type SortKey =
   | 'p1'
   | 'p2'
   | 'p3';
-
-type AppliedFilters = {
-  q: string;
-  statusFilter: Set<StatusFilterKey>;
-  visitFilter: Set<VisitFilter>;
-  province: string;
-  district: string;
-  size: string;
-  personIds: string[];
-  area: string;
-};
 
 type Props = {
   schools: SchoolFull[];
@@ -143,19 +131,9 @@ export function ManagedSchoolsClient({
   const [size, setSize] = useState('');
   const [area, setArea] = useState(initialArea);
   const [personIds, setPersonIds] = useState<string[]>(() => [...bootPeople]);
-  const [applied, setApplied] = useState<AppliedFilters>(() => ({
-    q: initialQuery,
-    statusFilter: new Set(bootStatus),
-    visitFilter: new Set(bootVisit),
-    province: initialProvince,
-    district: '',
-    size: '',
-    personIds: [...bootPeople],
-    area: initialArea,
-  }));
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [sort, setSort] = useState<SortKey>('name');
-  const [scoreMode, setScoreMode] = useState<ScoreMode>('five');
+  const [scoreMode, setScoreMode] = useState<ScoreMode>('three');
   const [page, setPage] = useState(1);
   const inScope = useMemo(() => new Set(inScopeIds), [inScopeIds]);
   const peopleById = useMemo(() => new Map(domainPeople.map((p) => [p.id, p])), [domainPeople]);
@@ -213,8 +191,8 @@ export function ManagedSchoolsClient({
 
   const filtered = useMemo(() => {
     let list = [...poolSchools];
-    if (applied.q.trim()) {
-      const needle = applied.q.trim().toLowerCase();
+    if (q.trim()) {
+      const needle = q.trim().toLowerCase();
       list = list.filter(
         (s) =>
           s.school_name_th?.toLowerCase().includes(needle) ||
@@ -223,16 +201,16 @@ export function ManagedSchoolsClient({
           String(s.school_id).includes(needle)
       );
     }
-    if (showScores && !applied.statusFilter.has('all')) {
-      list = list.filter((s) => applied.statusFilter.has(statusFromScore(s.overallScore).key));
+    if (showScores && !statusFilter.has('all')) {
+      list = list.filter((s) => statusFilter.has(statusFromScore(s.overallScore).key));
     }
-    if (!applied.visitFilter.has('all')) {
-      list = list.filter((s) => applied.visitFilter.has((s.visitStatus ?? 'never') as VisitFilter));
+    if (!visitFilter.has('all')) {
+      list = list.filter((s) => visitFilter.has((s.visitStatus ?? 'never') as VisitFilter));
     }
-    if (applied.province) list = list.filter((s) => s.province === applied.province);
-    if (applied.district) list = list.filter((s) => s.district === applied.district);
-    if (applied.area) {
-      const needle = applied.area.trim();
+    if (province) list = list.filter((s) => s.province === province);
+    if (district) list = list.filter((s) => s.district === district);
+    if (area) {
+      const needle = area.trim();
       list = list.filter(
         (s) =>
           (s.area_name && s.area_name === needle) ||
@@ -240,10 +218,10 @@ export function ManagedSchoolsClient({
           (s.district && s.district === needle)
       );
     }
-    if (applied.size) list = list.filter((s) => s.school_size === applied.size);
-    if (applied.personIds.length > 0) {
+    if (size) list = list.filter((s) => s.school_size === size);
+    if (personIds.length > 0) {
       const allowed = new Set<string>();
-      for (const id of applied.personIds) {
+      for (const id of personIds) {
         const person = peopleById.get(id);
         person?.schoolIds.forEach((sid) => allowed.add(sid));
       }
@@ -273,35 +251,32 @@ export function ManagedSchoolsClient({
       return sb - sa;
     });
     return list;
-  }, [poolSchools, applied, sort, showScores, scoreMode, peopleById]);
+  }, [
+    poolSchools,
+    q,
+    statusFilter,
+    visitFilter,
+    province,
+    district,
+    area,
+    size,
+    personIds,
+    sort,
+    showScores,
+    scoreMode,
+    peopleById,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const applyFilters = (overrides?: Partial<{
-    q: string;
-    statusFilter: Set<StatusFilterKey>;
-    visitFilter: Set<VisitFilter>;
-    province: string;
-    district: string;
-    size: string;
-    personIds: string[];
-    area: string;
-  }>) => {
-    const nextVisit = overrides?.visitFilter ?? new Set(visitFilter);
-    setApplied({
-      q: overrides?.q ?? q,
-      statusFilter: overrides?.statusFilter ?? new Set(statusFilter),
-      visitFilter: nextVisit,
-      province: overrides?.province ?? province,
-      district: overrides?.district ?? district,
-      size: overrides?.size ?? size,
-      personIds: overrides?.personIds ?? [...personIds],
-      area: overrides?.area ?? area,
-    });
-    if (!nextVisit.has('all')) setSort('activity');
+  useEffect(() => {
     setPage(1);
-  };
+  }, [q, statusFilter, visitFilter, province, district, area, size, personIds]);
+
+  useEffect(() => {
+    if (!visitFilter.has('all')) setSort('activity');
+  }, [visitFilter]);
 
   const toggleStatus = (key: StatusFilterKey) => {
     if (key === 'all') {
@@ -338,26 +313,22 @@ export function ManagedSchoolsClient({
     setSize('');
     setArea('');
     setPersonIds([]);
-    setApplied({
-      q: '',
-      statusFilter: new Set(['all']),
-      visitFilter: new Set(['all']),
-      province: '',
-      district: '',
-      size: '',
-      personIds: [],
-      area: '',
-    });
     setPage(1);
   };
 
+  const personLabel = (p: DomainPersonOption) =>
+    formatPersonLabel(p.role, p.name_prefix, p.full_name);
+
   const domainPeopleTree = useMemo((): FilterTreeNode[] => {
-    const overseers = domainPeople.filter((p) => normalizeRole(p.role) === 'overseer');
+    const overseers = domainPeople.filter((p) => {
+      const r = normalizeRole(p.role);
+      return r === 'overseer' || r === 'volunteer';
+    });
     const staff = domainPeople.filter((p) => normalizeRole(p.role) === 'staff');
     if (overseers.length === 0) {
       return staff.map((p) => ({
         id: p.id,
-        label: p.full_name,
+        label: personLabel(p),
         hint: `${p.schoolIds.length} รร.`,
       }));
     }
@@ -370,17 +341,17 @@ export function ManagedSchoolsClient({
     }
     const nodes: FilterTreeNode[] = overseers
       .slice()
-      .sort((a, b) => a.full_name.localeCompare(b.full_name, 'th'))
+      .sort((a, b) => personLabel(a).localeCompare(personLabel(b), 'th'))
       .map((ov) => ({
         id: ov.id,
-        label: ov.full_name,
-        hint: `อาสาสมัคร/องคมนตรี · ${ov.schoolIds.length} รร.`,
+        label: personLabel(ov),
+        hint: `องคมนตรี/อาสาสมัคร · ${ov.schoolIds.length} รร.`,
         children: (under.get(ov.id) ?? [])
           .slice()
-          .sort((a, b) => a.full_name.localeCompare(b.full_name, 'th'))
+          .sort((a, b) => personLabel(a).localeCompare(personLabel(b), 'th'))
           .map((st) => ({
             id: st.id,
-            label: st.full_name,
+            label: personLabel(st),
             hint: `Staff · ${st.schoolIds.length} รร.`,
           })),
       }));
@@ -392,7 +363,7 @@ export function ManagedSchoolsClient({
       if (nodes.some((n) => n.id === s.id)) continue;
       nodes.push({
         id: s.id,
-        label: s.full_name,
+        label: personLabel(s),
         hint: `Staff · ${s.schoolIds.length} รร.`,
       });
     }
@@ -401,11 +372,9 @@ export function ManagedSchoolsClient({
 
   const personSelectedSet = useMemo(() => new Set(personIds), [personIds]);
 
-  /** Status summary cards: set filter + apply immediately */
+  /** Status summary cards: filter live */
   const jumpStatus = (key: StatusFilterKey) => {
-    const next = new Set<StatusFilterKey>([key]);
-    setStatusFilter(next);
-    applyFilters({ statusFilter: next });
+    setStatusFilter(new Set<StatusFilterKey>([key]));
   };
 
   const onProvinceChange = (value: string) => {
@@ -494,7 +463,7 @@ export function ManagedSchoolsClient({
           {DEV_STATUS_ORDER.map((k) => {
             const meta = DEV_STATUS[k];
             const Icon = statusIcon(k);
-            const active = applied.statusFilter.has(k) && !applied.statusFilter.has('all');
+            const active = statusFilter.has(k) && !statusFilter.has('all');
             return (
               <button
                 key={k}
@@ -529,9 +498,6 @@ export function ManagedSchoolsClient({
                   className="form-input"
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') applyFilters();
-                  }}
                   placeholder="ชื่อโรงเรียน จังหวัด หรือรหัส"
                 />
               </label>
@@ -583,7 +549,7 @@ export function ManagedSchoolsClient({
                 </select>
               </label>
               <label className="managed-filters__field">
-                <span className="managed-filters__label">เขตพื้นที่ (Gov)</span>
+                <span className="managed-filters__label">เขตพื้นที่การศึกษา</span>
                 <input
                   className="form-input"
                   value={area}
@@ -648,7 +614,7 @@ export function ManagedSchoolsClient({
                   className="domain-person-dd"
                 />
                 <p className="text-[11px] text-slate-500 m-0">
-                  ขยาย/ยุบตามสายบังคับบัญชา · กดกรองผลลัพธ์เพื่อแสดงโรงเรียนในพื้นที่ที่เลือก
+                  ขยาย/ยุบตามสายบังคับบัญชา · กรองทันทีเมื่อเลือก
                 </p>
               </div>
             )}
@@ -680,9 +646,6 @@ export function ManagedSchoolsClient({
             </div>
 
             <div className="managed-filters__actions">
-              <button type="button" className="ed-btn ed-btn--primary" onClick={() => applyFilters()}>
-                <Filter size={16} /> กรองผลลัพธ์
-              </button>
               <button type="button" className="ed-btn ed-btn--outline" onClick={reset}>
                 <RefreshCw size={16} /> ล้างตัวกรอง
               </button>
@@ -707,17 +670,6 @@ export function ManagedSchoolsClient({
                 <div className="score-mode-switch" role="group" aria-label="โหมดคะแนน">
                   <button
                     type="button"
-                    className={scoreMode === 'five' ? 'is-active' : ''}
-                    onClick={() => {
-                      setScoreMode('five');
-                      setSort('score-desc');
-                      setPage(1);
-                    }}
-                  >
-                    ผลการประเมินตามระบบ SMS
-                  </button>
-                  <button
-                    type="button"
                     className={scoreMode === 'three' ? 'is-active' : ''}
                     onClick={() => {
                       setScoreMode('three');
@@ -727,13 +679,24 @@ export function ManagedSchoolsClient({
                   >
                     คะแนน 3 เสาหลัก
                   </button>
+                  <button
+                    type="button"
+                    className={scoreMode === 'five' ? 'is-active' : ''}
+                    onClick={() => {
+                      setScoreMode('five');
+                      setSort('score-desc');
+                      setPage(1);
+                    }}
+                  >
+                    ผลการประเมินตามระบบ SMS
+                  </button>
                 </div>
               )}
               {showScores && (
                 <p className="schools-list-panel__mode-hint m-0">
                   {scoreMode === 'five'
-                    ? 'กำลังแสดงคะแนนตามระบบ SMS — พื้นหลังโทนแดงทอง'
-                    : 'กำลังแสดงคะแนนตาม 3 เสาหลัก — พื้นหลังโทนขาวทอง'}
+                    ? ''
+                    : ''}
                 </p>
               )}
             </div>

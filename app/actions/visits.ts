@@ -12,8 +12,11 @@ import {
 import type { CalendarActivity, StaffCalendarEvent } from '@/lib/auth/mock-users';
 import { createClient } from '@/lib/supabase/server';
 import {
+  fetchSiteVisitById,
   fetchSiteVisitsForStaff,
   insertSiteVisitEvent,
+  removeParticipantFromSiteVisit,
+  updateSiteVisitEvent,
   updateSiteVisitStatus,
 } from '@/lib/supabase/site-visits';
 import {
@@ -72,6 +75,23 @@ export async function createVisitLog(formData: FormData) {
   return { ok: true };
 }
 
+function parseJsonStringArray(raw: FormDataEntryValue | null): string[] {
+  if (raw == null || raw === '') return [];
+  const text = String(raw);
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      return parsed.map((x) => String(x).trim()).filter(Boolean);
+    }
+  } catch {
+    /* fall through */
+  }
+  return text
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
 export async function createCalendarEventAction(formData: FormData) {
   const { profile, isAuthenticated, role } = await getSessionProfile();
   if (!isAuthenticated || !profile || !isFieldRole(normalizeRole(role))) {
@@ -79,21 +99,38 @@ export async function createCalendarEventAction(formData: FormData) {
   }
 
   const date = String(formData.get('date') || '');
-  const activityRaw = String(formData.get('activity') || 'เยี่ยมชมโรงเรียน');
-  const activity = normalizeActivity(activityRaw) as CalendarActivity;
   const notes = String(formData.get('notes') || '');
-  const school_id = String(formData.get('school_id') || '') || null;
-  const school_name = String(formData.get('school_name') || '') || null;
   const area_id = String(formData.get('area_id') || '') || null;
   const area_name = String(formData.get('area_name') || '') || null;
   const province = String(formData.get('province') || '') || null;
+
+  const schoolIdsRaw = parseJsonStringArray(formData.get('school_ids'));
+  const legacySchoolId = String(formData.get('school_id') || '') || null;
+  if (!schoolIdsRaw.length && legacySchoolId) schoolIdsRaw.push(legacySchoolId);
+  // Single-school only — keep first id for schema array compatibility
+  const schoolIds = schoolIdsRaw.slice(0, 1);
+
+  const schoolNames = parseJsonStringArray(formData.get('school_names')).slice(0, 1);
+  const school_name =
+    schoolNames[0] || String(formData.get('school_name') || '') || null;
+
+  const visitReasons = parseJsonStringArray(formData.get('visit_reasons'));
+  const activityRaw = String(formData.get('activity') || visitReasons[0] || 'เยี่ยมชมโรงเรียน');
+  if (!visitReasons.length) visitReasons.push(normalizeActivity(activityRaw));
+  const activity = normalizeActivity(visitReasons[0] || activityRaw) as CalendarActivity;
+
+  let participantIds = parseJsonStringArray(formData.get('participant_ids'));
 
   const statusRaw = String(formData.get('status') || 'นัดหมายแล้ว');
   const status_th = normalizeStatus(statusRaw);
   const status = statusToLegacy(status_th);
 
   if (!date) return { ok: false as const, error: 'กรุณาเลือกวันที่' };
-  if (!school_id) return { ok: false as const, error: 'กรุณาเลือกโรงเรียน' };
+  if (!schoolIds.length) return { ok: false as const, error: 'กรุณาเลือกโรงเรียน 1 แห่ง' };
+  if (schoolIdsRaw.length > 1) {
+    return { ok: false as const, error: 'เลือกได้เพียง 1 โรงเรียนต่อนัดหมาย' };
+  }
+  if (!visitReasons.length) return { ok: false as const, error: 'กรุณาเลือกเหตุผลการลงพื้นที่อย่างน้อย 1 รายการ' };
   if (!isDbUserId(profile.id)) {
     return {
       ok: false as const,
@@ -101,17 +138,41 @@ export async function createCalendarEventAction(formData: FormData) {
     };
   }
 
+  // Non-SO cannot invite SO users as participants
+  const creatorRole = normalizeRole(role);
+  if (creatorRole !== 'super_overseer' && participantIds.length) {
+    const { fetchAllUserProfiles } = await import('@/lib/supabase/profiles');
+    const { readStoredUsers } = await import('@/lib/auth/user-store');
+    const users = isDbOnlyMode()
+      ? await fetchAllUserProfiles().catch(() => [])
+      : await readStoredUsers().catch(() => []);
+    const soIds = new Set(
+      users.filter((u) => normalizeRole(u.role) === 'super_overseer').map((u) => u.id)
+    );
+    if (participantIds.some((id) => soIds.has(id))) {
+      return {
+        ok: false as const,
+        error: 'ไม่สามารถเลือกผู้กำกับดูแลสูงสุด (SO) เป็นสมาชิกทีมได้',
+      };
+    }
+    participantIds = participantIds.filter((id) => !soIds.has(id));
+  }
+
   try {
     const slimNotes = notes.trim().slice(0, 280);
+    const school_id = schoolIds[0];
 
-    // Always INSERT — multiple bookings on the same date/school are allowed
     const db = await insertSiteVisitEvent({
       staffId: profile.id,
       schoolId: school_id,
+      schoolIds,
       schoolName: school_name,
       areaId: area_id,
       visitDate: date,
       activityType: activity,
+      visitReasons,
+      participantIds,
+      provinceName: province,
       status: status_th,
       notes: slimNotes,
     });
@@ -119,7 +180,6 @@ export async function createCalendarEventAction(formData: FormData) {
       return { ok: false as const, error: db.error || 'บันทึกนัดหมายไม่สำเร็จ' };
     }
 
-    // Offline/cookie fallback only when explicitly disabled DB-only mode
     if (!isDbOnlyMode()) {
       try {
         await addCalendarEvent({
@@ -128,6 +188,10 @@ export async function createCalendarEventAction(formData: FormData) {
           activity,
           school_id,
           school_name,
+          school_ids: schoolIds,
+          school_names: schoolNames,
+          visit_reasons: visitReasons,
+          participant_ids: [profile.id, ...participantIds],
           area_id,
           area_name,
           province,
@@ -156,6 +220,120 @@ export async function createCalendarEventAction(formData: FormData) {
       error: e instanceof Error ? e.message : 'บันทึกนัดหมายไม่สำเร็จ',
     };
   }
+}
+
+/** Owner-only update of an existing schedule. */
+export async function updateCalendarEventAction(formData: FormData) {
+  const { profile, isAuthenticated, role } = await getSessionProfile();
+  if (!isAuthenticated || !profile || !isFieldRole(normalizeRole(role))) {
+    return { ok: false as const, error: 'เฉพาะเจ้าหน้าที่ที่เข้าสู่ระบบแล้ว' };
+  }
+
+  const id = String(formData.get('id') || '');
+  if (!id) return { ok: false as const, error: 'ไม่พบนัดหมาย' };
+
+  const existing = await fetchSiteVisitById(id);
+  if (!existing) return { ok: false as const, error: 'ไม่พบนัดหมาย' };
+  if (existing.staff_id !== profile.id) {
+    return { ok: false as const, error: 'เฉพาะเจ้าของนัดเท่านั้นที่แก้ไขได้' };
+  }
+
+  const date = String(formData.get('date') || '');
+  const notes = String(formData.get('notes') || '');
+  const area_id = String(formData.get('area_id') || '') || null;
+  const province = String(formData.get('province') || '') || null;
+
+  const schoolIdsRaw = parseJsonStringArray(formData.get('school_ids'));
+  const legacySchoolId = String(formData.get('school_id') || '') || null;
+  if (!schoolIdsRaw.length && legacySchoolId) schoolIdsRaw.push(legacySchoolId);
+  const schoolIds = schoolIdsRaw.slice(0, 1);
+  const schoolNames = parseJsonStringArray(formData.get('school_names')).slice(0, 1);
+  const school_name =
+    schoolNames[0] || String(formData.get('school_name') || '') || null;
+
+  const visitReasons = parseJsonStringArray(formData.get('visit_reasons'));
+  const activityRaw = String(formData.get('activity') || visitReasons[0] || 'เยี่ยมชมโรงเรียน');
+  if (!visitReasons.length) visitReasons.push(normalizeActivity(activityRaw));
+  const activity = normalizeActivity(visitReasons[0] || activityRaw) as CalendarActivity;
+
+  let participantIds = parseJsonStringArray(formData.get('participant_ids'));
+
+  if (!date) return { ok: false as const, error: 'กรุณาเลือกวันที่' };
+  if (!schoolIds.length) return { ok: false as const, error: 'กรุณาเลือกโรงเรียน 1 แห่ง' };
+  if (!visitReasons.length) {
+    return { ok: false as const, error: 'กรุณาเลือกเหตุผลการลงพื้นที่อย่างน้อย 1 รายการ' };
+  }
+
+  const creatorRole = normalizeRole(role);
+  if (creatorRole !== 'super_overseer' && participantIds.length) {
+    const { fetchAllUserProfiles } = await import('@/lib/supabase/profiles');
+    const { readStoredUsers } = await import('@/lib/auth/user-store');
+    const users = isDbOnlyMode()
+      ? await fetchAllUserProfiles().catch(() => [])
+      : await readStoredUsers().catch(() => []);
+    const soIds = new Set(
+      users.filter((u) => normalizeRole(u.role) === 'super_overseer').map((u) => u.id)
+    );
+    if (participantIds.some((pid) => soIds.has(pid))) {
+      return {
+        ok: false as const,
+        error: 'ไม่สามารถเลือกผู้กำกับดูแลสูงสุด (SO) เป็นสมาชิกทีมได้',
+      };
+    }
+    participantIds = participantIds.filter((pid) => !soIds.has(pid));
+  }
+
+  const allParticipants = [...new Set([profile.id, ...participantIds])];
+  const slimNotes = notes.trim().slice(0, 280);
+  const school_id = schoolIds[0]!;
+
+  const db = await updateSiteVisitEvent({
+    id,
+    schoolId: school_id,
+    schoolIds,
+    schoolName: school_name,
+    areaId: area_id,
+    visitDate: date,
+    activityType: activity,
+    visitReasons,
+    participantIds: allParticipants,
+    provinceName: province,
+    notes: slimNotes,
+  });
+  if (!db.ok) return { ok: false as const, error: db.error || 'แก้ไขนัดหมายไม่สำเร็จ' };
+
+  if (!isDbOnlyMode()) {
+    try {
+      const { writeCalendarEvents } = await import('@/lib/auth/user-store');
+      const all = await readCalendarEvents();
+      await writeCalendarEvents(
+        all.map((e) =>
+          e.id === id
+            ? {
+                ...e,
+                date,
+                activity,
+                school_id,
+                school_name,
+                school_ids: schoolIds,
+                school_names: schoolNames,
+                visit_reasons: visitReasons,
+                participant_ids: allParticipants,
+                area_id,
+                province,
+                notes: slimNotes,
+              }
+            : e
+        )
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
+  revalidatePath('/calendar');
+  revalidatePath('/dashboard');
+  return { ok: true as const, event: db.event };
 }
 
 function mergeEvents(db: StaffCalendarEvent[], cookie: StaffCalendarEvent[]): StaffCalendarEvent[] {
@@ -218,7 +396,11 @@ export async function listCalendarEventsForStaffIds(
 
 export async function markVisitCompletedAction(formData: FormData) {
   const { profile, isAuthenticated } = await getSessionProfile();
-  if (!isAuthenticated || !profile || !['staff', 'overseer', 'super_overseer'].includes(profile.role)) {
+  if (
+    !isAuthenticated ||
+    !profile ||
+    !['staff', 'overseer', 'volunteer', 'super_overseer'].includes(profile.role)
+  ) {
     return { ok: false, error: 'เฉพาะเจ้าหน้าที่ที่เข้าสู่ระบบแล้ว' };
   }
   const id = String(formData.get('id') || '');
@@ -226,6 +408,96 @@ export async function markVisitCompletedAction(formData: FormData) {
 
   const status: VisitStatusThai = 'เยี่ยมชมเสร็จสิ้น';
   await updateSiteVisitStatus({ id, status });
+
+  revalidatePath('/calendar');
+  revalidatePath('/dashboard');
+  return { ok: true as const };
+}
+
+/** Owner cancels — event disappears for all participants. */
+export async function cancelVisitEventAction(formData: FormData) {
+  const { profile, isAuthenticated, role } = await getSessionProfile();
+  if (!isAuthenticated || !profile || !isFieldRole(normalizeRole(role))) {
+    return { ok: false as const, error: 'เฉพาะเจ้าหน้าที่ที่เข้าสู่ระบบแล้ว' };
+  }
+  const id = String(formData.get('id') || '');
+  if (!id) return { ok: false as const, error: 'ไม่พบรายการ' };
+
+  const event = await fetchSiteVisitById(id);
+  if (!event) return { ok: false as const, error: 'ไม่พบนัดหมาย' };
+  if (event.staff_id !== profile.id) {
+    return { ok: false as const, error: 'เฉพาะเจ้าของนัดเท่านั้นที่ยกเลิกได้' };
+  }
+
+  const status: VisitStatusThai = 'ยกเลิก';
+  const res = await updateSiteVisitStatus({ id, status });
+  if (!res.ok) return { ok: false as const, error: res.error };
+
+  if (!isDbOnlyMode()) {
+    try {
+      const { writeCalendarEvents } = await import('@/lib/auth/user-store');
+      const all = await readCalendarEvents();
+      await writeCalendarEvents(
+        all.map((e) =>
+          e.id === id
+            ? { ...e, status_th: status, status: statusToLegacy(status) }
+            : e
+        )
+      );
+    } catch {
+      /* ignore cookie mirror */
+    }
+  }
+
+  revalidatePath('/calendar');
+  revalidatePath('/dashboard');
+  return { ok: true as const };
+}
+
+/** Non-owner participant leaves — remove only from their calendar. */
+export async function leaveVisitEventAction(formData: FormData) {
+  const { profile, isAuthenticated, role } = await getSessionProfile();
+  if (!isAuthenticated || !profile || !isFieldRole(normalizeRole(role))) {
+    return { ok: false as const, error: 'เฉพาะเจ้าหน้าที่ที่เข้าสู่ระบบแล้ว' };
+  }
+  const id = String(formData.get('id') || '');
+  if (!id) return { ok: false as const, error: 'ไม่พบรายการ' };
+
+  const event = await fetchSiteVisitById(id);
+  if (!event) return { ok: false as const, error: 'ไม่พบนัดหมาย' };
+  if (event.staff_id === profile.id) {
+    return {
+      ok: false as const,
+      error: 'เจ้าของนัดไม่สามารถออกจากนัดได้ — ใช้ยกเลิกนัดแทน',
+    };
+  }
+  const parts = event.participant_ids ?? [];
+  if (!parts.includes(profile.id)) {
+    return { ok: false as const, error: 'คุณไม่ได้อยู่ในทีมของนัดนี้' };
+  }
+
+  const res = await removeParticipantFromSiteVisit({
+    id,
+    participantId: profile.id,
+  });
+  if (!res.ok) return { ok: false as const, error: res.error };
+
+  if (!isDbOnlyMode()) {
+    try {
+      const { writeCalendarEvents } = await import('@/lib/auth/user-store');
+      const all = await readCalendarEvents();
+      await writeCalendarEvents(
+        all.map((e) => {
+          if (e.id !== id) return e;
+          const nextParts = (e.participant_ids ?? []).filter((pid) => pid !== profile.id);
+          if (e.staff_id && !nextParts.includes(e.staff_id)) nextParts.unshift(e.staff_id);
+          return { ...e, participant_ids: nextParts };
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
 
   revalidatePath('/calendar');
   revalidatePath('/dashboard');

@@ -3,13 +3,19 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { assignGeoAction } from '@/app/actions/admin';
-import { ROLE_LABELS, type UserRole } from '@/lib/types';
+import {
+  ROLE_LABELS,
+  formatPersonLabel,
+  isOverseerLike,
+  type UserRole,
+} from '@/lib/types';
 import { X } from 'lucide-react';
 
 type Account = {
   id: string;
   email: string;
   full_name: string;
+  name_prefix?: string | null;
   role: UserRole;
   reports_to: string | null;
   assigned_provinces: string[];
@@ -33,7 +39,10 @@ export function DomainControlClient({
   const [msg, setMsg] = useState<string | null>(null);
   const [accounts, setAccounts] = useState(accountsProp);
 
-  const [roleFilter, setRoleFilter] = useState<'all' | 'overseer' | 'staff'>('all');
+  const labelOf = (u: Account) =>
+    formatPersonLabel(u.role, u.name_prefix, u.full_name) || u.full_name;
+
+  const [roleFilter, setRoleFilter] = useState<'all' | 'overseer' | 'volunteer' | 'staff'>('all');
   const [nameQuery, setNameQuery] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [tags, setTags] = useState<string[]>([]);
@@ -50,12 +59,15 @@ export function DomainControlClient({
   }, [areas]);
 
   const labelForTag = (tag: string, role: UserRole) => {
-    if (role === 'overseer') return tag;
+    if (isOverseerLike(role)) return tag;
     return areaById.get(tag) || tag.replace('|', ' / ');
   };
 
   const assignable = useMemo(
-    () => accounts.filter((a) => a.role === 'overseer' || a.role === 'staff'),
+    () =>
+      accounts.filter(
+        (a) => isOverseerLike(a.role) || a.role === 'staff'
+      ),
     [accounts]
   );
 
@@ -66,12 +78,12 @@ export function DomainControlClient({
       const q = nameQuery.trim().toLowerCase();
       list = list.filter(
         (a) =>
-          a.full_name.toLowerCase().includes(q) ||
+          labelOf(a).toLowerCase().includes(q) ||
           a.email.toLowerCase().includes(q) ||
           a.id.toLowerCase().includes(q)
       );
     }
-    return list.sort((a, b) => a.full_name.localeCompare(b.full_name, 'th'));
+    return list.sort((a, b) => labelOf(a).localeCompare(labelOf(b), 'th'));
   }, [assignable, roleFilter, nameQuery]);
 
   const selected = assignable.find((a) => a.id === selectedId) ?? null;
@@ -83,9 +95,9 @@ export function DomainControlClient({
       setTags([]);
       return;
     }
-    setNameQuery(u.full_name);
+    setNameQuery(labelOf(u));
     setTags(
-      u.role === 'overseer' ? [...u.assigned_provinces] : [...u.assigned_districts]
+      isOverseerLike(u.role) ? [...u.assigned_provinces] : [...u.assigned_districts]
     );
     setTagPick('');
     setMsg(null);
@@ -93,7 +105,7 @@ export function DomainControlClient({
 
   const availableTags = useMemo(() => {
     if (!selected) return [] as string[];
-    if (selected.role === 'overseer') {
+    if (isOverseerLike(selected.role)) {
       return provinces.filter((t) => !tags.includes(t));
     }
     return areas.filter((a) => !tags.includes(a.id)).map((a) => a.id);
@@ -117,7 +129,7 @@ export function DomainControlClient({
     startTransition(async () => {
       const fd = new FormData();
       fd.set('userId', selected.id);
-      if (selected.role === 'overseer') {
+      if (isOverseerLike(selected.role)) {
         fd.set('provinces', JSON.stringify(tags));
         fd.set('districts', '[]');
       } else {
@@ -134,12 +146,12 @@ export function DomainControlClient({
         prev.map((a) =>
           a.id !== selected.id
             ? a
-            : selected.role === 'overseer'
+            : isOverseerLike(selected.role)
               ? { ...a, assigned_provinces: [...tags] }
               : { ...a, assigned_districts: [...tags] }
         )
       );
-      setMsg(`บันทึกพื้นที่จัดการของ ${selected.full_name} แล้ว`);
+      setMsg(`บันทึกพื้นที่จัดการของ ${labelOf(selected)} แล้ว`);
       router.refresh();
     });
   };
@@ -153,7 +165,7 @@ export function DomainControlClient({
           <div>
             <h2 className="ed-section-title text-base m-0">1 · ค้นหาและเลือกผู้ใช้</h2>
             <p className="text-sm text-slate-600 m-0 mt-1">
-              Overseer = มอบหมายจังหวัด · Staff = มอบหมายเขตพื้นที่การศึกษา (Gov_Domain)
+              องคมนตรี / อาสาสมัคร = มอบหมายจังหวัด · Staff = เขตพื้นที่การศึกษา
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -163,14 +175,17 @@ export function DomainControlClient({
                 className="form-input"
                 value={roleFilter}
                 onChange={(e) => {
-                  setRoleFilter(e.target.value as 'all' | 'overseer' | 'staff');
+                  setRoleFilter(
+                    e.target.value as 'all' | 'overseer' | 'volunteer' | 'staff'
+                  );
                   setSelectedId('');
                   setTags([]);
                   setNameQuery('');
                 }}
               >
-                <option value="all">ทั้งหมด (Overseer / Staff)</option>
+                <option value="all">ทั้งหมด</option>
                 <option value="overseer">{ROLE_LABELS.overseer}</option>
+                <option value="volunteer">{ROLE_LABELS.volunteer}</option>
                 <option value="staff">{ROLE_LABELS.staff}</option>
               </select>
             </label>
@@ -185,9 +200,9 @@ export function DomainControlClient({
                   setNameQuery(value);
                   const match = filteredUsers.find(
                     (u) =>
-                      u.full_name === value ||
+                      labelOf(u) === value ||
                       u.email === value ||
-                      `${u.full_name} (${ROLE_LABELS[u.role]})` === value
+                      `${labelOf(u)} (${ROLE_LABELS[u.role]})` === value
                   );
                   if (match) pickUser(match.id);
                   else setSelectedId('');
@@ -198,7 +213,7 @@ export function DomainControlClient({
                 {filteredUsers.slice(0, 80).map((u) => (
                   <option
                     key={u.id}
-                    value={`${u.full_name} (${ROLE_LABELS[u.role]})`}
+                    value={`${labelOf(u)} (${ROLE_LABELS[u.role]})`}
                   />
                 ))}
               </datalist>
@@ -214,7 +229,7 @@ export function DomainControlClient({
                   className="domain-user-pick__item"
                   onClick={() => pickUser(u.id)}
                 >
-                  <strong>{u.full_name}</strong>
+                  <strong>{labelOf(u)}</strong>
                   <span>
                     {ROLE_LABELS[u.role]} · {u.email}
                   </span>
@@ -229,11 +244,11 @@ export function DomainControlClient({
             <div>
               <h2 className="ed-section-title text-base m-0">2 · มอบหมายพื้นที่จัดการ</h2>
               <p className="text-sm text-slate-600 m-0 mt-1">
-                <strong className="text-tm-blue">{selected.full_name}</strong>
+                <strong className="text-tm-blue">{labelOf(selected)}</strong>
                 {' · '}
                 {ROLE_LABELS[selected.role]}
                 {' · '}
-                {selected.role === 'overseer'
+                {isOverseerLike(selected.role)
                   ? 'เลือกจังหวัด (หลายรายการได้)'
                   : 'เลือกเขตพื้นที่การศึกษา (หลายรายการได้)'}
               </p>
@@ -254,7 +269,7 @@ export function DomainControlClient({
             </div>
 
             <label className="grid gap-1 text-sm font-semibold">
-              เพิ่ม{selected.role === 'overseer' ? 'จังหวัด' : 'เขตพื้นที่การศึกษา'}
+              เพิ่ม{isOverseerLike(selected.role) ? 'จังหวัด' : 'เขตพื้นที่การศึกษา'}
               <select
                 className="form-input"
                 value={tagPick}

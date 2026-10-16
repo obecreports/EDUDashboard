@@ -118,7 +118,6 @@ export function AppNavbar({
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [fontScale, setFontScale] = useState(100);
   const accountRef = useRef<HTMLDivElement>(null);
   const overviewRef = useRef<HTMLLIElement>(null);
   const detailRef = useRef<HTMLLIElement>(null);
@@ -237,10 +236,6 @@ export function AppNavbar({
   const usersActive = usersGroup.some((i) => isActive(i.href, i.end));
 
   useEffect(() => {
-    document.documentElement.style.fontSize = `${fontScale}%`;
-  }, [fontScale]);
-
-  useEffect(() => {
     document.documentElement.classList.remove('dark');
     window.localStorage.removeItem('coned-theme');
   }, []);
@@ -284,20 +279,6 @@ export function AppNavbar({
   }, [drawerOpen]);
 
   const closeDrawer = () => setDrawerOpen(false);
-
-  const fontControls = (
-    <div className="ed-a11y" role="group" aria-label="ขนาดตัวอักษร">
-      <button type="button" onClick={() => setFontScale((s) => Math.max(90, s - 10))} aria-label="ลดขนาดตัวอักษร">
-        ก-
-      </button>
-      <button type="button" onClick={() => setFontScale(100)} aria-label="ขนาดปกติ">
-        ก
-      </button>
-      <button type="button" onClick={() => setFontScale((s) => Math.min(125, s + 10))} aria-label="เพิ่มขนาดตัวอักษร">
-        ก+
-      </button>
-    </div>
-  );
 
   const accountMenuLinks = (
     <>
@@ -577,8 +558,6 @@ export function AppNavbar({
         <div className="ed-navbar__inline ed-navbar__inline--desktop">{desktopNav}</div>
 
         <div className="ed-navbar__utils">
-          <div className="ed-navbar__utils-desktop">{fontControls}</div>
-
           <div className="ed-navbar__account relative" ref={accountRef}>
             {isAuthenticated ? (
               <>
@@ -644,7 +623,6 @@ export function AppNavbar({
         {drawerNav}
 
         <div className="ed-nav-drawer__footer">
-          {fontControls}
           {isAuthenticated ? (
             <div className="ed-nav-drawer__account">
               <div className="ed-nav-drawer__user">

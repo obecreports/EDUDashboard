@@ -23,7 +23,7 @@ export default async function ManageSchoolsPage() {
     .select('id, full_name, assigned_zone, role')
     .in('role', ['staff', 'overseer']);
 
-  const canAssign = role === 'overseer' || role === 'admin';
+  const canAssign = role === 'overseer' || role === 'volunteer' || role === 'admin';
 
   return (
     <div className="page-shell">

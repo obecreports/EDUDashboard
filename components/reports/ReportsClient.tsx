@@ -4,11 +4,16 @@ import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { ChevronDown, FilePlus2, MessageSquare, Pencil } from 'lucide-react';
 import { updateSchoolCommentAction } from '@/app/actions/school-extras';
-import { REPORT_HASHTAGS, type SchoolSize } from '@/lib/types';
+import type { SchoolSize } from '@/lib/types';
 import type { ReportDraft } from '@/lib/auth/mock-users';
 import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
 import { formatThaiDate, formatThaiDateTime } from '@/lib/format/date';
 import { ThaiDateField } from '@/components/ui/ThaiDateField';
+import {
+  parseReportComment,
+  type ReportSubjectDetails,
+} from '@/lib/reports/subjects';
+import { REPORT_SUBJECTS } from '@/lib/types';
 
 export type ReportRow = {
   id: string;
@@ -22,8 +27,15 @@ export type ReportRow = {
   text: string;
   created_at: string;
   edited_at?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  updated_by_name?: string | null;
   tags?: string[];
   image_urls?: string[];
+  onsite_reasons?: string[];
+  visitor_reason_map?: Record<string, string[]>;
+  ops_notes?: string | null;
+  participants?: { id: string; name: string }[];
 };
 
 type RangePreset = 'today' | 'this-week' | 'next-week' | 'this-month' | 'next-month' | 'custom';
@@ -84,10 +96,11 @@ const PRESETS: { key: RangePreset; label: string }[] = [
   { key: 'next-month', label: 'เดือนหน้า' },
 ];
 
-function extractTags(row: ReportRow): string[] {
-  if (row.tags?.length) return row.tags.map((t) => t.replace(/^#/, ''));
-  const found = row.text.match(/#[\p{L}\p{N}_]+/gu) ?? [];
-  return [...new Set(found.map((t) => t.replace(/^#/, '')))];
+function canEditReport(row: ReportRow, userId: string) {
+  if (row.staff_id === userId) return true;
+  if ((row.participants ?? []).some((p) => p.id === userId)) return true;
+  if (row.visitor_reason_map && userId in row.visitor_reason_map) return true;
+  return false;
 }
 
 function groupByDate(rows: ReportRow[]) {
@@ -99,6 +112,31 @@ function groupByDate(rows: ReportRow[]) {
     map.set(day, list);
   }
   return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+}
+
+function SubjectBlocks({ text }: { text: string }) {
+  const details: ReportSubjectDetails = parseReportComment(text);
+  const hasAny = REPORT_SUBJECTS.some((s) => (details[s.key] ?? '').trim());
+  if (!hasAny) {
+    if (!text.trim() || text.trim() === '(ไม่มีข้อความความคิดเห็น)') {
+      return <p className="text-sm text-slate-400 m-0">ไม่มีข้อความความคิดเห็น</p>;
+    }
+    return <p className="text-sm mt-0 mb-0 whitespace-pre-wrap">{text}</p>;
+  }
+  return (
+    <div className="report-guided-box mt-1">
+      {REPORT_SUBJECTS.map((s) => {
+        const body = (details[s.key] ?? '').trim();
+        if (!body) return null;
+        return (
+          <div key={s.key} className="report-guided-box__row">
+            <div className="report-guided-box__subject">- {s.label}</div>
+            <p className="text-sm m-0 whitespace-pre-wrap">{body}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function ReportsClient({
@@ -113,7 +151,6 @@ export function ReportsClient({
   const initial = rangeForPreset('this-month');
   const [rows, setRows] = useState(initialRows);
   const [ownerFilter, setOwnerFilter] = useState<'mine' | 'all'>('all');
-  const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
   const [preset, setPreset] = useState<RangePreset>('this-month');
   const [dateFrom, setDateFrom] = useState(initial.from);
   const [dateTo, setDateTo] = useState(initial.to);
@@ -125,7 +162,6 @@ export function ReportsClient({
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
-  const [editTags, setEditTags] = useState<string[]>([]);
   const [pending, start] = useTransition();
 
   const provinces = useMemo(
@@ -149,19 +185,11 @@ export function ReportsClient({
     setPage(1);
   };
 
-  const toggleFilterTag = (tag: string) => {
-    setActiveTags((prev) => {
-      const next = new Set(prev);
-      if (next.has(tag)) next.delete(tag);
-      else next.add(tag);
-      return next;
-    });
-    setPage(1);
-  };
-
   const filtered = useMemo(() => {
     let list = [...rows];
-    if (ownerFilter === 'mine') list = list.filter((r) => r.staff_id === currentUserId);
+    if (ownerFilter === 'mine') {
+      list = list.filter((r) => canEditReport(r, currentUserId));
+    }
     if (dateFrom) list = list.filter((r) => r.created_at.slice(0, 10) >= dateFrom);
     if (dateTo) list = list.filter((r) => r.created_at.slice(0, 10) <= dateTo);
     if (province) list = list.filter((r) => r.province === province);
@@ -171,12 +199,6 @@ export function ReportsClient({
       const n = schoolName.trim().toLowerCase();
       list = list.filter((r) => r.school_name.toLowerCase().includes(n));
     }
-    if (activeTags.size > 0) {
-      list = list.filter((r) => {
-        const tags = extractTags(r);
-        return [...activeTags].every((t) => tags.includes(t));
-      });
-    }
     return list.sort((a, b) => b.created_at.localeCompare(a.created_at));
   }, [
     rows,
@@ -184,7 +206,6 @@ export function ReportsClient({
     currentUserId,
     dateFrom,
     dateTo,
-    activeTags,
     province,
     district,
     schoolSize,
@@ -198,7 +219,6 @@ export function ReportsClient({
   const startEdit = (r: ReportRow) => {
     setEditingId(r.id);
     setEditText(r.text.replace(/^#[^\n]+\n?/, '').trim() || r.text);
-    setEditTags(extractTags(r));
   };
 
   const saveEdit = (r: ReportRow) => {
@@ -207,7 +227,7 @@ export function ReportsClient({
       fd.set('school_id', r.school_id);
       fd.set('comment_id', r.id);
       fd.set('text', editText.trim());
-      fd.set('tags', editTags.join(','));
+      fd.set('tags', '');
       const res = await updateSchoolCommentAction(fd);
       if (!res.ok || !('comment' in res) || !res.comment) return;
       setRows((prev) =>
@@ -217,6 +237,9 @@ export function ReportsClient({
                 ...x,
                 text: res.comment!.text,
                 edited_at: res.comment!.edited_at,
+                updated_at: res.comment!.updated_at ?? res.comment!.edited_at,
+                updated_by: res.comment!.updated_by ?? currentUserId,
+                updated_by_name: res.comment!.updated_by_name ?? null,
                 tags: res.comment!.tags,
               }
             : x
@@ -295,24 +318,6 @@ export function ReportsClient({
               รายงานทั้งหมด
             </button>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <strong className="text-sm">แฮชแท็ก</strong>
-          {REPORT_HASHTAGS.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className={`report-tag ${activeTags.has(tag) ? 'is-active' : ''}`}
-              onClick={() => toggleFilterTag(tag)}
-            >
-              #{tag}
-            </button>
-          ))}
-          {activeTags.size > 0 && (
-            <button type="button" className="navbar__link text-xs" onClick={() => setActiveTags(new Set())}>
-              ล้างแท็ก
-            </button>
-          )}
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="text-sm font-semibold grid gap-1">
@@ -447,9 +452,7 @@ export function ReportsClient({
                     }
                   >
                     <div>
-                      <strong>
-                        {formatThaiDate(day)}
-                      </strong>
+                      <strong>{formatThaiDate(day)}</strong>
                       <div className="school-activity__day-preview">
                         {open ? 'คลิกเพื่อย่อ' : `${items.length} รายงาน · ${items[0]?.school_name || ''}`}
                       </div>
@@ -465,9 +468,10 @@ export function ReportsClient({
                   {open && (
                     <ul className="school-activity__items">
                       {items.map((c) => {
-                        const tags = extractTags(c);
-                        const mine = c.staff_id === currentUserId;
+                        const editable = canEditReport(c, currentUserId);
                         const editing = editingId === c.id;
+                        const team = (c.participants ?? []).filter((p) => p.id !== c.staff_id);
+                        const modifiedAt = c.updated_at || c.edited_at;
                         return (
                           <li key={c.id} className="report-detail-item">
                             <div className="report-detail-item__top">
@@ -476,12 +480,34 @@ export function ReportsClient({
                                 <div className="text-xs text-slate-500">
                                   {[c.district, c.province, c.school_size].filter(Boolean).join(' · ') || '—'}
                                 </div>
-                                <div className="text-xs font-semibold mt-1 flex items-center gap-2">
-                                  <span className={mine ? 'owner-name--mine' : 'owner-name--other'}>
-                                    {c.staff_name}
-                                  </span>
-                                  {c.edited_at ? (
-                                    <span className="report-edited-flag">แก้ไขแล้ว</span>
+                                <div className="text-xs font-semibold mt-1 space-y-0.5">
+                                  <div>
+                                    เจ้าของรายงาน:{' '}
+                                    <span
+                                      className={
+                                        c.staff_id === currentUserId
+                                          ? 'owner-name--mine'
+                                          : 'owner-name--other'
+                                      }
+                                    >
+                                      {c.staff_name}
+                                    </span>
+                                  </div>
+                                  {team.length > 0 ? (
+                                    <div className="text-slate-600 font-normal">
+                                      สมาชิกทีม:{' '}
+                                      {team.map((p) => p.name).join(' · ')}
+                                    </div>
+                                  ) : null}
+                                  {modifiedAt ? (
+                                    <div className="text-slate-500 font-normal">
+                                      แก้ไขล่าสุดโดย{' '}
+                                      {c.updated_by_name ||
+                                        (c.updated_by === currentUserId
+                                          ? 'ฉัน'
+                                          : c.staff_name)}{' '}
+                                      · {formatThaiDateTime(modifiedAt)}
+                                    </div>
                                   ) : null}
                                 </div>
                               </div>
@@ -492,27 +518,9 @@ export function ReportsClient({
 
                             {editing ? (
                               <div className="grid gap-2 mt-2">
-                                <div className="report-hashtag-pick">
-                                  {REPORT_HASHTAGS.map((tag) => (
-                                    <button
-                                      key={tag}
-                                      type="button"
-                                      className={editTags.includes(tag) ? 'is-on' : ''}
-                                      onClick={() =>
-                                        setEditTags((prev) =>
-                                          prev.includes(tag)
-                                            ? prev.filter((t) => t !== tag)
-                                            : [...prev, tag]
-                                        )
-                                      }
-                                    >
-                                      #{tag}
-                                    </button>
-                                  ))}
-                                </div>
                                 <textarea
                                   className="form-input"
-                                  rows={3}
+                                  rows={5}
                                   value={editText}
                                   onChange={(e) => setEditText(e.target.value)}
                                 />
@@ -536,22 +544,34 @@ export function ReportsClient({
                               </div>
                             ) : (
                               <>
-                                <p className="text-sm mt-2 mb-2 whitespace-pre-wrap">{c.text}</p>
                                 {c.image_urls && c.image_urls.length > 0 ? (
                                   <ImageThumbGrid urls={c.image_urls} label="รูปแนบรายงาน" />
                                 ) : null}
-                                <div className="report-tags">
-                                  {tags.map((t) => (
-                                    <button
-                                      key={t}
-                                      type="button"
-                                      className={`report-tag ${activeTags.has(t) ? 'is-active' : ''}`}
-                                      onClick={() => toggleFilterTag(t)}
-                                    >
-                                      #{t}
-                                    </button>
-                                  ))}
+
+                                {c.ops_notes ? (
+                                  <div className="mt-2">
+                                    <div className="text-xs font-bold text-slate-700">
+                                      แนวทางการดำเนินงาน/การปฏิบัติงาน ณ หน้างาน
+                                    </div>
+                                    <p className="text-sm mt-1 mb-0 whitespace-pre-wrap">
+                                      {c.ops_notes}
+                                    </p>
+                                  </div>
+                                ) : null}
+
+                                {c.onsite_reasons && c.onsite_reasons.length > 0 ? (
+                                  <div className="mt-2 text-xs text-slate-600">
+                                    เหตุผลหน้างาน: {c.onsite_reasons.join(' · ')}
+                                  </div>
+                                ) : null}
+
+                                <div className="mt-3">
+                                  <div className="text-xs font-bold text-slate-700 mb-1">
+                                    ความคิดเห็นตามหัวข้อ
+                                  </div>
+                                  <SubjectBlocks text={c.text} />
                                 </div>
+
                                 <div className="flex flex-wrap gap-2 mt-2">
                                   <Link
                                     href={`/schools/${c.school_id}`}
@@ -559,7 +579,7 @@ export function ReportsClient({
                                   >
                                     เปิดรายละเอียดโรงเรียน
                                   </Link>
-                                  {mine && (
+                                  {editable && (
                                     <button
                                       type="button"
                                       className="ed-btn ed-btn--outline ed-btn--sm"

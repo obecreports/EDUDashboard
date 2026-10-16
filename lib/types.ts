@@ -2,6 +2,8 @@ export type UserRole =
   | 'guest'
   | 'staff'
   | 'overseer'
+  /** อาสาสมัคร — assists องคมนตรี; same field perspective as overseer */
+  | 'volunteer'
   | 'super_overseer'
   | 'admin'
   | 'super_admin';
@@ -129,17 +131,24 @@ export const ALL_ROLES: UserRole[] = [
   'guest',
   'staff',
   'overseer',
+  'volunteer',
   'super_overseer',
   'admin',
   'super_admin',
 ];
 
-export const FIELD_ROLES: UserRole[] = ['staff', 'overseer', 'super_overseer'];
+export const FIELD_ROLES: UserRole[] = [
+  'staff',
+  'overseer',
+  'volunteer',
+  'super_overseer',
+];
 export const ADMIN_ROLES: UserRole[] = ['admin', 'super_admin'];
 export const PUBLIC_ROLES: UserRole[] = [
   'guest',
   'staff',
   'overseer',
+  'volunteer',
   'super_overseer',
   'admin',
   'super_admin',
@@ -148,7 +157,8 @@ export const PUBLIC_ROLES: UserRole[] = [
 export const ROLE_LABELS: Record<UserRole, string> = {
   guest: 'ผู้เยี่ยมชม (Guest)',
   staff: 'ศึกษานิเทศก์',
-  overseer: 'อาสาสมัคร/องคมนตรี',
+  overseer: 'องคมนตรี',
+  volunteer: 'อาสาสมัคร',
   super_overseer: 'ผู้กำกับดูแลสูงสุด',
   admin: 'ผู้ดูแลระบบ (Admin)',
   super_admin: 'ผู้ดูแลระบบสูงสุด (Super Admin)',
@@ -158,6 +168,35 @@ export function normalizeRole(role: string | null | undefined): UserRole {
   if (role === 'global') return 'guest';
   if (role && (ALL_ROLES as string[]).includes(role)) return role as UserRole;
   return 'guest';
+}
+
+/** องคมนตรี + อาสาสมัคร — same province scope / field perspective */
+export function isOverseerLike(role: string | null | undefined): boolean {
+  const r = normalizeRole(role);
+  return r === 'overseer' || r === 'volunteer';
+}
+
+/** Join name_prefix + full_name (space). Empty prefix → full name only. */
+export function formatDisplayName(
+  namePrefix: string | null | undefined,
+  fullName: string | null | undefined
+): string {
+  const name = (fullName ?? '').trim();
+  const prefix = (namePrefix ?? '').trim();
+  if (!prefix) return name;
+  if (!name) return prefix;
+  return `${prefix} ${name}`;
+}
+
+/** Prefer prefix for overseer-like roles; otherwise full name. */
+export function formatPersonLabel(
+  role: string | null | undefined,
+  namePrefix: string | null | undefined,
+  fullName: string | null | undefined
+): string {
+  const name = (fullName ?? '').trim();
+  if (isOverseerLike(role)) return formatDisplayName(namePrefix, name);
+  return name;
 }
 
 export function districtKey(province: string, district: string): string {
@@ -231,7 +270,7 @@ export const PROTECTED_ROUTES: { prefix: string; roles: UserRole[] }[] = [
   { prefix: '/calendar', roles: FIELD_ROLES },
   { prefix: '/reports', roles: FIELD_ROLES },
   { prefix: '/tickets', roles: [...FIELD_ROLES, ...ADMIN_ROLES] },
-  { prefix: '/overseer', roles: ['overseer', 'super_overseer'] },
+  { prefix: '/overseer', roles: ['overseer', 'volunteer', 'super_overseer'] },
   { prefix: '/admin', roles: ADMIN_ROLES },
   { prefix: '/manage-schools', roles: ADMIN_ROLES },
   { prefix: '/change-password', roles: ALL_ROLES },

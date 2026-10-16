@@ -12,11 +12,27 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import { AlertTriangle, Award, Building2, Clock3, Star, TrendingUp } from 'lucide-react';
+import {
+  AlertTriangle,
+  Award,
+  Building2,
+  Clock3,
+  MessageSquarePlus,
+  Star,
+  TrendingUp,
+} from 'lucide-react';
 import type { SchoolFull, UserRole } from '@/lib/types';
 import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
 import { DualRadarChart } from '@/components/schools/SchoolRadarChart';
 import { DashboardWelcome } from '@/components/dashboard/DashboardWelcome';
+import { formatThaiDate } from '@/lib/format/date';
+
+export type PendingReportVisit = {
+  id: string;
+  school_id: string | null;
+  school_name: string;
+  date: string;
+};
 import {
   SuperOverseerActivityPanel,
   type ActivityPerson,
@@ -62,6 +78,7 @@ export function StaffDashboardClient({
   activitySchools = [],
   activityReports = [],
   compareScoresByYear,
+  pendingReportVisits = [],
 }: {
   schools: SchoolFull[];
   /** All-project schools for national average shadow on charts */
@@ -77,8 +94,13 @@ export function StaffDashboardClient({
   activityReports?: ReportActivityLink[];
   /** Exact-year SMS + 3-pillar maps for SO comparison charts */
   compareScoresByYear?: CompareScoresByYear;
+  /** Staff-only: past visits still missing a report */
+  pendingReportVisits?: PendingReportVisit[];
 }) {
   const isSuperOverseer = role === 'super_overseer';
+  const isStaff = role === 'staff';
+  const showReportReminder = isStaff && pendingReportVisits.length > 0;
+  const firstPending = pendingReportVisits[0];
   const counts = useMemo(() => {
     const c: Record<DevStatusKey | 'all', number> = {
       all: schools.length,
@@ -230,6 +252,25 @@ export function StaffDashboardClient({
     [schools]
   );
 
+  const lowFive = useMemo(
+    () =>
+      [...schools]
+        .sort((a, b) => (a.overallScore ?? 0) - (b.overallScore ?? 0))
+        .slice(0, 10),
+    [schools]
+  );
+
+  const lowThree = useMemo(
+    () =>
+      [...schools]
+        .sort(
+          (a, b) =>
+            (a.threePillarScores?.overall ?? 0) - (b.threePillarScores?.overall ?? 0)
+        )
+        .slice(0, 10),
+    [schools]
+  );
+
   return (
     <div className="page-shell py-5 space-y-5">
       <DashboardWelcome
@@ -237,6 +278,52 @@ export function StaffDashboardClient({
         birthday={birthday}
         namePrefix={namePrefix}
       />
+
+      {showReportReminder ? (
+        <section
+          className="ed-card p-4 flex flex-wrap items-start justify-between gap-3"
+          style={{ borderColor: '#F59E0B', background: '#FFFBEB' }}
+          role="status"
+        >
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 font-bold text-amber-900">
+              <AlertTriangle size={18} aria-hidden />
+              แจ้งเตือน · ยังไม่ได้สรุปรายงานหลังลงพื้นที่
+            </div>
+            <p className="text-sm text-amber-900/90 m-0 mt-1">
+              มี {pendingReportVisits.length} นัดที่วันลงพื้นที่ผ่านไปแล้ว
+              แต่ยังไม่มีรายงานสรุป — กรุณาเขียนสรุปรายงานให้ครบ
+            </p>
+            <ul className="m-0 mt-2 p-0 list-none text-sm text-amber-950 space-y-0.5">
+              {pendingReportVisits.slice(0, 3).map((v) => (
+                <li key={v.id}>
+                  {formatThaiDate(v.date)} · {v.school_name}
+                </li>
+              ))}
+              {pendingReportVisits.length > 3 ? (
+                <li className="text-amber-800/80">
+                  และอีก {pendingReportVisits.length - 3} นัด…
+                </li>
+              ) : null}
+            </ul>
+          </div>
+          <Link
+            href={
+              firstPending
+                ? `/reports/new?event_id=${encodeURIComponent(firstPending.id)}${
+                    firstPending.school_id
+                      ? `&school_id=${encodeURIComponent(firstPending.school_id)}`
+                      : ''
+                  }&date=${encodeURIComponent(firstPending.date)}`
+                : '/reports/new'
+            }
+            className="ed-btn ed-btn--primary ed-btn--sm shrink-0"
+          >
+            <MessageSquarePlus size={14} /> เขียนสรุปรายงาน
+          </Link>
+        </section>
+      ) : null}
+
       <div>
         <h2 className="ed-section-title m-0 text-base">แดชบอร์ด · {roleLabel}</h2>
         <p className="text-sm text-slate-600 m-0 mt-1">
@@ -460,95 +547,115 @@ export function StaffDashboardClient({
           </section>
 
           <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-            <section className="ed-card p-4 space-y-3 schools-list-panel schools-list-panel--three">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="ed-section-title text-base m-0">Top 10 · 3 เสาหลัก</h2>
-                <Link href="/schools" className="ed-btn ed-btn--outline ed-btn--sm">
-                  ดูรายชื่อโรงเรียน
-                </Link>
-              </div>
-              <div className="grid gap-2">
-                {topThree.map((s, i) => {
-                  const score = s.threePillarScores?.overall ?? 0;
-                  const st = statusFromScore(score);
-                  return (
-                    <Link
-                      key={`p3-${s.school_id}`}
-                      href={`/schools/${s.school_id}`}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5"
-                      style={{
-                        background: st.bg,
-                        borderColor: st.border,
-                      }}
-                    >
-                      <div className="flex items-start gap-2 min-w-0">
-                        <span className="text-xs font-bold w-5 shrink-0" style={{ color: st.color }}>
-                          {i + 1}
-                        </span>
-                        <div className="min-w-0">
-                          <strong className="text-tm-blue">{s.school_name_th}</strong>
-                          <div className="text-xs text-slate-500">
-                            {[s.district, s.province].filter(Boolean).join(' · ') || '—'}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="ed-badge" style={{ background: '#fff', color: st.color }}>
-                          {st.label}
-                        </span>
-                        <strong style={{ color: st.color }}>{score.toFixed(1)}</strong>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </section>
-            <section className="ed-card p-4 space-y-3 schools-list-panel schools-list-panel--five">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="ed-section-title text-base m-0">Top 10 · ผลการประเมินตามระบบ SMS</h2>
-                <Link href="/schools" className="ed-btn ed-btn--outline ed-btn--sm">
-                  ดูรายชื่อโรงเรียน
-                </Link>
-              </div>
-              <div className="grid gap-2">
-                {topFive.map((s, i) => {
-                  const score = s.overallScore ?? 0;
-                  const st = statusFromScore(score);
-                  return (
-                    <Link
-                      key={`hi-${s.school_id}`}
-                      href={`/schools/${s.school_id}`}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5"
-                      style={{
-                        background: st.bg,
-                        borderColor: st.border,
-                      }}
-                    >
-                      <div className="flex items-start gap-2 min-w-0">
-                        <span className="text-xs font-bold w-5 shrink-0" style={{ color: st.color }}>
-                          {i + 1}
-                        </span>
-                        <div className="min-w-0">
-                          <strong className="text-tm-blue">{s.school_name_th}</strong>
-                          <div className="text-xs text-slate-500">
-                            {[s.district, s.province].filter(Boolean).join(' · ') || '—'}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="ed-badge" style={{ background: '#fff', color: st.color }}>
-                          {st.label}
-                        </span>
-                        <strong style={{ color: st.color }}>{score.toFixed(2)}</strong>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </section>
+            <RankSchoolList
+              panelClass="schools-list-panel--three"
+              title="10 โรงเรียนที่มีผลประเมินดีที่สุด"
+              subtitle="คะแนน 3 เสาหลัก"
+              rows={topThree}
+              scoreOf={(s) => s.threePillarScores?.overall ?? 0}
+              scoreDigits={1}
+              keyPrefix="top-p3"
+            />
+            <RankSchoolList
+              panelClass="schools-list-panel--five"
+              title="10 โรงเรียนที่มีผลประเมินดีที่สุด"
+              subtitle="ผลการประเมินตามระบบ SMS"
+              rows={topFive}
+              scoreOf={(s) => s.overallScore ?? 0}
+              scoreDigits={2}
+              keyPrefix="top-sms"
+            />
+          </div>
+
+          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+            <RankSchoolList
+              panelClass="schools-list-panel--three"
+              title="10 โรงเรียนที่ต้องใส่ใจเร่งด่วน"
+              subtitle="คะแนน 3 เสาหลัก"
+              rows={lowThree}
+              scoreOf={(s) => s.threePillarScores?.overall ?? 0}
+              scoreDigits={1}
+              keyPrefix="low-p3"
+            />
+            <RankSchoolList
+              panelClass="schools-list-panel--five"
+              title="10 โรงเรียนที่ต้องใส่ใจเร่งด่วน"
+              subtitle="ผลการประเมินตามระบบ SMS"
+              rows={lowFive}
+              scoreOf={(s) => s.overallScore ?? 0}
+              scoreDigits={2}
+              keyPrefix="low-sms"
+            />
           </div>
         </>
       )}
     </div>
+  );
+}
+
+function RankSchoolList({
+  panelClass,
+  title,
+  subtitle,
+  rows,
+  scoreOf,
+  scoreDigits,
+  keyPrefix,
+}: {
+  panelClass: string;
+  title: string;
+  subtitle: string;
+  rows: SchoolFull[];
+  scoreOf: (s: SchoolFull) => number;
+  scoreDigits: number;
+  keyPrefix: string;
+}) {
+  return (
+    <section className={`ed-card p-4 space-y-3 schools-list-panel ${panelClass}`}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="ed-section-title text-base m-0">{title}</h2>
+          <p className="text-sm text-slate-600 m-0 mt-0.5">{subtitle}</p>
+        </div>
+        <Link href="/schools" className="ed-btn ed-btn--outline ed-btn--sm">
+          ดูรายชื่อโรงเรียน
+        </Link>
+      </div>
+      <div className="grid gap-2">
+        {rows.map((s, i) => {
+          const score = scoreOf(s);
+          const st = statusFromScore(score);
+          return (
+            <Link
+              key={`${keyPrefix}-${s.school_id}`}
+              href={`/schools/${s.school_id}`}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5"
+              style={{
+                background: st.bg,
+                borderColor: st.border,
+              }}
+            >
+              <div className="flex items-start gap-2 min-w-0">
+                <span className="text-xs font-bold w-5 shrink-0" style={{ color: st.color }}>
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  <strong className="text-tm-blue">{s.school_name_th}</strong>
+                  <div className="text-xs text-slate-500">
+                    {[s.district, s.province].filter(Boolean).join(' · ') || '—'}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="ed-badge" style={{ background: '#fff', color: st.color }}>
+                  {st.label}
+                </span>
+                <strong style={{ color: st.color }}>{score.toFixed(scoreDigits)}</strong>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
   );
 }

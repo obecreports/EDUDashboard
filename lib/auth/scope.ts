@@ -1,5 +1,5 @@
 import type { SchoolFull, UserProfile, UserRole } from '@/lib/types';
-import { districtKey, normalizeRole } from '@/lib/types';
+import { districtKey, isOverseerLike, normalizeRole } from '@/lib/types';
 import type { StoredUserProfile } from '@/lib/auth/mock-users';
 
 export type ScopeUser = Pick<
@@ -9,7 +9,7 @@ export type ScopeUser = Pick<
 
 export function isFieldRole(role: UserRole): boolean {
   const r = normalizeRole(role);
-  return r === 'staff' || r === 'overseer' || r === 'super_overseer';
+  return r === 'staff' || isOverseerLike(r) || r === 'super_overseer';
 }
 
 export function isAdminRole(role: UserRole): boolean {
@@ -34,7 +34,7 @@ export function isSchoolInScope(user: ScopeUser | null | undefined, school: Scho
   const province = school.province?.trim() ?? '';
   const key = schoolDistrictKey(school);
 
-  if (role === 'overseer') {
+  if (isOverseerLike(role)) {
     return Boolean(province) && (user.assigned_provinces ?? []).includes(province);
   }
 
@@ -69,7 +69,7 @@ export function canAccessSchoolDetail(
   if (!isAuthenticated || !user) return false;
   const role = normalizeRole(user.role);
   if (role === 'super_overseer') return true;
-  if (role === 'staff' || role === 'overseer') return isSchoolInScope(user, school);
+  if (role === 'staff' || isOverseerLike(role)) return isSchoolInScope(user, school);
   return false;
 }
 
@@ -96,8 +96,8 @@ export function canEditSwot(_user: ScopeUser | null | undefined): boolean {
 
 /**
  * Calendar peer visibility:
- * - staff: self + overseer/super_overseer in chain + other staff under same overseer
- * - overseer: self + super_overseer + staff under command (not other overseers)
+ * - staff: self + overseer/volunteer/super_overseer in chain + peers under same boss
+ * - overseer / volunteer: self + chain + staff under command (+ volunteers under องคมนตรี)
  * - super_overseer: everyone in field roles
  */
 export function calendarPeers(
@@ -114,13 +114,17 @@ export function calendarPeers(
     return [...ids];
   }
 
-  if (role === 'overseer') {
+  if (isOverseerLike(role)) {
     if (user.reports_to) ids.add(user.reports_to);
     for (const u of allUsers) {
-      if (normalizeRole(u.role) === 'staff' && u.reports_to === user.id) {
+      const ur = normalizeRole(u.role);
+      if (ur === 'staff' && u.reports_to === user.id) ids.add(u.id);
+      if (ur === 'volunteer' && u.reports_to === user.id) ids.add(u.id);
+      if (ur === 'super_overseer') ids.add(u.id);
+      // อาสาสมัคร also sees their องคมนตรี peers under same SO via reports_to
+      if (role === 'volunteer' && ur === 'overseer' && u.id === user.reports_to) {
         ids.add(u.id);
       }
-      if (normalizeRole(u.role) === 'super_overseer') ids.add(u.id);
     }
     return [...ids];
   }
@@ -148,7 +152,7 @@ export function calendarPeers(
 
 export function postLoginPath(role: UserRole): string {
   const r = normalizeRole(role);
-  if (r === 'staff' || r === 'overseer' || r === 'super_overseer') return '/dashboard';
+  if (r === 'staff' || isOverseerLike(r) || r === 'super_overseer') return '/dashboard';
   if (r === 'admin' || r === 'super_admin') return '/admin/accounts';
   return '/';
 }

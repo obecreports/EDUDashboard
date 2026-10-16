@@ -7,11 +7,12 @@ import {
   MOCK_USER_SEEDS,
   type AuthSession,
   type CredentialsMap,
+  credentialsOverridesOnly,
   findSeedById,
+  idleTimeoutMs,
   seedCredentials,
 } from '@/lib/auth/mock-users';
 import {
-  JSON_COOKIE_OPTS,
   parseJsonCookieValue,
   readJsonCookie,
   writeJsonCookie,
@@ -27,11 +28,12 @@ import { postLoginPath } from '@/lib/auth/scope';
 async function readCredentials(): Promise<CredentialsMap> {
   const parsed = await readJsonCookie<CredentialsMap | null>(AUTH_CREDENTIALS_COOKIE, null);
   if (!parsed) return seedCredentials();
+  // Merge seeds in memory; cookie holds overrides only (see writeCredentials)
   return { ...seedCredentials(), ...parsed };
 }
 
 async function writeCredentials(map: CredentialsMap) {
-  await writeJsonCookie(AUTH_CREDENTIALS_COOKIE, map);
+  await writeJsonCookie(AUTH_CREDENTIALS_COOKIE, credentialsOverridesOnly(map));
 }
 
 export async function readAuthSession(): Promise<AuthSession | null> {
@@ -56,7 +58,17 @@ async function writeAuthSession(session: AuthSession | null) {
     jar.delete(AUTH_SESSION_COOKIE);
     return;
   }
-  jar.set(AUTH_SESSION_COOKIE, JSON.stringify(session), JSON_COOKIE_OPTS);
+  const next: AuthSession = {
+    ...session,
+    lastActiveAt: session.lastActiveAt ?? Date.now(),
+  };
+  const maxAge = Math.ceil(idleTimeoutMs(next.role) / 1000);
+  jar.set(AUTH_SESSION_COOKIE, JSON.stringify(next), {
+    path: '/',
+    sameSite: 'lax',
+    httpOnly: true,
+    maxAge,
+  });
 }
 
 function profileFromStored(
@@ -135,7 +147,7 @@ export async function loginWithPassword(email: string, password: string): Promis
   if (!user) {
     return {
       ok: false,
-      error: 'ไม่พบบัญชีผู้ใช้นี้ — ตรวจอีเมล หรือรัน migration 007 ใน Supabase',
+      error: 'ไม่พบรหัสผู้ใช้นี้ — ตรวจรหัสผู้ใช้ หรือรัน migration 014/015 ใน Supabase',
     };
   }
   if (user.disabled) return { ok: false, error: 'บัญชีนี้ถูกปิดการใช้งาน' };
@@ -174,6 +186,7 @@ export async function loginWithPassword(email: string, password: string): Promis
     reports_to: user.reports_to ?? null,
     mustChangePassword: matchedTemp || Boolean(state.mustChangePassword),
     authVia: matchedTemp ? 'temp' : 'password',
+    lastActiveAt: Date.now(),
   };
 
   await writeAuthSession(session);
@@ -230,6 +243,7 @@ export async function changePasswordForced(nextPassword: string): Promise<Change
     ...session,
     mustChangePassword: false,
     authVia: 'password',
+    lastActiveAt: Date.now(),
   });
 
   return { ok: true };
@@ -273,6 +287,7 @@ export async function changePassword(
     ...session,
     mustChangePassword: false,
     authVia: 'password',
+    lastActiveAt: Date.now(),
   });
 
   return { ok: true };
@@ -326,21 +341,32 @@ export async function adminAssignGeo(
     ];
     if (provincesFromAreas.length > 0) {
       const all = await readStoredUsers();
-      const overseer = all.find(
-        (u) =>
-          normalizeRole(u.role) === 'overseer' &&
-          !u.disabled &&
-          provincesFromAreas.some((p) => u.assigned_provinces.includes(p))
-      );
-      if (overseer) patch.reports_to = overseer.id;
+      const boss =
+        all.find(
+          (u) =>
+            normalizeRole(u.role) === 'overseer' &&
+            !u.disabled &&
+            provincesFromAreas.some((p) => u.assigned_provinces.includes(p))
+        ) ??
+        all.find(
+          (u) =>
+            normalizeRole(u.role) === 'volunteer' &&
+            !u.disabled &&
+            provincesFromAreas.some((p) => u.assigned_provinces.includes(p))
+        );
+      if (boss) patch.reports_to = boss.id;
     }
   }
 
   const result = await updateUserProfileFields(userId, patch);
   if (!result.ok) return result;
 
-  // When overseer provinces change, re-link staff under those provinces
-  if (normalizeRole(user.role) === 'overseer' && patch.assigned_provinces) {
+  // When องคมนตรี / อาสาสมัคร provinces change, re-link staff under those provinces
+  if (
+    (normalizeRole(user.role) === 'overseer' ||
+      normalizeRole(user.role) === 'volunteer') &&
+    patch.assigned_provinces
+  ) {
     const provinces = new Set(patch.assigned_provinces);
     const all = await readStoredUsers();
     let areaProvinceMap: Map<string, string[]> | null = null;
@@ -429,6 +455,17 @@ export async function registerUserCredentials(userId: string, tempPassword: stri
     password: null,
     tempPassword: tempPassword.trim(),
     mustChangePassword: true,
+  };
+  await writeCredentials(creds);
+}
+
+/** First password for admin-created users (same UX as seed login1234). */
+export async function registerInitialPassword(userId: string, password: string) {
+  const creds = await readCredentials();
+  creds[userId] = {
+    password: password.trim(),
+    tempPassword: null,
+    mustChangePassword: false,
   };
   await writeCredentials(creds);
 }

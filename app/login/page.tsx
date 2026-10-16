@@ -3,49 +3,79 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { loginAction } from '@/app/actions/auth';
-import { MOCK_USER_SEEDS } from '@/lib/auth/mock-users';
+import { MOCK_LOGIN_PASSWORD, MOCK_USER_SEEDS } from '@/lib/auth/mock-users';
 import { PasswordField } from '@/components/auth/PasswordField';
 import { ROLE_LABELS, normalizeRole } from '@/lib/types';
 
+const TIP_ORDER = [
+  'staff01',
+  'staff02',
+  'AS01',
+  'OS01',
+  'OS10',
+  'sirdawpong',
+  'sirthanu',
+  'admin',
+];
+
+const INVALID_LOGIN_MSG = 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองอีกครั้ง';
+
 export default function LoginPage() {
+  const [login, setLogin] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  const tips = MOCK_USER_SEEDS;
+  const tips = TIP_ORDER.map((id) =>
+    MOCK_USER_SEEDS.find((u) => u.email.toLowerCase() === id.toLowerCase())
+  ).filter(Boolean) as typeof MOCK_USER_SEEDS;
 
   return (
     <div className="page-shell" style={{ maxWidth: 480 }}>
       <h1 className="section-heading">เข้าใช้งานระบบ</h1>
       <p className="text-slate-500 mt-[-0.5rem] mb-4">
-        ใช้บัญชีทดสอบตามบทบาทด้านล่าง หรือรหัส OTP ชั่วคราวของ Staff
+        ใช้รหัสผู้ใช้ด้านล่าง · รหัสผ่านเริ่มต้น {MOCK_LOGIN_PASSWORD}
       </p>
 
       <form
         className="panel-card space-y-4"
-        action={(fd) => {
+        onSubmit={(e) => {
+          e.preventDefault();
           setError(null);
+          const fd = new FormData();
+          fd.set('login', login.trim());
+          fd.set('password', password);
           start(async () => {
             const res = await loginAction(null, fd);
-            if (res?.error) setError(res.error);
+            if (res?.error) {
+              setPassword('');
+              setError(INVALID_LOGIN_MSG);
+            }
           });
         }}
       >
         <label className="block text-sm">
-          อีเมล
+          รหัสผู้ใช้
           <input
-            name="email"
-            type="email"
+            name="login"
+            type="text"
             className="form-input"
             required
-            placeholder="staff@coned.local"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            placeholder="staff01 / OS01 / sirdawpong"
             autoComplete="username"
+            autoCapitalize="off"
+            spellCheck={false}
           />
         </label>
         <PasswordField
           name="password"
-          label="รหัสผ่าน / OTP"
+          label="รหัสผ่าน"
           required
           autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
         />
         {error && (
           <p className="text-sm font-medium" style={{ color: '#b91c1c' }}>
@@ -65,13 +95,15 @@ export default function LoginPage() {
               <strong>
                 {ROLE_LABELS[normalizeRole(u.role)]} · {u.full_name}
               </strong>{' '}
-              — {u.email}
+              — <code>{u.email}</code>
               <br />
-              {u.password ? `รหัส: ${u.password}` : ''}
-              {u.tempPassword ? `OTP ชั่วคราว: ${u.tempPassword}` : ''}
-              {u.mustChangePassword ? ' · บังคับเปลี่ยนรหัสหลังล็อกอิน' : ''}
+              รหัส: {u.password ?? MOCK_LOGIN_PASSWORD}
+              {u.tempPassword ? ` · OTP ชั่วคราว: ${u.tempPassword}` : ''}
             </li>
           ))}
+          <li className="rounded-lg bg-slate-50 p-2 border border-slate-100 text-slate-500">
+            องคมนตรีทั้ง 14 คน: <code>OS01</code>–<code>OS14</code> · รหัสเดียวกัน
+          </li>
         </ul>
         <p className="text-xs text-slate-400 mt-3 mb-0">
           ผู้เยี่ยมชม (Guest) ใช้งานสาธารณะได้โดยไม่ต้องเข้าสู่ระบบ ·{' '}

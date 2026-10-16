@@ -34,6 +34,11 @@ type CommentRow = {
   edited_at?: string | null;
   image_urls?: string[] | null;
   calendar_event_id?: string | null;
+  onsite_reasons?: string[] | null;
+  visitor_reason_map?: Record<string, string[]> | null;
+  ops_notes?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
 };
 
 function toSchoolId(schoolId: string | number): number | null {
@@ -62,11 +67,21 @@ function mapComment(row: CommentRow): SchoolComment {
       : [],
     calendar_event_id: row.calendar_event_id ?? null,
     report_date: reportDate,
+    onsite_reasons: Array.isArray(row.onsite_reasons)
+      ? row.onsite_reasons.map(String)
+      : [],
+    visitor_reason_map:
+      row.visitor_reason_map && typeof row.visitor_reason_map === 'object'
+        ? row.visitor_reason_map
+        : {},
+    ops_notes: row.ops_notes ?? null,
+    updated_at: row.updated_at ?? row.edited_at ?? null,
+    updated_by: row.updated_by ?? null,
   };
 }
 
 const COMMENT_SELECT =
-  'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls, calendar_event_id';
+  'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls, calendar_event_id, onsite_reasons, visitor_reason_map, ops_notes, updated_at, updated_by';
 
 const SWOT_SELECT =
   'school_id, categories, internal_strengths, internal_weaknesses, external_strengths, external_threats, updated_at';
@@ -299,6 +314,9 @@ export async function insertSchoolStaffComment(params: {
   reportDate?: string | null;
   imageUrls?: string[];
   calendarEventId?: string | null;
+  onsiteReasons?: string[];
+  visitorReasonMap?: Record<string, string[]>;
+  opsNotes?: string | null;
 }): Promise<{ ok: true; comment: SchoolComment } | { ok: false; error: string }> {
   const id = toSchoolId(params.schoolId);
   if (id == null) return { ok: false, error: 'รหัสโรงเรียนไม่ถูกต้อง' };
@@ -314,6 +332,9 @@ export async function insertSchoolStaffComment(params: {
     params.reportDate && /^\d{4}-\d{2}-\d{2}$/.test(params.reportDate)
       ? params.reportDate
       : null;
+  const onsiteReasons = (params.onsiteReasons ?? []).map((r) => r.trim()).filter(Boolean);
+  const visitorReasonMap = params.visitorReasonMap ?? {};
+  const opsNotes = params.opsNotes?.trim() || null;
 
   try {
     const supabase = await createClient();
@@ -322,11 +343,14 @@ export async function insertSchoolStaffComment(params: {
       school_id: id,
       staff_id: staffId,
       staff_name: params.staffName,
-      comment_text: params.text.trim(),
+      comment_text: params.text.trim() || '(ไม่มีข้อความความคิดเห็น)',
       tags,
       report_date: reportDate,
       image_urls: imageUrls,
       calendar_event_id: calendarEventId,
+      onsite_reasons: onsiteReasons,
+      visitor_reason_map: visitorReasonMap,
+      ops_notes: opsNotes,
     };
     let { data, error } = await supabase
       .from('school_staff_comments')
@@ -335,7 +359,28 @@ export async function insertSchoolStaffComment(params: {
       .single();
 
     // Fallback if newer columns missing
-    if (error && /image_urls|tags|report_date|calendar_event_id/i.test(error.message)) {
+    if (
+      error &&
+      /image_urls|tags|report_date|calendar_event_id|onsite_reasons|visitor_reason_map|ops_notes/i.test(
+        error.message
+      )
+    ) {
+      if (/onsite_reasons|visitor_reason_map|ops_notes/i.test(error.message)) {
+        delete payload.onsite_reasons;
+        delete payload.visitor_reason_map;
+        delete payload.ops_notes;
+        const withoutNew = await supabase
+          .from('school_staff_comments')
+          .insert(payload)
+          .select(
+            'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls, calendar_event_id'
+          )
+          .single();
+        if (!withoutNew.error && withoutNew.data) {
+          return { ok: true, comment: mapComment(withoutNew.data as CommentRow) };
+        }
+        error = withoutNew.error ?? error;
+      }
       if (/calendar_event_id/i.test(error.message)) {
         delete payload.calendar_event_id;
         const withoutCal = await supabase
@@ -396,6 +441,98 @@ export async function insertSchoolStaffComment(params: {
     return {
       ok: false,
       error: e instanceof Error ? e.message : 'บันทึกความคิดเห็นไม่สำเร็จ',
+    };
+  }
+}
+
+export async function updateSchoolStaffComment(params: {
+  commentId: string;
+  schoolId: string | number;
+  editorId: string;
+  text: string;
+  tags?: string[];
+  /** When set, editor must be owner or listed participant */
+  allowParticipantIds?: string[];
+}): Promise<{ ok: true; comment: SchoolComment } | { ok: false; error: string }> {
+  const schoolNum = toSchoolId(params.schoolId);
+  if (schoolNum == null) return { ok: false, error: 'รหัสโรงเรียนไม่ถูกต้อง' };
+  if (!isDbUserId(params.editorId)) {
+    return { ok: false, error: 'บัญชียังไม่อยู่ในฐานข้อมูล' };
+  }
+
+  try {
+    const supabase = await createClient();
+    const existing = await supabase
+      .from('school_staff_comments')
+      .select(COMMENT_SELECT)
+      .eq('id', params.commentId)
+      .eq('school_id', schoolNum)
+      .maybeSingle();
+
+    if (existing.error || !existing.data) {
+      return { ok: false, error: existing.error?.message || 'ไม่พบความคิดเห็น' };
+    }
+
+    const row = existing.data as CommentRow;
+    const ownerId = row.staff_id ?? '';
+    const map =
+      row.visitor_reason_map && typeof row.visitor_reason_map === 'object'
+        ? row.visitor_reason_map
+        : {};
+    const participantIds = [
+      ...new Set([
+        ownerId,
+        ...Object.keys(map),
+        ...(params.allowParticipantIds ?? []),
+      ]),
+    ].filter(Boolean);
+
+    if (!participantIds.includes(params.editorId)) {
+      return { ok: false, error: 'แก้ไขได้เฉพาะเจ้าของรายงานหรือสมาชิกทีม' };
+    }
+
+    const now = new Date().toISOString();
+    const tags = (params.tags ?? []).map((t) => t.trim()).filter(Boolean);
+    const payload: Record<string, unknown> = {
+      comment_text: params.text.trim(),
+      tags,
+      edited_at: now,
+      updated_at: now,
+      updated_by: params.editorId,
+    };
+
+    let { data, error } = await supabase
+      .from('school_staff_comments')
+      .update(payload)
+      .eq('id', params.commentId)
+      .eq('school_id', schoolNum)
+      .select(COMMENT_SELECT)
+      .single();
+
+    if (error && /updated_at|updated_by/i.test(error.message)) {
+      delete payload.updated_at;
+      delete payload.updated_by;
+      const retry = await supabase
+        .from('school_staff_comments')
+        .update(payload)
+        .eq('id', params.commentId)
+        .eq('school_id', schoolNum)
+        .select(
+          'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls, calendar_event_id, onsite_reasons, visitor_reason_map, ops_notes'
+        )
+        .single();
+      data = retry.data as typeof data;
+      error = retry.error;
+    }
+
+    if (error || !data) {
+      return { ok: false, error: error?.message || 'แก้ไขไม่สำเร็จ' };
+    }
+    return { ok: true, comment: mapComment(data as CommentRow) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'แก้ไขไม่สำเร็จ',
     };
   }
 }

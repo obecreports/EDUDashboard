@@ -7,6 +7,7 @@ import { HeroGate } from '@/components/layout/HeroGate';
 import { PendingNav } from '@/components/layout/PendingNav';
 import { getSessionProfile } from '@/lib/auth/session';
 import { readHeroSettings } from '@/lib/auth/user-store';
+import { formatPersonLabel } from '@/lib/types';
 
 export const metadata: Metadata = {
   title: 'โครงการกองทุนการศึกษา · Connext ED',
@@ -27,7 +28,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <PendingNav />
         <AppNavbar
           role={role}
-          displayName={profile?.full_name ?? 'ผู้เยี่ยมชม'}
+          displayName={
+            profile
+              ? formatPersonLabel(role, profile.name_prefix, profile.full_name) ||
+                'ผู้เยี่ยมชม'
+              : 'ผู้เยี่ยมชม'
+          }
           isAuthenticated={isAuthenticated}
           mustChangePassword={mustChangePassword}
         />

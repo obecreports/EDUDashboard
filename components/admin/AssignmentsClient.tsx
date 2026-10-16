@@ -29,7 +29,7 @@ export function AssignmentsClient({
     <div className="grid gap-4">
       {msg && <div className="ed-card p-3 text-sm text-tm-blue bg-tm-blue-50">{msg}</div>}
       {accounts.map((a) => {
-        const isOverseer = a.role === 'overseer';
+        const isOverseer = a.role === 'overseer' || a.role === 'volunteer';
         const isStaff = a.role === 'staff';
         if (!isOverseer && !isStaff) {
           return (

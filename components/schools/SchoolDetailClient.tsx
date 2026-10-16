@@ -580,8 +580,8 @@ export function SchoolDetailClient({
         { id: 'visits', label: 'การลงพื้นที่', icon: CalendarDays },
         ...(showScores
           ? [
-              { id: 'scores' as const, label: 'ผลการประเมินตามระบบ SMS', icon: Award },
               { id: 'pillars' as const, label: '3 เสาหลัก', icon: Sparkles },
+              { id: 'scores' as const, label: 'ผลการประเมินตามระบบ SMS', icon: Award },
             ]
           : []),
         { id: 'people', label: 'นักเรียน / บุคลากร', icon: Users },

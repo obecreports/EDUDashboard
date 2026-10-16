@@ -32,7 +32,7 @@ export default async function AdminDomainPage() {
     .sort((a, b) => a.name.localeCompare(b.name, 'th'));
 
   const fieldAccounts = accounts.filter((a) =>
-    ['staff', 'overseer', 'super_overseer'].includes(a.role)
+    ['staff', 'overseer', 'volunteer', 'super_overseer'].includes(a.role)
   );
 
   return (

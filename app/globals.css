@@ -2232,22 +2232,6 @@ a {
   width: 100%;
   color: var(--text);
 }
-.ed-a11y {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-}
-.ed-a11y button {
-  border: none;
-  background: #fff;
-  padding: 0.35rem 0.55rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--tm-blue);
-  cursor: pointer;
-}
-.ed-a11y button + button { border-left: 1px solid var(--border); }
 .ed-profile-btn {
   display: inline-flex;
   align-items: center;
@@ -2686,6 +2670,24 @@ a {
 }
 .domain-person-tag:hover {
   background: #f3ead8;
+}
+.so-panel-toggle {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.so-panel-toggle__chevron {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.so-panel-toggle__chevron.is-open {
+  transform: rotate(180deg);
 }
 .so-activity {
   font-size: 0.9rem;
@@ -4299,10 +4301,6 @@ a {
 .ed-navbar--auth .ed-profile-btn__name {
   max-width: 88px;
   font-size: 0.78rem;
-}
-.ed-navbar .ed-a11y {
-  transform: scale(0.92);
-  transform-origin: right center;
 }
 .ed-navbar .navbar__login {
   padding: 0.35rem 0.75rem;

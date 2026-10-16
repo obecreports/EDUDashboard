@@ -1,7 +1,7 @@
 'use client';
 
 import { Eye, EyeOff } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ChangeEventHandler } from 'react';
 
 /** Password field with show/hide; toggle is tabindex=-1 so Tab skips to next control */
 export function PasswordField({
@@ -11,6 +11,8 @@ export function PasswordField({
   minLength,
   autoComplete,
   placeholder,
+  value,
+  onChange,
 }: {
   name: string;
   label: string;
@@ -18,8 +20,11 @@ export function PasswordField({
   minLength?: number;
   autoComplete?: string;
   placeholder?: string;
+  value?: string;
+  onChange?: ChangeEventHandler<HTMLInputElement>;
 }) {
   const [show, setShow] = useState(false);
+  const controlled = value !== undefined;
 
   return (
     <label className="block text-sm">
@@ -33,6 +38,7 @@ export function PasswordField({
           minLength={minLength}
           autoComplete={autoComplete}
           placeholder={placeholder}
+          {...(controlled ? { value, onChange } : {})}
         />
         <button
           type="button"
@@ -41,7 +47,7 @@ export function PasswordField({
           aria-label={show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
           onClick={() => setShow((v) => !v)}
         >
-          {show ? <EyeOff size={18} /> : <Eye size={18} />}
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
       </div>
     </label>

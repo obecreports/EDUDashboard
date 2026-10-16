@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Activity, ChevronDown, School, UserRound } from 'lucide-react';
 import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
 import type { UserRole } from '@/lib/types';
-import { ROLE_LABELS, normalizeRole } from '@/lib/types';
+import { ROLE_LABELS, formatPersonLabel, normalizeRole } from '@/lib/types';
 import {
   countCompleteEvents,
   eventHasMappedReport,
@@ -20,6 +20,7 @@ import { formatThaiDate, formatThaiYearMonth } from '@/lib/format/date';
 export type ActivityPerson = {
   id: string;
   full_name: string;
+  name_prefix?: string | null;
   role: UserRole;
   reports_to: string | null;
   schoolIds: string[];
@@ -178,6 +179,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
   const [openOverseers, setOpenOverseers] = useState<Set<string>>(new Set());
   const [openProvinces, setOpenProvinces] = useState<Set<string>>(new Set());
   const [openAreas, setOpenAreas] = useState<Set<string>>(new Set());
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const schoolById = useMemo(() => new Map(schools.map((s) => [s.id, s])), [schools]);
@@ -273,11 +275,17 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     return map;
   }, [people, eventsByStaff, reportsByStaff]);
 
+  const labelOf = (p: ActivityPerson) =>
+    formatPersonLabel(p.role, p.name_prefix, p.full_name);
+
   const overseers = useMemo(
     () =>
       people
-        .filter((p) => normalizeRole(p.role) === 'overseer')
-        .sort((a, b) => a.full_name.localeCompare(b.full_name, 'th')),
+        .filter((p) => {
+          const r = normalizeRole(p.role);
+          return r === 'overseer' || r === 'volunteer';
+        })
+        .sort((a, b) => labelOf(a).localeCompare(labelOf(b), 'th')),
     [people]
   );
 
@@ -312,11 +320,11 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
   const personFilterTree = useMemo((): FilterTreeNode[] => {
     const nodes: FilterTreeNode[] = overseers.map((ov) => ({
       id: ov.id,
-      label: ov.full_name,
+      label: labelOf(ov),
       hint: 'Overseer',
       children: (staffUnder.get(ov.id) ?? []).map((st) => ({
         id: st.id,
-        label: st.full_name,
+        label: labelOf(st),
         hint: 'Staff',
       })),
     }));
@@ -324,7 +332,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       if (normalizeRole(p.role) !== 'staff') continue;
       if (p.reports_to && staffUnder.has(p.reports_to)) continue;
       if (nodes.some((n) => n.id === p.id)) continue;
-      nodes.push({ id: p.id, label: p.full_name, hint: 'Staff' });
+      nodes.push({ id: p.id, label: labelOf(p), hint: 'Staff' });
     }
     return nodes;
   }, [overseers, staffUnder, people]);
@@ -447,7 +455,10 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       if (!leaf.lastDate || e.date > leaf.lastDate) leaf.lastDate = e.date;
       if (eventHasMappedReport(e, filteredReports)) leaf.complete += 1;
       if (e.staff_id) {
-        const name = peopleById.get(e.staff_id)?.full_name || 'ไม่ระบุ';
+        const who = peopleById.get(e.staff_id);
+        const name = who
+          ? labelOf(who) || 'ไม่ระบุ'
+          : 'ไม่ระบุ';
         if (!leaf.byWho.some((w) => w.id === e.staff_id)) {
           leaf.byWho.push({ id: e.staff_id, name });
         }
@@ -636,11 +647,20 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
   return (
     <section className="ed-card p-4 space-y-3 so-activity">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <button
+          type="button"
+          className="so-panel-toggle"
+          onClick={() => setIsExpanded((v) => !v)}
+          aria-expanded={isExpanded}
+        >
           <h2 className="ed-section-title text-base m-0 flex items-center gap-2">
             <Activity size={18} /> ภาพรวมกิจกรรมทั้งระบบ
+            <ChevronDown
+              size={18}
+              className={`so-panel-toggle__chevron ${isExpanded ? 'is-open' : ''}`}
+            />
           </h2>
-        </div>
+        </button>
         <div className="so-activity__kpis">
           <MetricLink
             href={schoolsHref({ status: 'all' })}
@@ -659,6 +679,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
         </div>
       </div>
 
+      {isExpanded ? (
+      <>
       <div className="so-activity__filters">
         <MonthMultiDropdown
           label="เดือน"
@@ -750,7 +772,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                     />
                     <div className="so-tree__main">
                       <strong>
-                        {ov.full_name}
+                        {labelOf(ov)}
                         <span className="so-tree__last">ล่าสุด {formatThaiDate(last)}</span>
                       </strong>
                       <span className="so-tree__meta">
@@ -795,7 +817,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                               <span className="so-tree__dot" aria-hidden />
                               <div className="so-tree__main">
                                 <strong>
-                                  {st.full_name}
+                                  {labelOf(st)}
                                   <span className="so-tree__last">
                                     ล่าสุด {formatThaiDate(sm?.lastDate || '')}
                                   </span>
@@ -997,6 +1019,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
           )}
         </div>
       )}
+      </>
+      ) : null}
     </section>
   );
 }

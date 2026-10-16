@@ -7,11 +7,21 @@ import { SCORE_YEAR_CURRENT, SCORE_YEAR_PREVIOUS } from '@/lib/scores/years';
 import { normalizeRole, ROLE_LABELS } from '@/lib/types';
 import { StaffDashboardClient } from '@/components/dashboard/StaffDashboardClient';
 import { ManagedSchoolsSkeleton } from '@/components/ui/PageSkeleton';
-import { listAllCookieCalendarEvents } from '@/app/actions/visits';
+import {
+  listAllCookieCalendarEvents,
+  listMyCalendarEvents,
+} from '@/app/actions/visits';
 import { fetchAllUserProfiles } from '@/lib/supabase/profiles';
 import { fetchAllSchoolComments } from '@/lib/supabase/school-swot';
+import { eventHasMappedReport, type ReportActivityLink } from '@/lib/activity/complete';
+import { normalizeStatus } from '@/lib/visits/labels';
 
 export const dynamic = 'force-dynamic';
+
+function todayYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 async function DashboardBody() {
   const { profile, isAuthenticated, role } = await getSessionProfile();
@@ -21,22 +31,52 @@ async function DashboardBody() {
   }
 
   const isSO = r === 'super_overseer';
-  const [all, calendarEvents, profiles, comments, compareScoresByYear] = await Promise.all([
-    fetchSchools().catch(() => []),
-    listAllCookieCalendarEvents().catch(() => []),
-    isSO ? fetchAllUserProfiles().catch(() => []) : Promise.resolve([]),
-    isSO ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
-    isSO
-      ? fetchCompareScoresByYear().catch((err) => {
-          console.error('[dashboard] fetchCompareScoresByYear failed', err);
-          return {
-            [SCORE_YEAR_PREVIOUS]: {},
-            [SCORE_YEAR_CURRENT]: {},
-          };
-        })
-      : Promise.resolve({}),
-  ]);
+  const isStaff = r === 'staff';
+  const [all, calendarEvents, myEvents, profiles, comments, staffComments, compareScoresByYear] =
+    await Promise.all([
+      fetchSchools().catch(() => []),
+      listAllCookieCalendarEvents().catch(() => []),
+      isStaff ? listMyCalendarEvents().catch(() => []) : Promise.resolve([]),
+      isSO ? fetchAllUserProfiles().catch(() => []) : Promise.resolve([]),
+      isSO ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
+      isStaff ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
+      isSO
+        ? fetchCompareScoresByYear().catch((err) => {
+            console.error('[dashboard] fetchCompareScoresByYear failed', err);
+            return {
+              [SCORE_YEAR_PREVIOUS]: {},
+              [SCORE_YEAR_CURRENT]: {},
+            };
+          })
+        : Promise.resolve({}),
+    ]);
   const scoped = schoolsInScope(profile, all);
+
+  const today = todayYmd();
+  const staffReportLinks: ReportActivityLink[] = staffComments.map((c) => ({
+    id: c.id,
+    school_id: c.school_id || '',
+    staff_id: c.staff_id,
+    report_date: c.report_date ?? (c.created_at ? c.created_at.slice(0, 10) : null),
+    calendar_event_id: c.calendar_event_id ?? null,
+  }));
+
+  const pendingReportVisits = isStaff
+    ? myEvents
+        .filter((e) => {
+          if (normalizeStatus(e.status_th ?? e.status) === 'ยกเลิก') return false;
+          if (e.date >= today) return false;
+          return !eventHasMappedReport(e, staffReportLinks);
+        })
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(0, 8)
+        .map((e) => ({
+          id: e.id,
+          school_id: e.school_id,
+          school_name: e.school_name || e.school_id || 'โรงเรียน',
+          date: e.date,
+        }))
+    : [];
 
   const fieldProfiles = profiles.filter(
     (u) => isFieldRole(normalizeRole(u.role)) && !u.disabled
@@ -46,6 +86,7 @@ async function DashboardBody() {
     ? fieldProfiles.map((u) => ({
         id: u.id,
         full_name: u.full_name,
+        name_prefix: u.name_prefix ?? null,
         role: normalizeRole(u.role),
         reports_to: u.reports_to,
         schoolIds: schoolsInScope(u, all).map((s) => String(s.school_id)),
@@ -86,6 +127,7 @@ async function DashboardBody() {
       activitySchools={activitySchools}
       activityReports={activityReports}
       compareScoresByYear={isSO ? compareScoresByYear : undefined}
+      pendingReportVisits={pendingReportVisits}
     />
   );
 }

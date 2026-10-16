@@ -11,6 +11,7 @@ import {
   type ChartOptions,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
+import { ChevronDown } from 'lucide-react';
 import type { PillarScores, SchoolFull, ThreePillarScores } from '@/lib/types';
 import type { CompareScoresByYear } from '@/lib/supabase/schools';
 import {
@@ -178,6 +179,7 @@ export function SuperOverseerComparePanel({
   const [selectedAngles, setSelectedAngles] = useState<Set<AngleKey>>(
     () => new Set(ANGLE_KEYS)
   );
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const placeTree = useMemo((): FilterTreeNode[] => {
     const byProv = new Map<string, Map<string, SchoolFull[]>>();
@@ -384,7 +386,20 @@ export function SuperOverseerComparePanel({
   return (
     <section className="so-compare ed-card p-4 space-y-4">
       <div>
-        <h2 className="ed-section-title text-base m-0">เปรียบเทียบข้อมูลโรงเรียน</h2>
+        <button
+          type="button"
+          className="so-panel-toggle"
+          onClick={() => setIsExpanded((v) => !v)}
+          aria-expanded={isExpanded}
+        >
+          <h2 className="ed-section-title text-base m-0 flex items-center gap-2">
+            เปรียบเทียบข้อมูลโรงเรียน
+            <ChevronDown
+              size={18}
+              className={`so-panel-toggle__chevron ${isExpanded ? 'is-open' : ''}`}
+            />
+          </h2>
+        </button>
         <p className="text-sm text-slate-500 m-0 mt-1">
           เปรียบเทียบระดับโรงเรียน · ปี {scoreYearToBeLabel(SCORE_YEAR_PREVIOUS)} vs ปี{' '}
           {scoreYearToBeLabel(SCORE_YEAR_CURRENT)} · แสดงสูงสุด {MAX_COMPARE_SCHOOLS} รร. ·{' '}
@@ -392,6 +407,8 @@ export function SuperOverseerComparePanel({
         </p>
       </div>
 
+      {isExpanded ? (
+      <>
       <div className="so-compare__filters">
         <div className="so-compare__chip-group" role="group" aria-label="ปีข้อมูล">
           <span className="so-compare__chip-label">ปี</span>
@@ -490,6 +507,8 @@ export function SuperOverseerComparePanel({
           </div>
         </div>
       </div>
+      </>
+      ) : null}
     </section>
   );
 }

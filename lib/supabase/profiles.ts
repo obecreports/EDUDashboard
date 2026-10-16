@@ -73,22 +73,121 @@ export async function fetchUserProfileById(
   }
 }
 
+/** Resolve short login ID (staff01, OS01, sirdawpong) or legacy email. */
+export async function fetchUserProfileByLogin(
+  login: string
+): Promise<StoredUserProfile | null> {
+  const raw = login.trim();
+  if (!raw) return null;
+  const local = (raw.includes('@') ? raw.split('@')[0]! : raw).trim();
+  if (!local) return null;
+  try {
+    const supabase = await createClient();
+    // Exact login ID (preferred)
+    const exact = await supabase
+      .from('user_profiles')
+      .select(PROFILE_SELECT)
+      .ilike('email', local)
+      .maybeSingle();
+    if (!exact.error && exact.data) return mapRow(exact.data as ProfileRow);
+
+    // Legacy mailbox form: OS01@EDU.local / staff@coned.local
+    const legacy = await supabase
+      .from('user_profiles')
+      .select(PROFILE_SELECT)
+      .ilike('email', `${local}@%`)
+      .limit(1)
+      .maybeSingle();
+    if (!legacy.error && legacy.data) return mapRow(legacy.data as ProfileRow);
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** @deprecated use fetchUserProfileByLogin */
 export async function fetchUserProfileByEmail(
   email: string
 ): Promise<StoredUserProfile | null> {
-  const normalized = email.trim().toLowerCase();
-  if (!normalized) return null;
+  return fetchUserProfileByLogin(email);
+}
+
+/**
+ * Create user in auth.users + user_profiles via SECURITY DEFINER RPC (migration 016).
+ * `loginId` is the short login (staff03, AS02) stored in user_profiles.email.
+ */
+export async function createUserInDb(input: {
+  loginId: string;
+  full_name: string;
+  position: string;
+  role: UserRole;
+  password?: string;
+  name_prefix?: string | null;
+}): Promise<
+  { ok: true; user: StoredUserProfile } | { ok: false; error: string }
+> {
+  const loginId = input.loginId.trim();
+  const full_name = input.full_name.trim();
+  const position = input.position.trim();
+  const role = normalizeRole(input.role);
+  const password = (input.password ?? 'login1234').trim() || 'login1234';
+
+  if (!loginId) return { ok: false, error: 'กรุณาระบุรหัสผู้ใช้' };
+  if (loginId.includes('@')) {
+    return { ok: false, error: 'รหัสผู้ใช้ต้องไม่มี @ (เช่น staff03, AS02)' };
+  }
+  if (!full_name || !position) {
+    return { ok: false, error: 'กรุณากรอกชื่อและตำแหน่ง' };
+  }
+  if (role === 'guest') {
+    return { ok: false, error: 'ไม่สามารถสร้างบัญชี guest ได้' };
+  }
+
+  const existing = await fetchUserProfileByLogin(loginId);
+  if (existing) return { ok: false, error: 'รหัสผู้ใช้นี้มีอยู่แล้ว' };
+
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select(PROFILE_SELECT)
-      .ilike('email', normalized)
-      .maybeSingle();
-    if (error || !data) return null;
-    return mapRow(data as ProfileRow);
-  } catch {
-    return null;
+    const { data, error } = await supabase.rpc('create_coned_user', {
+      p_login_id: loginId,
+      p_full_name: full_name,
+      p_position: position,
+      p_role: role,
+      p_password: password,
+      p_name_prefix: input.name_prefix ?? null,
+    });
+
+    if (error) {
+      const msg = error.message || 'สร้างบัญชีในฐานข้อมูลไม่สำเร็จ';
+      if (/already exists|login_id already/i.test(msg)) {
+        return { ok: false, error: 'รหัสผู้ใช้นี้มีอยู่แล้ว' };
+      }
+      if (/function .*create_coned_user.* does not exist|Could not find the function/i.test(msg)) {
+        return {
+          ok: false,
+          error: 'ยังไม่มีฟังก์ชันสร้างผู้ใช้ — รัน migration 016_create_coned_user_rpc.sql ใน Supabase',
+        };
+      }
+      return { ok: false, error: msg };
+    }
+
+    const id = typeof data === 'string' ? data : String(data ?? '');
+    if (!id) return { ok: false, error: 'สร้างบัญชีแล้วแต่ไม่ได้รับ id' };
+
+    const row = await fetchUserProfileById(id);
+    if (!row) {
+      return {
+        ok: false,
+        error: 'สร้างใน auth แล้ว แต่ยังไม่พบโปรไฟล์ — ตรวจ user_profiles',
+      };
+    }
+    return { ok: true, user: row };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'สร้างบัญชีในฐานข้อมูลไม่สำเร็จ',
+    };
   }
 }
 

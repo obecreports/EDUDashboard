@@ -1,12 +1,16 @@
 import { redirect } from 'next/navigation';
 import { getSessionProfile } from '@/lib/auth/session';
 import { isDbOnlyMode } from '@/lib/auth/db-mode';
-import { listReportDraftsForStaff, readAllSchoolExtras } from '@/lib/auth/user-store';
+import {
+  listReportDraftsForStaff,
+  readAllSchoolExtras,
+  readStoredUsers,
+} from '@/lib/auth/user-store';
 import { fetchReportDraftsForStaff } from '@/lib/supabase/report-drafts';
 import { fetchSchools } from '@/lib/supabase/schools';
 import { fetchSchoolExtrasBundle } from '@/lib/supabase/school-swot';
 import { isFieldRole, isSchoolInScope } from '@/lib/auth/scope';
-import { normalizeRole, PAGE_BANNERS } from '@/lib/types';
+import { formatPersonLabel, normalizeRole, PAGE_BANNERS } from '@/lib/types';
 import { ReportsClient } from '@/components/reports/ReportsClient';
 import { PageBanner } from '@/components/layout/PageBanner';
 
@@ -19,9 +23,22 @@ export default async function ReportsPage() {
     redirect('/login?next=/reports');
   }
 
-  const schools = await fetchSchools().catch(() => []);
+  const [schools, users] = await Promise.all([
+    fetchSchools().catch(() => []),
+    readStoredUsers().catch(() => []),
+  ]);
   const domainSchools = schools.filter(
     (s) => r === 'super_overseer' || isSchoolInScope(profile, s)
+  );
+
+  const nameById = new Map(
+    users.map((u) => [
+      u.id,
+      formatPersonLabel(u.role, u.name_prefix, u.full_name) ||
+        u.full_name ||
+        u.email ||
+        u.id,
+    ])
   );
 
   const emptyExtras: Awaited<ReturnType<typeof fetchSchoolExtrasBundle>> = {};
@@ -37,21 +54,37 @@ export default async function ReportsPage() {
   const rows = domainSchools
     .flatMap((s) => {
       const comments = extrasMap[String(s.school_id)]?.comments ?? [];
-      return comments.map((c) => ({
-        id: c.id,
-        school_id: String(s.school_id),
-        school_name: s.school_name_th,
-        province: s.province ?? '',
-        district: s.district ?? '',
-        school_size: String(s.school_size || ''),
-        staff_id: c.staff_id,
-        staff_name: c.staff_name,
-        text: c.text,
-        created_at: c.created_at,
-        edited_at: c.edited_at ?? null,
-        tags: c.tags ?? [],
-        image_urls: c.image_urls ?? [],
-      }));
+      return comments.map((c) => {
+        const map = c.visitor_reason_map ?? {};
+        const participantIds = Object.keys(map);
+        return {
+          id: c.id,
+          school_id: String(s.school_id),
+          school_name: s.school_name_th,
+          province: s.province ?? '',
+          district: s.district ?? '',
+          school_size: String(s.school_size || ''),
+          staff_id: c.staff_id,
+          staff_name: c.staff_name,
+          text: c.text,
+          created_at: c.created_at,
+          edited_at: c.edited_at ?? null,
+          updated_at: c.updated_at ?? c.edited_at ?? null,
+          updated_by: c.updated_by ?? null,
+          updated_by_name: c.updated_by
+            ? nameById.get(c.updated_by) || c.updated_by
+            : null,
+          tags: c.tags ?? [],
+          image_urls: c.image_urls ?? [],
+          onsite_reasons: c.onsite_reasons ?? [],
+          visitor_reason_map: map,
+          ops_notes: c.ops_notes ?? null,
+          participants: participantIds.map((id) => ({
+            id,
+            name: nameById.get(id) || id,
+          })),
+        };
+      });
     })
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 

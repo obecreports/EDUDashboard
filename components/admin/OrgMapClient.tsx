@@ -18,7 +18,9 @@ export function OrgMapClient({ accounts }: { accounts: Account[] }) {
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
 
-  const overseers = accounts.filter((a) => a.role === 'overseer');
+  const overseers = accounts.filter(
+    (a) => a.role === 'overseer' || a.role === 'volunteer'
+  );
   const supers = accounts.filter((a) => a.role === 'super_overseer');
   const staff = accounts.filter((a) => a.role === 'staff');
 

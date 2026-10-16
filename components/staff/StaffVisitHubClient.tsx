@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Building2,
   CalendarDays,
@@ -9,10 +10,14 @@ import {
   ChevronDown,
   Clock3,
   AlertTriangle,
+  LogOut,
   MapPin,
   MessageSquarePlus,
+  Pencil,
   Phone,
   UserRound,
+  Users,
+  XCircle,
 } from 'lucide-react';
 import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
 import type { UserRole } from '@/lib/types';
@@ -20,6 +25,18 @@ import { normalizeActivity, normalizeStatus } from '@/lib/visits/labels';
 import { statusFromScore } from '@/lib/theme/status';
 import { formatThaiDate, formatThaiMonthYear } from '@/lib/format/date';
 import { ThaiDateField } from '@/components/ui/ThaiDateField';
+import {
+  cancelVisitEventAction,
+  leaveVisitEventAction,
+} from '@/app/actions/visits';
+
+function isInvolved(e: StaffCalendarEvent, userId: string) {
+  return e.staff_id === userId || (e.participant_ids ?? []).includes(userId);
+}
+
+function isActiveEvent(e: StaffCalendarEvent) {
+  return normalizeStatus(e.status_th ?? e.status) !== 'ยกเลิก';
+}
 
 type SchoolOpt = {
   id: string;
@@ -116,6 +133,9 @@ export function StaffVisitHubClient({
   /** Optional YYYY-MM-DD to focus after creating a schedule */
   focusDate?: string;
 }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
   const today = ymd(new Date());
   const [events, setEvents] = useState(initial);
   const [cursor, setCursor] = useState(() => {
@@ -153,10 +173,14 @@ export function StaffVisitHubClient({
 
   const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
 
+  const activeEvents = useMemo(() => events.filter(isActiveEvent), [events]);
+
   const scopedEvents = useMemo(
     () =>
-      scopeView === 'mine' ? events.filter((e) => e.staff_id === currentUserId) : events,
-    [events, scopeView, currentUserId]
+      scopeView === 'mine'
+        ? activeEvents.filter((e) => isInvolved(e, currentUserId))
+        : activeEvents,
+    [activeEvents, scopeView, currentUserId]
   );
 
   const waiting = scopedEvents.filter((e) => normalizeStatus(e.status_th ?? e.status) === 'นัดหมายแล้ว').length;
@@ -241,6 +265,83 @@ export function StaffVisitHubClient({
       return next;
     });
   };
+
+  const runCancel = (id: string) => {
+    if (!window.confirm('ยกเลิกนัดหมายนี้สำหรับทุกคนในทีม?')) return;
+    setActionMsg(null);
+    start(async () => {
+      const fd = new FormData();
+      fd.set('id', id);
+      const res = await cancelVisitEventAction(fd);
+      if (!res.ok) {
+        setActionMsg(res.error || 'ยกเลิกไม่สำเร็จ');
+        return;
+      }
+      setEvents((prev) =>
+        prev.map((e) =>
+          e.id === id
+            ? { ...e, status_th: 'ยกเลิก' as const, status: 'scheduled' as const }
+            : e
+        )
+      );
+      router.refresh();
+    });
+  };
+
+  const runLeave = (id: string) => {
+    if (!window.confirm('ออกจากนัดนี้? นัดจะยังคงอยู่ในปฏิทินของเจ้าของและสมาชิกอื่น')) return;
+    setActionMsg(null);
+    start(async () => {
+      const fd = new FormData();
+      fd.set('id', id);
+      const res = await leaveVisitEventAction(fd);
+      if (!res.ok) {
+        setActionMsg(res.error || 'ออกจากนัดไม่สำเร็จ');
+        return;
+      }
+      setEvents((prev) =>
+        prev
+          .map((e) => {
+            if (e.id !== id) return e;
+            return {
+              ...e,
+              participant_ids: (e.participant_ids ?? []).filter((pid) => pid !== currentUserId),
+            };
+          })
+          .filter((e) => e.id !== id || e.staff_id === currentUserId)
+      );
+      router.refresh();
+    });
+  };
+
+  const upcomingStrip =
+    upcoming.length > 0 ? (
+      <section className="ed-card p-3 ed-upcoming-strip">
+        <div className="ed-upcoming-strip__label">เร็วๆ นี้</div>
+        <div className="ed-upcoming-strip__rail">
+          {upcoming.map((e) => {
+            const mine = isInvolved(e, currentUserId);
+            return (
+              <button
+                key={e.id}
+                type="button"
+                className={`ed-upcoming-chip ${mine ? 'ed-upcoming-chip--mine' : 'ed-upcoming-chip--other'}`}
+                onClick={() => {
+                  setPreset('custom');
+                  setRange({ from: e.date, to: e.date });
+                  setExpandedIds(new Set([e.id]));
+                  const d = new Date(e.date + 'T12:00:00');
+                  setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+                }}
+              >
+                <strong>{formatThaiDate(e.date)}</strong>
+                <span className="truncate">{e.school_name || 'ไม่ระบุโรงเรียน'}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+    ) : null;
 
   return (
     <div>
@@ -359,6 +460,14 @@ export function StaffVisitHubClient({
           </div>
         </div>
 
+        {upcomingStrip}
+
+        {actionMsg ? (
+          <p className="text-sm font-medium m-0" style={{ color: '#b91c1c' }}>
+            {actionMsg}
+          </p>
+        ) : null}
+
         <div className="ed-visit-layout ed-visit-layout--split">
           <div className="ed-visit-layout__cal space-y-3">
             <section className="ed-card p-4 ed-month-cal-wrap">
@@ -416,8 +525,8 @@ export function StaffVisitHubClient({
                   const dayEvents = eventsByDate.get(dateStr) ?? [];
                   const isToday = dateStr === today;
                   const inRange = dateStr >= range.from && dateStr <= range.to;
-                  const hasMine = dayEvents.some((e) => e.staff_id === currentUserId);
-                  const hasOther = dayEvents.some((e) => e.staff_id !== currentUserId);
+                  const hasMine = dayEvents.some((e) => isInvolved(e, currentUserId));
+                  const hasOther = dayEvents.some((e) => !isInvolved(e, currentUserId));
                   const ownerClass =
                     hasMine && hasOther
                       ? 'ed-month-cal__day--has-both'
@@ -446,7 +555,7 @@ export function StaffVisitHubClient({
                       <span className="ed-month-cal__day-num">{day}</span>
                       <div className="ed-month-cal__peeks">
                         {peek.map((e) => {
-                          const mine = e.staff_id === currentUserId;
+                          const mine = isInvolved(e, currentUserId);
                           return (
                             <span
                               key={e.id}
@@ -468,34 +577,6 @@ export function StaffVisitHubClient({
                 })}
               </div>
             </section>
-
-            {upcoming.length > 0 ? (
-              <section className="ed-card p-3 ed-upcoming-strip">
-                <div className="ed-upcoming-strip__label">เร็วๆ นี้</div>
-                <div className="ed-upcoming-strip__rail">
-                  {upcoming.map((e) => {
-                    const mine = e.staff_id === currentUserId;
-                    return (
-                      <button
-                        key={e.id}
-                        type="button"
-                        className={`ed-upcoming-chip ${mine ? 'ed-upcoming-chip--mine' : 'ed-upcoming-chip--other'}`}
-                        onClick={() => {
-                          setPreset('custom');
-                          setRange({ from: e.date, to: e.date });
-                          setExpandedIds(new Set([e.id]));
-                          const d = new Date(e.date + 'T12:00:00');
-                          setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
-                        }}
-                      >
-                        <strong>{formatThaiDate(e.date)}</strong>
-                        <span className="truncate">{e.school_name || 'ไม่ระบุโรงเรียน'}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            ) : null}
           </div>
 
           <aside className="ed-visit-layout__detail">
@@ -518,8 +599,20 @@ export function StaffVisitHubClient({
                   const school = schools.find((s) => s.id === e.school_id);
                   const schoolStatus = statusFromScore(school?.overallScore);
                   const booker = personLabel(e.staff_id);
+                  const isOwner = e.staff_id === currentUserId;
+                  const isParticipant =
+                    !isOwner && (e.participant_ids ?? []).includes(currentUserId);
+                  const teamIds = [
+                    ...new Set(
+                      [e.staff_id, ...(e.participant_ids ?? [])].filter(Boolean)
+                    ),
+                  ].filter((id) => id !== e.staff_id);
                   const schoolName = e.school_name || school?.name || 'โรงเรียน';
                   const activity = normalizeActivity(String(e.activity));
+                  const reasons =
+                    e.visit_reasons?.length
+                      ? e.visit_reasons
+                      : [activity];
                   const location =
                     [school?.district, school?.province || e.province].filter(Boolean).join(' · ') ||
                     '—';
@@ -528,7 +621,7 @@ export function StaffVisitHubClient({
                       key={e.id}
                       className={`ed-card visit-booking-card visit-booking-card--panel ${
                         open ? 'is-open' : ''
-                      } ${booker.isMe ? 'visit-booking-card--mine' : 'visit-booking-card--other'}`}
+                      } ${isInvolved(e, currentUserId) ? 'visit-booking-card--mine' : 'visit-booking-card--other'}`}
                     >
                       <button
                         type="button"
@@ -558,7 +651,7 @@ export function StaffVisitHubClient({
                           <dl className="visit-booking-card__facts">
                             <div className="visit-booking-card__fact">
                               <dt>
-                                <UserRound size={14} aria-hidden /> ผู้จอง
+                                <UserRound size={14} aria-hidden /> เจ้าของนัด
                               </dt>
                               <dd>
                                 <span
@@ -575,6 +668,38 @@ export function StaffVisitHubClient({
                             </div>
                             <div className="visit-booking-card__fact">
                               <dt>
+                                <Users size={14} aria-hidden /> สมาชิกทีม
+                              </dt>
+                              <dd>
+                                {teamIds.length === 0 ? (
+                                  <span className="text-slate-500">ไม่มีสมาชิกเพิ่ม</span>
+                                ) : (
+                                  <ul className="m-0 p-0 list-none space-y-1">
+                                    {teamIds.map((pid) => {
+                                      const p = personLabel(pid);
+                                      return (
+                                        <li key={pid}>
+                                          <span
+                                            className={
+                                              p.isMe ? 'owner-name--mine' : 'owner-name--other'
+                                            }
+                                          >
+                                            {p.name}
+                                          </span>
+                                          {p.role ? (
+                                            <span className="visit-booking-card__role">
+                                              {p.role}
+                                            </span>
+                                          ) : null}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                )}
+                              </dd>
+                            </div>
+                            <div className="visit-booking-card__fact">
+                              <dt>
                                 <MapPin size={14} aria-hidden /> ที่ตั้ง
                               </dt>
                               <dd>{location}</dd>
@@ -586,6 +711,12 @@ export function StaffVisitHubClient({
                               <dd>{school?.phone || '—'}</dd>
                             </div>
                           </dl>
+
+                          {reasons.length > 1 ? (
+                            <p className="text-xs text-slate-600 m-0">
+                              เหตุผล: {reasons.join(' · ')}
+                            </p>
+                          ) : null}
 
                           <div className="visit-booking-card__score">
                             <div className="visit-booking-card__score-value">
@@ -606,21 +737,49 @@ export function StaffVisitHubClient({
 
                           <div className="visit-booking-card__actions">
                             <Link
-                              href={e.school_id ? `/schools/${e.school_id}` : '/schools'}
+                              href={`/reports/new?event_id=${encodeURIComponent(e.id)}${
+                                e.school_id
+                                  ? `&school_id=${encodeURIComponent(e.school_id)}`
+                                  : ''
+                              }&date=${encodeURIComponent(e.date)}`}
                               className="ed-btn ed-btn--primary ed-btn--sm"
+                            >
+                              <MessageSquarePlus size={14} /> เขียนสรุปรายงาน
+                            </Link>
+                            <Link
+                              href={e.school_id ? `/schools/${e.school_id}` : '/schools'}
+                              className="ed-btn ed-btn--outline ed-btn--sm"
                             >
                               ดูรายละเอียดโรงเรียน
                             </Link>
-                            <Link
-                              href={
-                                e.school_id
-                                  ? `/reports/new?school_id=${encodeURIComponent(e.school_id)}`
-                                  : '/reports/new'
-                              }
-                              className="ed-btn ed-btn--outline ed-btn--sm"
-                            >
-                              <MessageSquarePlus size={14} /> เพิ่มความคิดเห็น
-                            </Link>
+                            {isOwner ? (
+                              <Link
+                                href={`/calendar/edit?id=${encodeURIComponent(e.id)}`}
+                                className="ed-btn ed-btn--outline ed-btn--sm"
+                              >
+                                <Pencil size={14} /> แก้ไขนัดหมาย
+                              </Link>
+                            ) : null}
+                            {isOwner ? (
+                              <button
+                                type="button"
+                                className="ed-btn ed-btn--danger ed-btn--sm"
+                                disabled={pending}
+                                onClick={() => runCancel(e.id)}
+                              >
+                                <XCircle size={14} /> ยกเลิกนัด
+                              </button>
+                            ) : null}
+                            {isParticipant ? (
+                              <button
+                                type="button"
+                                className="ed-btn ed-btn--outline ed-btn--sm"
+                                disabled={pending}
+                                onClick={() => runLeave(e.id)}
+                              >
+                                <LogOut size={14} /> ออกจากนัด
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       )}

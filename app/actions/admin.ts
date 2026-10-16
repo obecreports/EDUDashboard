@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import {
   getSessionProfile,
   issueTemporaryPassword,
-  registerUserCredentials,
+  registerInitialPassword,
 } from '@/lib/auth/session';
 import {
   createMockUser,
@@ -186,7 +186,7 @@ export async function createAccountAction(formData: FormData) {
   const created = await createMockUser({ full_name, position, role, email });
   if (!created.ok) return created;
 
-  await registerUserCredentials(created.user.id, created.tempPassword);
+  await registerInitialPassword(created.user.id, created.tempPassword);
   revalidatePath('/admin/accounts');
   return {
     ok: true as const,

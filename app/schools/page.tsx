@@ -4,7 +4,7 @@ import { ManagedSchoolsClient } from '@/components/schools/ManagedSchoolsClient'
 import { ManagedSchoolsSkeleton } from '@/components/ui/PageSkeleton';
 import { getSessionProfile } from '@/lib/auth/session';
 import { isFieldRole, schoolsInScope } from '@/lib/auth/scope';
-import { normalizeRole, type UserRole } from '@/lib/types';
+import { formatPersonLabel, normalizeRole, type UserRole } from '@/lib/types';
 import { listAllCookieCalendarEvents } from '@/app/actions/visits';
 import { enrichSchoolsWithVisits } from '@/lib/schools/visit-enrich';
 import { fetchAllUserProfiles } from '@/lib/supabase/profiles';
@@ -15,6 +15,7 @@ export const revalidate = 120;
 export type DomainPersonOption = {
   id: string;
   full_name: string;
+  name_prefix?: string | null;
   role: UserRole;
   schoolIds: string[];
   reports_to?: string | null;
@@ -62,19 +63,26 @@ async function SchoolsBody({
 
   let domainPeople: DomainPersonOption[] = [];
   let domainPeopleLabel = '';
-  if (staffMode && profile && (r === 'super_overseer' || r === 'overseer')) {
+  if (
+    staffMode &&
+    profile &&
+    (r === 'super_overseer' || r === 'overseer' || r === 'volunteer')
+  ) {
     const profiles = await fetchAllUserProfiles().catch(() => []);
     if (r === 'super_overseer') {
-      domainPeopleLabel = 'ผู้รับผิดชอบพื้นที่ (อาสาสมัคร/องคมนตรี · ศึกษานิเทศก์)';
+      domainPeopleLabel = 'ผู้รับผิดชอบพื้นที่ (องคมนตรี · อาสาสมัคร · ศึกษานิเทศก์)';
       domainPeople = profiles
         .filter(
           (u) =>
-            (normalizeRole(u.role) === 'overseer' || normalizeRole(u.role) === 'staff') &&
+            (normalizeRole(u.role) === 'overseer' ||
+              normalizeRole(u.role) === 'volunteer' ||
+              normalizeRole(u.role) === 'staff') &&
             !u.disabled
         )
         .map((u) => ({
           id: u.id,
           full_name: u.full_name,
+          name_prefix: u.name_prefix ?? null,
           role: normalizeRole(u.role),
           schoolIds: schoolsInScope(u, schools).map((s) => String(s.school_id)),
           reports_to: u.reports_to ?? null,
@@ -91,6 +99,7 @@ async function SchoolsBody({
         .map((u) => ({
           id: u.id,
           full_name: u.full_name,
+          name_prefix: u.name_prefix ?? null,
           role: normalizeRole(u.role),
           schoolIds: schoolsInScope(u, schools).map((s) => String(s.school_id)),
           reports_to: u.reports_to ?? null,
@@ -104,7 +113,11 @@ async function SchoolsBody({
       mode={staffMode ? 'staff' : 'guest'}
       showScores={staffMode}
       inScopeIds={inScopeIds}
-      staffName={profile?.full_name ?? undefined}
+      staffName={
+        profile
+          ? formatPersonLabel(r, profile.name_prefix, profile.full_name) || undefined
+          : undefined
+      }
       initialQuery={q ?? ''}
       initialStatus={status}
       initialPersonIds={person ? [person] : []}

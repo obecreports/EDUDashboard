@@ -48,7 +48,13 @@ export default async function CalendarPage({
 
   const byId = new Map<string, (typeof myEvents)[number]>();
   for (const e of [...(peerEvents ?? []), ...(myEvents ?? [])]) {
-    if (peerIds.has(e.staff_id) || e.staff_id === profile.id) byId.set(e.id, e);
+    const isMine =
+      e.staff_id === profile.id ||
+      (e.participant_ids ?? []).includes(profile.id);
+    const isPeer =
+      peerIds.has(e.staff_id) ||
+      (e.participant_ids ?? []).some((id) => peerIds.has(id));
+    if (isMine || isPeer) byId.set(e.id, e);
   }
   const visibleEvents = [...byId.values()];
   const scoped = schoolsInScope(profile, schools);

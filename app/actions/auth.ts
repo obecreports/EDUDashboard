@@ -15,16 +15,20 @@ import {
 import { updateUserProfileFields } from '@/lib/auth/user-store';
 import { normalizeRole } from '@/lib/types';
 import { cookies } from 'next/headers';
-import { AUTH_SESSION_COOKIE, type AuthSession } from '@/lib/auth/mock-users';
+import {
+  AUTH_SESSION_COOKIE,
+  idleTimeoutMs,
+  type AuthSession,
+} from '@/lib/auth/mock-users';
 
 export async function loginAction(
   _prev: { error?: string } | null,
   formData: FormData
 ): Promise<{ error?: string } | null> {
-  const email = String(formData.get('email') || '');
+  const login = String(formData.get('login') || formData.get('email') || '');
   const password = String(formData.get('password') || '');
   const next = String(formData.get('next') || '').trim();
-  const result = await loginWithPassword(email, password);
+  const result = await loginWithPassword(login, password);
   if (!result.ok) return { error: result.error };
 
   revalidatePath('/', 'layout');
@@ -124,12 +128,13 @@ export async function updateSelfProfileAction(formData: FormData): Promise<
     ...session,
     full_name,
     position,
+    lastActiveAt: Date.now(),
   };
   jar.set(AUTH_SESSION_COOKIE, JSON.stringify(nextSession), {
     path: '/',
     sameSite: 'lax',
     httpOnly: true,
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: Math.ceil(idleTimeoutMs(nextSession.role) / 1000),
   });
 
   revalidatePath('/staff/profile');

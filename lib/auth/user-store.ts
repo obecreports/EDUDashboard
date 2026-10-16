@@ -2,11 +2,13 @@ import {
   AUTH_USERS_COOKIE,
   CALENDAR_EVENTS_COOKIE,
   DEFAULT_HERO_SETTINGS,
+  MOCK_LOGIN_PASSWORD,
   MOCK_USER_SEEDS,
   REPORT_DRAFTS_COOKIE,
   SCHOOL_COMMENTS_COOKIE,
   SCHOOL_EXTRAS_COOKIE,
   SITE_SETTINGS_COOKIE,
+  loginIdsMatch,
   normalizeStoredUser,
   type HeroSiteSettings,
   type ReportDraft,
@@ -30,9 +32,10 @@ import {
   type SchoolSwot,
 } from '@/lib/swot/schema';
 import {
+  createUserInDb,
   fetchAllUserProfiles,
-  fetchUserProfileByEmail,
   fetchUserProfileById,
+  fetchUserProfileByLogin,
   updateUserProfileInDb,
 } from '@/lib/supabase/profiles';
 
@@ -77,7 +80,7 @@ export async function readStoredUsers(): Promise<StoredUserProfile[]> {
         reports_to: u.reports_to,
         disabled: Boolean(u.disabled),
         birthday: u.birthday ?? null,
-        name_prefix: null,
+        name_prefix: u.name_prefix ?? null,
       })
     );
   }
@@ -100,7 +103,7 @@ export async function readStoredUsers(): Promise<StoredUserProfile[]> {
         reports_to: u.reports_to,
         disabled: Boolean(u.disabled),
         birthday: u.birthday ?? null,
-        name_prefix: null,
+        name_prefix: u.name_prefix ?? null,
       })
     );
   }
@@ -124,13 +127,12 @@ export async function readStoredUsers(): Promise<StoredUserProfile[]> {
 }
 
 export async function findUserByEmail(email: string): Promise<StoredUserProfile | undefined> {
-  const normalized = email.trim().toLowerCase();
   if (isDbOnlyMode()) {
-    const row = await fetchUserProfileByEmail(normalized);
+    const row = await fetchUserProfileByLogin(email);
     if (row) return row;
   }
   const users = await readStoredUsers();
-  return users.find((u) => u.email.toLowerCase() === normalized);
+  return users.find((u) => loginIdsMatch(u.email, email));
 }
 
 export async function findUserById(id: string): Promise<StoredUserProfile | undefined> {
@@ -161,16 +163,30 @@ export async function createMockUser(input: {
   const position = input.position.trim();
   if (!full_name || !position) return { ok: false, error: 'กรุณากรอกชื่อและตำแหน่ง' };
 
-  const id = `mock-user-${Date.now()}`;
-  const email =
-    input.email?.trim().toLowerCase() ||
-    `${full_name.replace(/\s+/g, '.').toLowerCase()}@coned.local`;
-  if (await findUserByEmail(email)) return { ok: false, error: 'อีเมลนี้มีอยู่แล้ว' };
+  const loginId =
+    input.email?.trim() ||
+    full_name.replace(/\s+/g, '').toLowerCase().slice(0, 24) ||
+    `user${Date.now()}`;
+  if (await findUserByEmail(loginId)) return { ok: false, error: 'รหัสผู้ใช้นี้มีอยู่แล้ว' };
 
-  const tempPassword = `Temp${Math.random().toString(36).slice(2, 8)}`;
+  const tempPassword = MOCK_LOGIN_PASSWORD;
+
+  if (isDbOnlyMode()) {
+    const created = await createUserInDb({
+      loginId,
+      full_name,
+      position,
+      role,
+      password: tempPassword,
+    });
+    if (!created.ok) return created;
+    return { ok: true, user: created.user, tempPassword };
+  }
+
+  const id = `mock-user-${Date.now()}`;
   const user: StoredUserProfile = {
     id,
-    email,
+    email: loginId,
     full_name,
     name_prefix: null,
     position,
@@ -191,6 +207,12 @@ export async function setUserDisabled(
   userId: string,
   disabled: boolean
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (isDbOnlyMode()) {
+    const existing = await fetchUserProfileById(userId);
+    if (!existing) return { ok: false, error: 'ไม่พบผู้ใช้ในฐานข้อมูล' };
+    return updateUserProfileInDb(userId, { disabled });
+  }
+
   const users = await readStoredUsers();
   const idx = users.findIndex((u) => u.id === userId);
   if (idx < 0) return { ok: false, error: 'ไม่พบผู้ใช้' };
@@ -254,9 +276,13 @@ function leanCalendarEvent(e: StaffCalendarEvent): StaffCalendarEvent {
     activity: e.activity,
     school_id: e.school_id,
     school_name: (e.school_name ?? '').slice(0, 48) || null,
+    school_ids: e.school_ids?.slice(0, 12),
+    school_names: e.school_names?.slice(0, 12).map((n) => n.slice(0, 48)),
+    visit_reasons: e.visit_reasons?.slice(0, 8),
+    participant_ids: e.participant_ids?.slice(0, 20),
     area_id: e.area_id ? String(e.area_id).slice(0, 24) : null,
     area_name: null,
-    province: null,
+    province: e.province ? String(e.province).slice(0, 40) : null,
     notes: (e.notes ?? '').slice(0, 80),
     created_at: e.created_at,
     status: e.status,
@@ -330,6 +356,16 @@ export type SchoolComment = {
   school_id?: string;
   /** Explicit report date (YYYY-MM-DD) when available */
   report_date?: string | null;
+  /** Actual onsite visit reasons */
+  onsite_reasons?: string[];
+  /** participant_id → reason labels */
+  visitor_reason_map?: Record<string, string[]>;
+  /** แนวทางการดำเนินงาน ณ หน้างาน */
+  ops_notes?: string | null;
+  /** Last edit audit */
+  updated_at?: string | null;
+  updated_by?: string | null;
+  updated_by_name?: string | null;
 };
 
 export type SchoolAchievements = {
@@ -521,11 +557,14 @@ export async function updateSchoolComment(
   const idx = list.findIndex((c) => c.id === commentId && c.staff_id === staffId);
   if (idx < 0) return null;
   const prev = list[idx];
+  const now = new Date().toISOString();
   const next: SchoolComment = {
     ...prev,
     text: input.text.trim(),
     tags: input.tags ?? prev.tags ?? [],
-    edited_at: new Date().toISOString(),
+    edited_at: now,
+    updated_at: now,
+    updated_by: staffId,
   };
   list[idx] = next;
   map[key] = list;

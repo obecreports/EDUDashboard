@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ImagePlus, X } from 'lucide-react';
@@ -14,13 +14,13 @@ import { mediaThumbUrl } from '@/lib/media/image-display';
 import {
   assembleReportComment,
   emptySubjectDetails,
-  hasAnySubjectDetail,
   parseReportComment,
   type ReportSubjectDetails,
   type ReportSubjectKey,
 } from '@/lib/reports/subjects';
 import { formatThaiDate } from '@/lib/format/date';
 import { ThaiDateField } from '@/components/ui/ThaiDateField';
+import { VISIT_ACTIVITIES } from '@/lib/visits/labels';
 
 type SchoolOpt = {
   id: string;
@@ -29,20 +29,35 @@ type SchoolOpt = {
   district: string;
 };
 
-type ScheduleHint = {
+export type ScheduleHint = {
+  event_id: string;
   school_id: string;
   school_name: string;
   date: string;
+  visit_reasons?: string[];
+  participants?: { id: string; name: string }[];
 };
 
-/** Full schedule row — report must map to one of these */
-export type ScheduleEventOpt = {
+type ParticipantOpt = {
   id: string;
-  school_id: string;
-  school_name: string;
-  date: string;
-  activity: string;
+  name: string;
 };
+
+function splitReasons(reasons: string[]): { known: Set<string>; other: string } {
+  const known = new Set<string>();
+  let other = '';
+  for (const r of reasons) {
+    const t = r.trim();
+    if (!t) continue;
+    if ((VISIT_ACTIVITIES as readonly string[]).includes(t)) {
+      known.add(t);
+    } else {
+      known.add('อื่นๆ');
+      if (!other) other = t;
+    }
+  }
+  return { known, other };
+}
 
 function todayYmd() {
   const d = new Date();
@@ -61,58 +76,91 @@ function detailsFromDraft(draft: ReportDraft | null | undefined): ReportSubjectD
   return parseReportComment(joined);
 }
 
+function toggleInSet(prev: Set<string>, value: string): Set<string> {
+  const next = new Set(prev);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
+}
+
 export function NewReportClient({
   schools,
   initialSchoolId = '',
   scheduleHints = [],
-  scheduleEvents = [],
+  initialLinkedEvent = null,
   initialDraft = null,
+  peopleOptions = [],
+  currentUser,
 }: {
   schools: SchoolOpt[];
   initialSchoolId?: string;
   scheduleHints?: ScheduleHint[];
-  scheduleEvents?: ScheduleEventOpt[];
+  /** Prefill from calendar CTA / event_id query — Linked mode */
+  initialLinkedEvent?: ScheduleHint | null;
   initialDraft?: ReportDraft | null;
+  /** Peers available to add onto the participation matrix */
+  peopleOptions?: ParticipantOpt[];
+  currentUser: ParticipantOpt;
 }) {
   const router = useRouter();
   const seed =
     schools.find((s) => s.id === (initialDraft?.school_id || initialSchoolId)) ??
     schools.find((s) => s.id === initialSchoolId);
 
+  const me: ParticipantOpt = currentUser;
+
   const [draftId, setDraftId] = useState(initialDraft?.id ?? '');
-  const [q, setQ] = useState('');
+  const [linkedEventId, setLinkedEventId] = useState<string | null>(
+    initialLinkedEvent?.event_id ?? null
+  );
+  const [q, setQ] = useState(seed?.name ?? '');
   const [province, setProvince] = useState(initialDraft?.province || seed?.province || '');
   const [district, setDistrict] = useState(initialDraft?.district || seed?.district || '');
   const [schoolId, setSchoolId] = useState(initialDraft?.school_id || initialSchoolId);
-  const [calendarEventId, setCalendarEventId] = useState('');
   const [datePreset, setDatePreset] = useState<'yesterday' | 'today' | 'tomorrow' | 'custom'>(
-    'today'
+    initialLinkedEvent ? 'custom' : 'today'
   );
-  const [reportDate, setReportDate] = useState(initialDraft?.report_date || todayYmd);
+  const [reportDate, setReportDate] = useState(
+    initialDraft?.report_date || initialLinkedEvent?.date || todayYmd
+  );
   const [subjects, setSubjects] = useState<ReportSubjectDetails>(() =>
     detailsFromDraft(initialDraft)
   );
+  const [onsiteReasons, setOnsiteReasons] = useState<Set<string>>(() => new Set());
+  const [onsiteOther, setOnsiteOther] = useState('');
+  // Independent default = me; linked overridden by applyLinkedPrefill
+  const [teamParticipants, setTeamParticipants] = useState<ParticipantOpt[]>(() =>
+    initialLinkedEvent?.participants?.length
+      ? initialLinkedEvent.participants
+      : [me]
+  );
+  const [visitorReasonMap, setVisitorReasonMap] = useState<Record<string, Set<string>>>({});
+  const [opsNotes, setOpsNotes] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [uploadingImgs, setUploadingImgs] = useState(false);
 
-  const scheduleOptions = useMemo(() => {
-    if (scheduleEvents.length) {
-      return [...scheduleEvents].sort((a, b) => b.date.localeCompare(a.date));
-    }
-    // Fallback: synthesize from hints (no event id → cannot submit until real events pass)
-    return scheduleHints.map((h, i) => ({
-      id: '',
-      school_id: h.school_id,
-      school_name: h.school_name,
-      date: h.date,
-      activity: 'นัดหมาย',
-      _i: i,
-    })) as ScheduleEventOpt[];
-  }, [scheduleEvents, scheduleHints]);
+  const isLinked = Boolean(linkedEventId);
 
-  const selectedEvent = scheduleOptions.find((e) => e.id && e.id === calendarEventId);
+  const peopleById = useMemo(() => {
+    const map = new Map<string, ParticipantOpt>();
+    for (const p of peopleOptions) map.set(p.id, p);
+    map.set(me.id, me);
+    return map;
+  }, [peopleOptions, me.id, me.name]);
+
+  const availableToAdd = useMemo(
+    () => peopleOptions.filter((p) => !teamParticipants.some((t) => t.id === p.id)),
+    [peopleOptions, teamParticipants]
+  );
+
+  const resolvedOnsiteReasons = useMemo(() => {
+    const list = [...onsiteReasons].filter((r) => r !== 'อื่นๆ');
+    const other = onsiteOther.trim();
+    if (onsiteReasons.has('อื่นๆ') && other) list.push(other);
+    return list;
+  }, [onsiteReasons, onsiteOther]);
 
   const provinces = useMemo(() => {
     let list = schools;
@@ -156,7 +204,37 @@ export function NewReportClient({
     setSubjects((prev) => ({ ...prev, [key]: value }));
   };
 
-  const pickSchool = (id: string) => {
+  const applyLinkedPrefill = (h: ScheduleHint) => {
+    setLinkedEventId(h.event_id);
+    setSchoolId(h.school_id);
+    const s = schools.find((x) => x.id === h.school_id);
+    if (s) {
+      setProvince(s.province);
+      setDistrict(s.district);
+      setQ(s.name);
+    } else {
+      setQ(h.school_name);
+    }
+    setReportDate(h.date);
+    setDatePreset('custom');
+    const { known, other } = splitReasons(h.visit_reasons ?? []);
+    setOnsiteReasons(known);
+    setOnsiteOther(other);
+    const parts = h.participants ?? [];
+    setTeamParticipants(parts);
+    const map: Record<string, Set<string>> = {};
+    const reasonList = [...known].filter((r) => r !== 'อื่นๆ');
+    if (other) reasonList.push(other);
+    for (const p of parts) {
+      map[p.id] = new Set(reasonList);
+    }
+    setVisitorReasonMap(map);
+    setMsg(null);
+  };
+
+  /** Manual school pick → Independent report (clear schedule link; team = me). */
+  const pickSchoolIndependent = (id: string) => {
+    setLinkedEventId(null);
     setSchoolId(id);
     const s = schools.find((x) => x.id === id);
     if (s) {
@@ -164,44 +242,125 @@ export function NewReportClient({
       setDistrict(s.district);
       setQ(s.name);
     }
+    setOnsiteReasons(new Set());
+    setOnsiteOther('');
+    setTeamParticipants([me]);
+    setVisitorReasonMap({ [me.id]: new Set() });
   };
 
-  const pickScheduleEvent = (eventId: string) => {
-    setCalendarEventId(eventId);
-    const ev = scheduleOptions.find((e) => e.id === eventId);
-    if (!ev) return;
-    setReportDate(ev.date);
-    setDatePreset('custom');
-    pickSchool(ev.school_id);
-    setMsg(null);
-  };
+  useEffect(() => {
+    if (initialLinkedEvent?.event_id) {
+      applyLinkedPrefill(initialLinkedEvent);
+    } else if (!linkedEventId && teamParticipants.length === 0) {
+      setTeamParticipants([me]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once from URL
+  }, [initialLinkedEvent?.event_id]);
 
   const clearSchool = () => {
     setSchoolId('');
     setQ('');
-    setCalendarEventId('');
+    setLinkedEventId(null);
+    setOnsiteReasons(new Set());
+    setOnsiteOther('');
+    setTeamParticipants([me]);
+    setVisitorReasonMap({ [me.id]: new Set() });
     setMsg(null);
   };
 
+  const addParticipant = (id: string) => {
+    if (!id) return;
+    if (teamParticipants.some((t) => t.id === id)) return;
+    const person = peopleById.get(id);
+    if (!person) return;
+    setTeamParticipants((prev) => [...prev, person]);
+    setVisitorReasonMap((prev) => ({
+      ...prev,
+      [id]: new Set(resolvedOnsiteReasons),
+    }));
+  };
+
+  const removeParticipant = (id: string) => {
+    setTeamParticipants((prev) => prev.filter((p) => p.id !== id));
+    setVisitorReasonMap((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const toggleOnsiteReason = (label: string) => {
+    setOnsiteReasons((prev) => {
+      const next = toggleInSet(prev, label);
+      if (!next.has('อื่นๆ')) setOnsiteOther('');
+      return next;
+    });
+    // Prune visitor map entries for removed reasons
+    setVisitorReasonMap((prev) => {
+      const allowed = new Set(
+        [...onsiteReasons].includes(label)
+          ? [...onsiteReasons].filter((r) => r !== label && r !== 'อื่นๆ')
+          : [...onsiteReasons, label].filter((r) => r !== 'อื่นๆ')
+      );
+      if (onsiteOther.trim() && (onsiteReasons.has('อื่นๆ') || label === 'อื่นๆ')) {
+        // keep other text reasons when อื่นๆ stays
+      }
+      const out: Record<string, Set<string>> = {};
+      for (const [uid, set] of Object.entries(prev)) {
+        out[uid] = new Set([...set].filter((r) => allowed.has(r) || r === onsiteOther.trim()));
+      }
+      return out;
+    });
+  };
+
+  const toggleVisitorReason = (userId: string, reason: string) => {
+    setVisitorReasonMap((prev) => {
+      const cur = new Set(prev[userId] ?? []);
+      if (cur.has(reason)) cur.delete(reason);
+      else cur.add(reason);
+      return { ...prev, [userId]: cur };
+    });
+  };
+
   const submitAll = () => {
+    if (!schoolId) {
+      setMsg('เลือกโรงเรียนก่อนบันทึก');
+      return;
+    }
+    if (!resolvedOnsiteReasons.length && !onsiteReasons.has('อื่นๆ')) {
+      setMsg('เลือกเหตุผลการลงพื้นที่จริงอย่างน้อย 1 รายการ');
+      return;
+    }
+    if (onsiteReasons.has('อื่นๆ') && !onsiteOther.trim()) {
+      setMsg('ระบุเหตุผลเมื่อเลือก “อื่นๆ”');
+      return;
+    }
+    const reasons = resolvedOnsiteReasons.length
+      ? resolvedOnsiteReasons
+      : onsiteReasons.has('อื่นๆ') && onsiteOther.trim()
+        ? [onsiteOther.trim()]
+        : [];
+    if (!reasons.length) {
+      setMsg('เลือกเหตุผลการลงพื้นที่จริงอย่างน้อย 1 รายการ');
+      return;
+    }
     const comment = assembleReportComment(subjects);
-    if (!calendarEventId) {
-      setMsg('ต้องเลือกรายการนัดหมายในปฏิทินก่อน — รายงานต้องผูกกับตารางกิจกรรม');
-      return;
-    }
-    if (!schoolId || !comment) {
-      setMsg('เลือกโรงเรียนและกรอกรายละเอียดอย่างน้อย 1 หัวข้อ');
-      return;
-    }
     setMsg(null);
     start(async () => {
       try {
+        const mapObj: Record<string, string[]> = {};
+        for (const [uid, set] of Object.entries(visitorReasonMap)) {
+          mapObj[uid] = [...set].filter((r) => reasons.includes(r));
+        }
         const fd = new FormData();
         fd.set('school_id', schoolId);
         fd.set('report_date', reportDate);
-        fd.set('calendar_event_id', calendarEventId);
         fd.set('boxes', JSON.stringify([{ text: comment, tags: [] }]));
         fd.set('image_urls', JSON.stringify(imageUrls));
+        fd.set('onsite_reasons', JSON.stringify(reasons));
+        fd.set('visitor_reason_map', JSON.stringify(mapObj));
+        fd.set('ops_notes', opsNotes.trim());
+        if (linkedEventId) fd.set('calendar_event_id', linkedEventId);
         const res = await postSchoolCommentsBatchAction(fd);
         if (!res.ok) {
           setMsg(res.error || 'บันทึกไม่สำเร็จ');
@@ -215,6 +374,7 @@ export function NewReportClient({
         setSubjects(emptySubjectDetails());
         setImageUrls([]);
         setDraftId('');
+        setOpsNotes('');
         setMsg('บันทึกความคิดเห็นแล้ว');
         router.push('/reports');
         router.refresh();
@@ -273,6 +433,11 @@ export function NewReportClient({
     });
   };
 
+  const canSubmit =
+    Boolean(schoolId) &&
+    (resolvedOnsiteReasons.length > 0 ||
+      (onsiteReasons.has('อื่นๆ') && onsiteOther.trim().length > 0));
+
   return (
     <div className="page-shell py-5 grid gap-4 max-w-3xl">
       <Link href="/reports" className="text-sm text-tm-blue font-semibold inline-flex items-center gap-1 w-fit">
@@ -294,82 +459,41 @@ export function NewReportClient({
       )}
 
       <div className="ed-card p-5 space-y-4">
-        <div>
-          <h2 className="ed-section-title text-base m-0">ผูกกับนัดหมายในปฏิทิน</h2>
-          <p className="text-sm text-slate-600 m-0 mt-1">
-            รายงานต้องเลือกจากตารางนัดหมายของคุณ — ระบบจะตั้งโรงเรียนและวันที่ตามนัดนั้น
-          </p>
-        </div>
-
-        {scheduleOptions.filter((e) => e.id).length === 0 ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            ยังไม่มีนัดหมายในช่วงนี้ —{' '}
-            <Link href="/calendar/new" className="font-bold underline">
-              สร้างนัดหมายก่อน
-            </Link>{' '}
-            แล้วกลับมารายงาน
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="ed-section-title text-base m-0">เลือกโรงเรียนและวันที่</h2>
+            <p className="text-sm text-slate-600 m-0 mt-1">
+              เลือกจากตารางนัด = รายงานผูกกับนัดหมาย · เลือกโรงเรียนเอง = รายงานอิสระ
+            </p>
           </div>
-        ) : (
-          <label className="grid gap-1 text-sm font-semibold">
-            เลือกรายการนัดหมาย *
-            <select
-              className="form-input"
-              value={calendarEventId}
-              onChange={(e) => pickScheduleEvent(e.target.value)}
-            >
-              <option value="">— เลือกนัดหมาย —</option>
-              {scheduleOptions
-                .filter((e) => e.id)
-                .map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {formatThaiDate(e.date)} · {e.school_name} · {e.activity}
-                  </option>
-                ))}
-            </select>
-          </label>
-        )}
-
-        {selectedEvent ? (
-          <div className="report-selected-school" role="status">
-            <div className="report-selected-school__head">
-              <span className="report-selected-school__label">นัดหมายที่ผูกแล้ว</span>
-            </div>
-            <strong className="report-selected-school__name">{selectedEvent.school_name}</strong>
-            <span className="report-selected-school__meta">
-              {formatThaiDate(selectedEvent.date)} · {selectedEvent.activity}
-            </span>
-          </div>
-        ) : null}
-
-        <div>
-          <h2 className="ed-section-title text-base m-0">ค้นหาโรงเรียน (ทางเลือก)</h2>
-          <p className="text-sm text-slate-600 m-0 mt-1">
-            ใช้เมื่อต้องการกรองรายการนัด — การบันทึกยังต้องผูกนัดหมายด้านบน
-          </p>
+          <span
+            className={`ed-badge ${isLinked ? '' : ''}`}
+            style={
+              isLinked
+                ? { background: '#DBEAFE', color: '#1D4ED8' }
+                : { background: '#F1F5F9', color: '#475569' }
+            }
+          >
+            {isLinked ? 'รายงานผูกกับนัดหมาย' : 'รายงานอิสระ'}
+          </span>
         </div>
 
         {scheduleHints.length > 0 && (
           <div>
-            <div className="text-sm font-bold mb-2">แนะนำจากตารางนัด (±7 วัน)</div>
+            <div className="text-sm font-bold mb-2">แนะนำจากตารางนัด</div>
             <div className="report-suggest-list">
-              {scheduleHints.map((h) => {
-                const match = scheduleOptions.find(
-                  (e) => e.school_id === h.school_id && e.date === h.date && e.id
-                );
-                return (
-                  <button
-                    key={`${h.school_id}-${h.date}`}
-                    type="button"
-                    className="report-suggest-chip"
-                    onClick={() => {
-                      if (match?.id) pickScheduleEvent(match.id);
-                      else pickSchool(h.school_id);
-                    }}
-                  >
-                    {h.school_name} · {formatThaiDate(h.date)}
-                  </button>
-                );
-              })}
+              {scheduleHints.map((h) => (
+                <button
+                  key={h.event_id}
+                  type="button"
+                  className={`report-suggest-chip ${
+                    linkedEventId === h.event_id ? 'is-active' : ''
+                  }`}
+                  onClick={() => applyLinkedPrefill(h)}
+                >
+                  {h.school_name} · {formatThaiDate(h.date)}
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -386,8 +510,12 @@ export function NewReportClient({
                 if (district && !schools.some((s) => (!value || s.province === value) && s.district === district)) {
                   setDistrict('');
                 }
+                setLinkedEventId(null);
                 setSchoolId('');
                 setQ('');
+                setOnsiteReasons(new Set());
+                setTeamParticipants([me]);
+                setVisitorReasonMap({ [me.id]: new Set() });
               }}
             >
               <option value="">ทั้งหมด</option>
@@ -407,8 +535,12 @@ export function NewReportClient({
                 if (province && !schools.some((s) => s.province === province && (!value || s.district === value))) {
                   setProvince('');
                 }
+                setLinkedEventId(null);
                 setSchoolId('');
                 setQ('');
+                setOnsiteReasons(new Set());
+                setTeamParticipants([me]);
+                setVisitorReasonMap({ [me.id]: new Set() });
               }}
             >
               <option value="">ทั้งหมด</option>
@@ -422,7 +554,7 @@ export function NewReportClient({
             <select
               className="form-input"
               value={schoolId}
-              onChange={(e) => pickSchool(e.target.value)}
+              onChange={(e) => pickSchoolIndependent(e.target.value)}
             >
               <option value="">— เลือก —</option>
               {filteredSchools.map((s) => (
@@ -445,7 +577,7 @@ export function NewReportClient({
               const match = schools.find(
                 (s) => s.name === e.target.value || s.name.toLowerCase() === e.target.value.toLowerCase()
               );
-              if (match) pickSchool(match.id);
+              if (match) pickSchoolIndependent(match.id);
               else setSchoolId('');
             }}
             placeholder="พิมพ์เพื่อค้นหาหรือเลือกจากรายการ"
@@ -512,6 +644,136 @@ export function NewReportClient({
             />
           </label>
         </div>
+
+        <fieldset className="space-y-2 m-0 p-0 border-0">
+          <legend className="ed-section-title text-base m-0">เหตุผลการลงพื้นที่จริง (หน้างาน)</legend>
+          <p className="text-xs text-slate-500 m-0">
+            เลือกได้หลายข้อ — บันทึกเหตุผลจริงที่พบ ณ หน้างาน
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {VISIT_ACTIVITIES.map((r) => (
+              <label key={r} className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={onsiteReasons.has(r)}
+                  onChange={() => toggleOnsiteReason(r)}
+                />
+                {r}
+              </label>
+            ))}
+          </div>
+          {onsiteReasons.has('อื่นๆ') && (
+            <label className="grid gap-1 text-sm font-semibold">
+              ระบุเหตุผลอื่นๆ
+              <input
+                className="form-input"
+                value={onsiteOther}
+                onChange={(e) => setOnsiteOther(e.target.value)}
+                placeholder="ระบุเหตุผลเพิ่มเติม"
+              />
+            </label>
+          )}
+        </fieldset>
+
+        <fieldset className="space-y-3 m-0 p-0 border-0">
+          <legend className="ed-section-title text-base m-0">การมีส่วนร่วมของทีมตามเหตุผล</legend>
+          <p className="text-xs text-slate-500 m-0">
+            {isLinked
+              ? 'ดึงสมาชิกจากนัดหมายมาให้แล้ว — เพิ่มหรือลบได้ตามจริง ณ หน้างาน'
+              : 'เริ่มจากตัวคุณ — เพิ่มหรือลบสมาชิกทีมได้ตามต้องการ'}
+          </p>
+
+          <div className="flex flex-wrap gap-2 items-end">
+            <label className="grid gap-1 text-sm font-semibold min-w-[200px] flex-1">
+              เพิ่มผู้เข้าร่วม
+              <select
+                className="form-input"
+                value=""
+                onChange={(e) => {
+                  addParticipant(e.target.value);
+                  e.target.value = '';
+                }}
+              >
+                <option value="">— เลือกเพื่อเพิ่ม —</option>
+                {availableToAdd.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.id === me.id ? ' (ฉัน)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {teamParticipants.length === 0 ? (
+            <p className="text-sm text-amber-700 m-0">ยังไม่มีผู้เข้าร่วม — เลือกจากรายการด้านบน</p>
+          ) : (
+            <ul className="m-0 p-0 list-none flex flex-wrap gap-2">
+              {teamParticipants.map((p) => (
+                <li key={p.id} className="domain-tag">
+                  {p.name}
+                  {p.id === me.id ? ' (ฉัน)' : ''}
+                  <button
+                    type="button"
+                    aria-label={`ลบ ${p.name}`}
+                    onClick={() => removeParticipant(p.id)}
+                  >
+                    <X size={12} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {teamParticipants.length > 0 && resolvedOnsiteReasons.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left">
+                    <th className="py-2 pr-3 font-semibold">ผู้เข้าร่วม</th>
+                    {resolvedOnsiteReasons.map((r) => (
+                      <th key={r} className="py-2 px-2 font-semibold whitespace-nowrap">
+                        {r}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamParticipants.map((p) => (
+                    <tr key={p.id} className="border-b border-slate-100">
+                      <td className="py-2 pr-3 font-medium whitespace-nowrap">{p.name}</td>
+                      {resolvedOnsiteReasons.map((r) => (
+                        <td key={r} className="py-2 px-2 text-center">
+                          <input
+                            type="checkbox"
+                            aria-label={`${p.name} · ${r}`}
+                            checked={visitorReasonMap[p.id]?.has(r) ?? false}
+                            onChange={() => toggleVisitorReason(p.id, r)}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : teamParticipants.length > 0 ? (
+            <p className="text-xs text-slate-500 m-0">
+              เลือกเหตุผลการลงพื้นที่ด้านบนก่อน เพื่อติ๊กการมีส่วนร่วมตามเหตุผล
+            </p>
+          ) : null}
+        </fieldset>
+
+        <label className="grid gap-1 text-sm font-semibold">
+          แนวทางการดำเนินงาน/การปฏิบัติงาน ณ หน้างาน
+          <textarea
+            className="form-input"
+            rows={4}
+            value={opsNotes}
+            onChange={(e) => setOpsNotes(e.target.value)}
+            placeholder="อธิบายแนวทางหรือการปฏิบัติงานที่ดำเนินการ ณ หน้างาน…"
+          />
+        </label>
 
         <div className="space-y-3">
           <h2 className="ed-section-title text-base m-0">รูปแนบรายงาน</h2>
@@ -599,10 +861,9 @@ export function NewReportClient({
         </div>
 
         <div className="space-y-3">
-          <h2 className="ed-section-title text-base m-0">ความคิดเห็นตามหัวข้อ</h2>
+          <h2 className="ed-section-title text-base m-0">ความคิดเห็นตามหัวข้อ (ไม่บังคับ)</h2>
           <p className="text-xs text-slate-500 m-0">
-            หัวข้อถูกกำหนดไว้แล้ว — กรอกรายละเอียดใต้หัวข้อที่ต้องการ (ไม่จำเป็นต้องกรอกครบทุกหัวข้อ)
-            · บันทึกเป็นความคิดเห็นเดียว
+            กรอกได้ตามต้องการ — ไม่จำเป็นต้องกรอกครบทุกหัวข้อ
           </p>
 
           <div className="report-guided-box">
@@ -616,7 +877,7 @@ export function NewReportClient({
                   rows={3}
                   value={subjects[s.key]}
                   onChange={(e) => setSubjectDetail(s.key, e.target.value)}
-                  placeholder="… กรอกรายละเอียดใต้หัวข้อนี้"
+                  placeholder="… กรอกรายละเอียดใต้หัวข้อนี้ (ไม่บังคับ)"
                   aria-label={`รายละเอียด${s.label}`}
                 />
               </div>
@@ -630,9 +891,7 @@ export function NewReportClient({
           <button
             type="button"
             className="ed-btn ed-btn--primary"
-            disabled={
-              pending || !schoolId || !calendarEventId || !hasAnySubjectDetail(subjects)
-            }
+            disabled={pending || !canSubmit}
             onClick={submitAll}
           >
             {pending ? 'กำลังบันทึก…' : 'บันทึกความคิดเห็น'}

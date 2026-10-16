@@ -25,7 +25,7 @@ async function ProfileBody() {
   );
 
   const domainLines: string[] = [];
-  if (role === 'overseer') {
+  if (role === 'overseer' || role === 'volunteer') {
     domainLines.push(`จังหวัด: ${(profile?.assigned_provinces ?? []).join(', ') || '—'}`);
   } else if (role === 'staff') {
     const areas = profile?.assigned_districts ?? [];

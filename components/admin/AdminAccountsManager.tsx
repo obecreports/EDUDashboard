@@ -7,7 +7,13 @@ import {
   toggleAccountStatusAction,
   updateAdminUserAction,
 } from '@/app/actions/admin';
-import { ROLE_LABELS, normalizeRole, type UserRole } from '@/lib/types';
+import {
+  ROLE_LABELS,
+  formatDisplayName,
+  formatPersonLabel,
+  normalizeRole,
+  type UserRole,
+} from '@/lib/types';
 
 type AccountRow = {
   id: string;
@@ -24,7 +30,13 @@ type AccountRow = {
   mustChangePassword: boolean;
 };
 
-const CREATE_ROLES: UserRole[] = ['staff', 'overseer', 'super_overseer', 'admin'];
+const CREATE_ROLES: UserRole[] = [
+  'staff',
+  'overseer',
+  'volunteer',
+  'super_overseer',
+  'admin',
+];
 
 function canManageTarget(actorRole: UserRole, targetRole: UserRole, targetId: string, actorId: string) {
   if (targetId === actorId) return true; // self view ok, but edits limited below
@@ -38,9 +50,9 @@ function canManageTarget(actorRole: UserRole, targetRole: UserRole, targetId: st
 
 function rolesAssignableBy(actorRole: UserRole): UserRole[] {
   if (actorRole === 'super_admin') {
-    return ['staff', 'overseer', 'super_overseer', 'admin', 'super_admin'];
+    return ['staff', 'overseer', 'volunteer', 'super_overseer', 'admin', 'super_admin'];
   }
-  return ['staff', 'overseer', 'super_overseer'];
+  return ['staff', 'overseer', 'volunteer', 'super_overseer'];
 }
 
 export function AdminAccountsManager({
@@ -141,12 +153,12 @@ export function AdminAccountsManager({
             </select>
           </label>
           <label className="grid gap-1 text-sm font-semibold">
-            ค้นหาชื่อ / อีเมล
+            ค้นหาชื่อ / รหัสผู้ใช้
             <input
               className="form-input"
               value={nameFilter}
               onChange={(e) => setNameFilter(e.target.value)}
-              placeholder="พิมพ์ชื่อหรืออีเมล"
+              placeholder="พิมพ์ชื่อหรือรหัสผู้ใช้"
             />
           </label>
         </div>
@@ -164,9 +176,9 @@ export function AdminAccountsManager({
                 return;
               }
               setMsg(
-                `สร้างแล้ว · อีเมล ${'email' in res ? res.email : ''} · OTP: ${
-                  'tempPassword' in res ? res.tempPassword : ''
-                }`
+                `บันทึกลงฐานข้อมูลแล้ว · รหัสผู้ใช้ ${
+                  'email' in res ? res.email : ''
+                } · รหัสผ่าน ${'tempPassword' in res ? res.tempPassword : ''}`
               );
               setShowCreate(false);
             });
@@ -182,8 +194,15 @@ export function AdminAccountsManager({
             <input name="position" className="form-input" required />
           </label>
           <label className="block text-sm">
-            อีเมล (ไม่บังคับ)
-            <input name="email" type="email" className="form-input" placeholder="name@coned.local" />
+            รหัสผู้ใช้ (ไม่บังคับ)
+            <input
+              name="email"
+              type="text"
+              className="form-input"
+              placeholder="staff03 / AS02 / OS15"
+              autoCapitalize="off"
+              spellCheck={false}
+            />
           </label>
           <label className="block text-sm">
             บทบาท
@@ -350,7 +369,10 @@ export function AdminAccountsManager({
                   ) : (
                     <>
                       <td className="p-3">
-                        <div className="font-medium">{a.full_name}</div>
+                        <div className="font-medium">
+                          {formatPersonLabel(a.role, a.name_prefix, a.full_name) ||
+                            formatDisplayName(a.name_prefix, a.full_name)}
+                        </div>
                         <div className="text-xs text-slate-500">{a.email}</div>
                       </td>
                       <td className="p-3">{a.position || '—'}</td>
