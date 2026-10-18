@@ -13,7 +13,7 @@ import {
   readAuthSession,
 } from '@/lib/auth/session';
 import { updateUserProfileFields } from '@/lib/auth/user-store';
-import { normalizeRole } from '@/lib/types';
+import { isOverseerType2, normalizeRole, ROLE_LABELS } from '@/lib/types';
 import { cookies } from 'next/headers';
 import {
   AUTH_SESSION_COOKIE,
@@ -111,7 +111,11 @@ export async function updateSelfProfileAction(formData: FormData): Promise<
   const name_prefix_raw = formData.get('name_prefix');
   const name_prefix =
     name_prefix_raw == null ? '' : String(name_prefix_raw).trim();
-  const position = String(formData.get('position') || '').trim();
+  let position = String(formData.get('position') || '').trim();
+  // Overseer Type 2 always stores/displays as อาสาสมัคร
+  if (isOverseerType2(profile.role, profile.overseer_tier)) {
+    position = ROLE_LABELS.volunteer;
+  }
 
   if (!full_name) return { ok: false, error: 'กรุณากรอกชื่อ–นามสกุล' };
   if (!position) return { ok: false, error: 'กรุณากรอกตำแหน่ง' };

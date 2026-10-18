@@ -21,7 +21,8 @@ import {
   Star,
   TrendingUp,
 } from 'lucide-react';
-import type { SchoolFull, UserRole } from '@/lib/types';
+import type { OverseerTier, SchoolFull, UserRole } from '@/lib/types';
+import { isOverseerType1 } from '@/lib/types';
 import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
 import { DualRadarChart } from '@/components/schools/SchoolRadarChart';
 import { DashboardWelcome } from '@/components/dashboard/DashboardWelcome';
@@ -70,6 +71,7 @@ export function StaffDashboardClient({
   nationalSchools,
   roleLabel,
   role,
+  overseerTier = null,
   staffName,
   birthday,
   namePrefix,
@@ -85,6 +87,8 @@ export function StaffDashboardClient({
   nationalSchools?: SchoolFull[];
   roleLabel: string;
   role?: UserRole;
+  /** Used so Overseer Type 1 gets SO-style panels (scoped by province upstream) */
+  overseerTier?: OverseerTier | null;
   staffName?: string;
   birthday?: string | null;
   namePrefix?: string | null;
@@ -92,12 +96,14 @@ export function StaffDashboardClient({
   activityPeople?: ActivityPerson[];
   activitySchools?: ActivitySchool[];
   activityReports?: ReportActivityLink[];
-  /** Exact-year SMS + 3-pillar maps for SO comparison charts */
+  /** Exact-year SMS + 3-pillar maps for SO / Type 1 comparison charts */
   compareScoresByYear?: CompareScoresByYear;
   /** Staff-only: past visits still missing a report */
   pendingReportVisits?: PendingReportVisit[];
 }) {
-  const isSuperOverseer = role === 'super_overseer';
+  /** SO + Type 1 share activity / compare / YoY radars; Type 2 & staff keep national compare */
+  const showSoDashboard =
+    role === 'super_overseer' || isOverseerType1(role, overseerTier);
   const isStaff = role === 'staff';
   const showReportReminder = isStaff && pendingReportVisits.length > 0;
   const firstPending = pendingReportVisits[0];
@@ -331,7 +337,7 @@ export function StaffDashboardClient({
         </p>
       </div>
 
-      {isSuperOverseer ? (
+      {showSoDashboard ? (
         <SuperOverseerActivityPanel
           events={calendarEvents}
           people={activityPeople}
@@ -387,7 +393,7 @@ export function StaffDashboardClient({
         </div>
       ) : (
         <>
-          {isSuperOverseer ? (
+          {showSoDashboard ? (
             <SuperOverseerComparePanel
               schools={schools}
               scoresByYear={compareScoresByYear}
@@ -429,7 +435,7 @@ export function StaffDashboardClient({
               <div>
                 <h2 className="ed-section-title text-base m-0">3 เสาหลัก</h2>
                 <p className="text-sm text-slate-500 m-0 mt-1">
-                  {isSuperOverseer
+                  {showSoDashboard
                     ? `เปรียบเทียบปี ${prevYearLabel} กับปี ${currYearLabel}`
                     : 'เปรียบเทียบกับค่าเฉลี่ยทั้งประเทศ'}
                 </p>
@@ -437,13 +443,13 @@ export function StaffDashboardClient({
               <div className="text-right">
                 <div className="text-2xl font-extrabold text-tm-blue">{threeAvg.overall.toFixed(1)}</div>
                 <div className="text-xs text-slate-500">
-                  {isSuperOverseer ? `ปี ${currYearLabel} · / 100` : 'เฉลี่ยในความดูแล / 100'}
+                  {showSoDashboard ? `ปี ${currYearLabel} · / 100` : 'เฉลี่ยในความดูแล / 100'}
                 </div>
               </div>
             </div>
             <DualRadarChart
               labels={
-                isSuperOverseer
+                showSoDashboard
                   ? ['เสาหลัก 1', 'เสาหลัก 2', 'เสาหลัก 3']
                   : [
                       THREE_PILLAR_LABELS.qualitySchool,
@@ -457,7 +463,7 @@ export function StaffDashboardClient({
                 threeAvg.disciplineMorality,
               ]}
               nationalScores={
-                isSuperOverseer
+                showSoDashboard
                   ? [
                       prevYearThreeAvg.qualitySchool,
                       prevYearThreeAvg.qualityGraduation,
@@ -469,8 +475,8 @@ export function StaffDashboardClient({
                       nationalThreeAvg.disciplineMorality,
                     ]
               }
-              schoolLabel={isSuperOverseer ? `ปี ${currYearLabel}` : 'เฉลี่ยในความดูแล'}
-              nationalLabel={isSuperOverseer ? `ปี ${prevYearLabel}` : 'เฉลี่ยทั้งประเทศ'}
+              schoolLabel={showSoDashboard ? `ปี ${currYearLabel}` : 'เฉลี่ยในความดูแล'}
+              nationalLabel={showSoDashboard ? `ปี ${prevYearLabel}` : 'เฉลี่ยทั้งประเทศ'}
               maxScale={100}
               tickValues={[0, 50, 100]}
             />
@@ -486,14 +492,14 @@ export function StaffDashboardClient({
                   <div className="text-xs font-semibold text-slate-600 mb-1 leading-snug">{label}</div>
                   <div className="text-xl font-extrabold" style={{ color }}>
                     {threeAvg[key].toFixed(1)}
-                    {isSuperOverseer ? (
+                    {showSoDashboard ? (
                       <span className="text-xs font-semibold text-slate-400 ml-1">
                         ปี {currYearLabel}
                       </span>
                     ) : null}
                   </div>
                   <div className="text-[11px] text-slate-500 mt-1">
-                    {isSuperOverseer
+                    {showSoDashboard
                       ? `ปี ${prevYearLabel}: ${prevYearThreeAvg[key].toFixed(1)} · Δ ${(
                           threeAvg[key] - prevYearThreeAvg[key]
                         ).toFixed(1)}`
@@ -509,7 +515,7 @@ export function StaffDashboardClient({
               <div>
                 <h2 className="ed-section-title text-base m-0">ผลการประเมินตามระบบ SMS</h2>
                 <p className="text-sm text-slate-500 m-0 mt-1">
-                  {isSuperOverseer
+                  {showSoDashboard
                     ? `เปรียบเทียบปี ${prevYearLabel} กับปี ${currYearLabel}`
                     : 'เปรียบเทียบกับค่าเฉลี่ยทั้งประเทศ'}
                 </p>
@@ -517,16 +523,16 @@ export function StaffDashboardClient({
               <div className="text-right">
                 <div className="text-2xl font-extrabold text-tm-blue">{fiveOverall.toFixed(2)}</div>
                 <div className="text-xs text-slate-500">
-                  {isSuperOverseer ? `ปี ${currYearLabel} · / 5.00` : 'เฉลี่ยในความดูแล / 5.00'}
+                  {showSoDashboard ? `ปี ${currYearLabel} · / 5.00` : 'เฉลี่ยในความดูแล / 5.00'}
                 </div>
               </div>
             </div>
             <DualRadarChart
               labels={STRATEGY_LABELS.map((p) => p.label.replace(/^ด้าน/, ''))}
               schoolScores={fiveAvg}
-              nationalScores={isSuperOverseer ? prevYearFiveAvg : nationalFiveAvg}
-              schoolLabel={isSuperOverseer ? `ปี ${currYearLabel}` : 'เฉลี่ยในความดูแล'}
-              nationalLabel={isSuperOverseer ? `ปี ${prevYearLabel}` : 'เฉลี่ยทั้งประเทศ'}
+              nationalScores={showSoDashboard ? prevYearFiveAvg : nationalFiveAvg}
+              schoolLabel={showSoDashboard ? `ปี ${currYearLabel}` : 'เฉลี่ยในความดูแล'}
+              nationalLabel={showSoDashboard ? `ปี ${prevYearLabel}` : 'เฉลี่ยทั้งประเทศ'}
               maxScale={5}
             />
             <div className="grid gap-3 sm:grid-cols-5">
@@ -537,7 +543,7 @@ export function StaffDashboardClient({
                     {(fiveAvg[i] ?? 0).toFixed(2)}
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1">
-                    {isSuperOverseer
+                    {showSoDashboard
                       ? `ปี ${prevYearLabel} ${(prevYearFiveAvg[i] ?? 0).toFixed(2)}`
                       : `ประเทศ ${(nationalFiveAvg[i] ?? 0).toFixed(2)}`}
                   </div>

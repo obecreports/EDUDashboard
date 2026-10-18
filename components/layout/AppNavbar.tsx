@@ -31,9 +31,10 @@ import type { LucideIcon } from 'lucide-react';
 import {
   NAV_CATALOG,
   navForRole,
-  ROLE_LABELS,
   normalizeRole,
+  roleDisplayLabel,
   type NavItem,
+  type OverseerTier,
   type UserRole,
 } from '@/lib/types';
 import { DROPDOWN_ONLY_HREFS } from '@/lib/auth/mock-users';
@@ -105,11 +106,13 @@ type OpenMenu = 'overview' | 'detail' | 'manage' | 'reports' | 'data' | 'users' 
 
 export function AppNavbar({
   role,
+  overseerTier = null,
   displayName,
   isAuthenticated,
   mustChangePassword,
 }: {
   role: UserRole;
+  overseerTier?: OverseerTier | null;
   displayName: string;
   isAuthenticated: boolean;
   mustChangePassword: boolean;
@@ -129,6 +132,7 @@ export function AppNavbar({
   const drawerId = useId();
 
   const normalizedRole = normalizeRole(role);
+  const roleLabel = roleDisplayLabel(normalizedRole, overseerTier);
   const catalog = navForRole(normalizedRole).filter((item) => !DROPDOWN_ONLY_HREFS.has(item.href));
 
   const byHref = (href: string) => {
@@ -575,7 +579,7 @@ export function AppNavbar({
                 </button>
                 {accountOpen && (
                   <div className="role-menu" role="menu">
-                    <div className="role-menu__meta">{ROLE_LABELS[normalizedRole]}</div>
+                    <div className="role-menu__meta">{roleLabel}</div>
                     {accountMenuLinks}
                   </div>
                 )}
@@ -630,7 +634,7 @@ export function AppNavbar({
                 <span className="ed-profile-btn__avatar">{displayName.slice(0, 1)}</span>
                 <div>
                   <strong>{displayName}</strong>
-                  <span>{ROLE_LABELS[normalizedRole]}</span>
+                  <span>{roleLabel}</span>
                 </div>
               </div>
               <div className="ed-nav-drawer__account-links">{accountMenuLinks}</div>

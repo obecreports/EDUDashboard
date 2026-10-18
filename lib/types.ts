@@ -218,9 +218,34 @@ export function isOverseerType2(
 }
 
 export function overseerTierLabel(tier: OverseerTier | null | undefined): string {
-  if (tier === 'type2') return 'องคมนตรี (ระดับ 2)';
-  if (tier === 'type1') return 'องคมนตรี (ระดับ 1)';
+  // Type 2 presents as อาสาสมัคร in product UI; Type 1 remains องคมนตรี
+  if (tier === 'type2') return ROLE_LABELS.volunteer;
+  if (tier === 'type1') return ROLE_LABELS.overseer;
   return ROLE_LABELS.overseer;
+}
+
+/** User-facing บทบาท label (Type 2 overseer → อาสาสมัคร). */
+export function roleDisplayLabel(
+  role: string | null | undefined,
+  tier?: OverseerTier | null
+): string {
+  const r = normalizeRole(role);
+  if (isOverseerType2(r, tier)) return ROLE_LABELS.volunteer;
+  if (isOverseerType1(r, tier)) return ROLE_LABELS.overseer;
+  return ROLE_LABELS[r];
+}
+
+/** User-facing ตำแหน่ง (Type 2 overseer → อาสาสมัคร). */
+export function positionDisplayLabel(
+  role: string | null | undefined,
+  tier: OverseerTier | null | undefined,
+  position: string | null | undefined
+): string {
+  if (isOverseerType2(role, tier)) return ROLE_LABELS.volunteer;
+  const raw = (position ?? '').trim();
+  if (raw) return raw;
+  if (isOverseerType1(role, tier)) return ROLE_LABELS.overseer;
+  return ROLE_LABELS[normalizeRole(role)] ?? '';
 }
 
 /** Join name_prefix + full_name (space). Empty prefix → full name only. */

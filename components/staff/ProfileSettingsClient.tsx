@@ -3,7 +3,13 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { changeOwnPasswordAction, updateSelfProfileAction } from '@/app/actions/auth';
-import { ROLE_LABELS, type UserRole } from '@/lib/types';
+import {
+  isOverseerType2,
+  positionDisplayLabel,
+  roleDisplayLabel,
+  type OverseerTier,
+  type UserRole,
+} from '@/lib/types';
 import { PasswordField } from '@/components/auth/PasswordField';
 
 export function ProfileSettingsClient({
@@ -12,6 +18,7 @@ export function ProfileSettingsClient({
   position,
   email,
   role,
+  overseerTier = null,
   domainLines,
   bossName,
 }: {
@@ -20,15 +27,19 @@ export function ProfileSettingsClient({
   position: string;
   email: string;
   role: UserRole;
+  overseerTier?: OverseerTier | null;
   domainLines: string[];
   bossName: string;
 }) {
   const router = useRouter();
+  const isType2 = isOverseerType2(role, overseerTier);
+  const displayRole = roleDisplayLabel(role, overseerTier);
+  const displayPosition = positionDisplayLabel(role, overseerTier, position);
   const [editing, setEditing] = useState(false);
   const [full_name, setFullName] = useState(fullName);
   const [prefix, setPrefix] = useState(namePrefix);
   const [savedPrefix, setSavedPrefix] = useState(namePrefix);
-  const [pos, setPos] = useState(position);
+  const [pos, setPos] = useState(displayPosition);
   const [msg, setMsg] = useState<string | null>(null);
   const [pwdMsg, setPwdMsg] = useState<string | null>(null);
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -39,8 +50,8 @@ export function ProfileSettingsClient({
     setFullName(fullName);
     setPrefix(namePrefix);
     setSavedPrefix(namePrefix);
-    setPos(position);
-  }, [fullName, namePrefix, position]);
+    setPos(displayPosition);
+  }, [fullName, namePrefix, displayPosition]);
 
   const displayPrefix = savedPrefix.trim() || 'คุณ';
   void bossName;
@@ -52,7 +63,7 @@ export function ProfileSettingsClient({
       const fd = new FormData();
       fd.set('full_name', full_name.trim());
       fd.set('name_prefix', nextPrefix);
-      fd.set('position', pos.trim());
+      fd.set('position', isType2 ? displayRole : pos.trim());
       const res = await updateSelfProfileAction(fd);
       if (!res.ok) {
         setMsg(res.error || 'บันทึกไม่สำเร็จ');
@@ -68,7 +79,7 @@ export function ProfileSettingsClient({
 
   const cancel = () => {
     setFullName(fullName);
-    setPos(position);
+    setPos(displayPosition);
     setPrefix(savedPrefix);
     setEditing(false);
     setMsg(null);
@@ -132,11 +143,17 @@ export function ProfileSettingsClient({
         <label className="block text-sm font-semibold">
           ตำแหน่ง
           <input
-            className="form-input"
-            value={pos}
+            className={`form-input${isType2 ? ' form-input--locked' : ''}`}
+            value={isType2 ? displayPosition : pos}
             onChange={(e) => setPos(e.target.value)}
-            disabled={!editing}
+            disabled={!editing || isType2}
+            readOnly={isType2}
           />
+          {isType2 ? (
+            <span className="text-xs text-slate-500 font-normal">
+              องคมนตรีระดับ 2 แสดงเป็นอาสาสมัคร
+            </span>
+          ) : null}
         </label>
 
         <label className="block text-sm font-semibold">
@@ -149,7 +166,7 @@ export function ProfileSettingsClient({
           บทบาท
           <input
             className="form-input form-input--locked"
-            value={ROLE_LABELS[role]}
+            value={displayRole}
             disabled
             readOnly
           />

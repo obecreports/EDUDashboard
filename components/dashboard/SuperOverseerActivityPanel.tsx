@@ -13,6 +13,7 @@ import {
   isOverseerType2,
   normalizeRole,
   overseerTierLabel,
+  roleDisplayLabel,
 } from '@/lib/types';
 import {
   countCompleteEvents,
@@ -62,19 +63,31 @@ function monthKey(ymd: string) {
 }
 
 /** 5 pastel levels from red → green by report completion rate */
-function perfLevel(bookings: number, complete: number): PerfLevel {
-  if (bookings <= 0) return 0;
-  const pct = complete / bookings;
-  if (pct < 0.2) return 0;
-  if (pct < 0.4) return 1;
-  if (pct < 0.6) return 2;
-  if (pct < 0.8) return 3;
+function perfLevelFromPct(pct: number): PerfLevel {
+  if (pct < 20) return 0;
+  if (pct < 40) return 1;
+  if (pct < 60) return 2;
+  if (pct < 80) return 3;
   return 4;
+}
+
+function perfLevel(bookings: number, complete: number): PerfLevel {
+  return perfLevelFromPct(perfPct(bookings, complete));
 }
 
 function perfPct(bookings: number, complete: number) {
   if (bookings <= 0) return 0;
   return Math.round((complete / bookings) * 100);
+}
+
+/**
+ * Parent (gov / province) color = mean of school completion %.
+ * Schools with no bookings count as 0% so 1/5 schools done ≈ 20% (not green).
+ */
+function rollupFromSchoolPcts(pcts: number[]): { level: PerfLevel; pct: number } {
+  if (pcts.length === 0) return { level: 0, pct: 0 };
+  const pct = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+  return { level: perfLevelFromPct(pct), pct };
 }
 
 function latestDate(dates: string[]) {
@@ -186,6 +199,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
   const [selectedPeople, setSelectedPeople] = useState<Set<string>>(new Set());
   const [selectedPlaces, setSelectedPlaces] = useState<Set<string>>(new Set());
   const [openOverseers, setOpenOverseers] = useState<Set<string>>(new Set());
+  const [openRoleGroups, setOpenRoleGroups] = useState<Set<string>>(new Set());
   const [openProvinces, setOpenProvinces] = useState<Set<string>>(new Set());
   const [openAreas, setOpenAreas] = useState<Set<string>>(new Set());
   const [isExpanded, setIsExpanded] = useState(true);
@@ -563,6 +577,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
         const bookings = schoolLeaves.reduce((n, s) => n + s.bookings, 0);
         const complete = schoolLeaves.reduce((n, s) => n + s.complete, 0);
         const lastDate = latestDate(schoolLeaves.map((s) => s.lastDate));
+        const areaRollup = rollupFromSchoolPcts(schoolLeaves.map((s) => s.pct));
         schoolCount += schoolLeaves.length;
         provBookings += bookings;
         provComplete += complete;
@@ -573,10 +588,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
           complete,
           lastDate,
           schools: schoolLeaves,
-          level: perfLevel(bookings, complete),
-          pct: perfPct(bookings, complete),
+          level: areaRollup.level,
+          pct: areaRollup.pct,
         });
       }
+      const allSchoolPcts = areas.flatMap((a) => a.schools.map((s) => s.pct));
+      const provRollup = rollupFromSchoolPcts(allSchoolPcts);
       nodes.push({
         province,
         bookings: provBookings,
@@ -584,8 +601,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
         schoolCount,
         lastDate: latestDate(provDates),
         areas,
-        level: perfLevel(provBookings, provComplete),
-        pct: perfPct(provBookings, provComplete),
+        level: provRollup.level,
+        pct: provRollup.pct,
       });
     }
     return nodes;
@@ -593,37 +610,148 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
   const needle = q.trim().toLowerCase();
 
-  const filteredOverseers = useMemo(() => {
-    return overseers.filter((o) => {
-      if (selectedPeople.size > 0) {
-        const kids = staffUnder.get(o.id) ?? [];
-        const hitSelf = selectedPeople.has(o.id);
-        const hitKid = kids.some((s) => selectedPeople.has(s.id));
-        if (!hitSelf && !hitKid) return false;
-      }
-      if (!needle) return true;
-      if (o.full_name.toLowerCase().includes(needle)) return true;
-      return (staffUnder.get(o.id) ?? []).some((s) =>
-        s.full_name.toLowerCase().includes(needle)
-      );
-    });
-  }, [overseers, staffUnder, selectedPeople, needle]);
+  const personMatches = (p: ActivityPerson) => {
+    if (!needle) return true;
+    return (
+      p.full_name.toLowerCase().includes(needle) ||
+      labelOf(p).toLowerCase().includes(needle)
+    );
+  };
 
-  const visibleStaff = (ovId: string) => {
-    const kids = staffUnder.get(ovId) ?? [];
+  const visibleStaffOf = (bossId: string, ancestorsSelected: boolean) => {
+    const kids = staffUnder.get(bossId) ?? [];
     return kids.filter((st) => {
       if (selectedPeople.size > 0) {
-        // If only overseer selected, show all staff; if staff selected, show those
-        const ovSelected = selectedPeople.has(ovId);
         const anyStaffSelected = kids.some((k) => selectedPeople.has(k.id));
         if (anyStaffSelected) return selectedPeople.has(st.id);
-        if (ovSelected) return true;
+        if (ancestorsSelected || selectedPeople.has(bossId)) return true;
         return selectedPeople.has(st.id);
       }
-      if (!needle) return true;
-      return st.full_name.toLowerCase().includes(needle);
+      return personMatches(st);
     });
   };
+
+  /**
+   * Person tree sections (mirror school: province → gov → school):
+   * - Type 1 root → role groups อาสาสมัคร / เจ้าหน้าที่ → people
+   * - Or (no Type 1 in list): role groups at top → Type 2 / staff → staff under Type 2
+   */
+  const filteredPersonSections = useMemo(() => {
+    const nestedType2 = new Set<string>();
+    const nestedStaff = new Set<string>();
+
+    type Section =
+      | {
+          kind: 'type1';
+          person: ActivityPerson;
+          type2: ActivityPerson[];
+          staff: ActivityPerson[];
+        }
+      | { kind: 'role-type2'; people: ActivityPerson[] }
+      | { kind: 'role-staff'; people: ActivityPerson[] };
+
+    const sections: Section[] = [];
+
+    for (const ov of type1Overseers) {
+      const t2s = type2Under.get(ov.id) ?? [];
+      const directStaff = staffUnder.get(ov.id) ?? [];
+      for (const t2 of t2s) {
+        nestedType2.add(t2.id);
+        for (const st of staffUnder.get(t2.id) ?? []) nestedStaff.add(st.id);
+      }
+      for (const st of directStaff) nestedStaff.add(st.id);
+
+      if (selectedPeople.size > 0) {
+        const hitSelf = selectedPeople.has(ov.id);
+        const hitT2 = t2s.some(
+          (t2) =>
+            selectedPeople.has(t2.id) ||
+            (staffUnder.get(t2.id) ?? []).some((s) => selectedPeople.has(s.id))
+        );
+        const hitStaff = directStaff.some((s) => selectedPeople.has(s.id));
+        if (!hitSelf && !hitT2 && !hitStaff) continue;
+      }
+      if (needle) {
+        const hitSelf = personMatches(ov);
+        const hitT2 = t2s.some(
+          (t2) =>
+            personMatches(t2) ||
+            (staffUnder.get(t2.id) ?? []).some((s) => personMatches(s))
+        );
+        const hitStaff = directStaff.some((s) => personMatches(s));
+        if (!hitSelf && !hitT2 && !hitStaff) continue;
+      }
+
+      const type2Visible = t2s.filter((t2) => {
+        const staff = staffUnder.get(t2.id) ?? [];
+        if (selectedPeople.size > 0) {
+          const hitSelf = selectedPeople.has(t2.id);
+          const hitStaff = staff.some((s) => selectedPeople.has(s.id));
+          const parentSelected = selectedPeople.has(ov.id);
+          if (!hitSelf && !hitStaff && !parentSelected) return false;
+        }
+        if (!needle) return true;
+        return personMatches(t2) || staff.some((s) => personMatches(s));
+      });
+      const staffVisible = directStaff.filter((st) => {
+        if (selectedPeople.size > 0) {
+          const anyStaffSelected = directStaff.some((k) => selectedPeople.has(k.id));
+          if (anyStaffSelected) return selectedPeople.has(st.id);
+          if (selectedPeople.has(ov.id)) return true;
+          return selectedPeople.has(st.id);
+        }
+        return personMatches(st);
+      });
+
+      sections.push({
+        kind: 'type1',
+        person: ov,
+        type2: type2Visible,
+        staff: staffVisible,
+      });
+    }
+
+    const orphanType2: ActivityPerson[] = [];
+    for (const p of overseers) {
+      if (!isOverseerType2(p.role, p.overseer_tier) || nestedType2.has(p.id)) continue;
+      const staff = staffUnder.get(p.id) ?? [];
+      if (selectedPeople.size > 0) {
+        const hitSelf = selectedPeople.has(p.id);
+        const hitStaff = staff.some((s) => selectedPeople.has(s.id));
+        if (!hitSelf && !hitStaff) continue;
+      }
+      if (needle && !personMatches(p) && !staff.some((s) => personMatches(s))) continue;
+      for (const st of staff) nestedStaff.add(st.id);
+      orphanType2.push(p);
+    }
+    if (orphanType2.length > 0) {
+      sections.push({ kind: 'role-type2', people: orphanType2 });
+    }
+
+    const orphanStaff: ActivityPerson[] = [];
+    for (const p of people) {
+      if (normalizeRole(p.role) !== 'staff') continue;
+      if (nestedStaff.has(p.id)) continue;
+      if (p.reports_to && peopleById.has(p.reports_to)) continue;
+      if (selectedPeople.size > 0 && !selectedPeople.has(p.id)) continue;
+      if (needle && !personMatches(p)) continue;
+      orphanStaff.push(p);
+    }
+    if (orphanStaff.length > 0) {
+      sections.push({ kind: 'role-staff', people: orphanStaff });
+    }
+
+    return sections;
+  }, [
+    type1Overseers,
+    type2Under,
+    staffUnder,
+    overseers,
+    people,
+    peopleById,
+    selectedPeople,
+    needle,
+  ]);
 
   const placeMatch = (province: string, area: string, schoolId: string) => {
     if (selectedPlaces.size === 0) return true;
@@ -660,20 +788,23 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
             }
             const bookings = schoolLeaves.reduce((n, s) => n + s.bookings, 0);
             const complete = schoolLeaves.reduce((n, s) => n + s.complete, 0);
+            const visible =
+              schoolLeaves.length
+                ? schoolLeaves
+                : area.schools.filter((leaf) =>
+                    placeMatch(prov.province, area.area, leaf.school.id)
+                  );
+            const rollup = rollupFromSchoolPcts(visible.map((s) => s.pct));
             return {
               ...area,
-              schools: schoolLeaves.length ? schoolLeaves : area.schools.filter((leaf) =>
-                placeMatch(prov.province, area.area, leaf.school.id)
-              ),
+              schools: visible,
               bookings: schoolLeaves.length ? bookings : area.bookings,
               complete: schoolLeaves.length ? complete : area.complete,
               lastDate: schoolLeaves.length
                 ? latestDate(schoolLeaves.map((s) => s.lastDate))
                 : area.lastDate,
-              level: schoolLeaves.length
-                ? perfLevel(bookings, complete)
-                : area.level,
-              pct: schoolLeaves.length ? perfPct(bookings, complete) : area.pct,
+              level: rollup.level,
+              pct: rollup.pct,
             };
           })
           .filter(Boolean) as typeof prov.areas;
@@ -697,6 +828,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
         const bookings = useAreas.reduce((n, a) => n + a.bookings, 0);
         const complete = useAreas.reduce((n, a) => n + a.complete, 0);
+        const schoolPcts = useAreas.flatMap((a) => a.schools.map((s) => s.pct));
+        const rollup = rollupFromSchoolPcts(schoolPcts);
         return {
           ...prov,
           areas: useAreas,
@@ -704,8 +837,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
           complete,
           schoolCount: useAreas.reduce((n, a) => n + a.schools.length, 0),
           lastDate: latestDate(useAreas.map((a) => a.lastDate)),
-          level: perfLevel(bookings, complete),
-          pct: perfPct(bookings, complete),
+          level: rollup.level,
+          pct: rollup.pct,
         };
       })
       .filter(Boolean) as typeof provinceTree;
@@ -826,112 +959,343 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
       {tab === 'people' ? (
         <div className="so-tree">
-          {filteredOverseers.length === 0 ? (
+          {filteredPersonSections.length === 0 ? (
             <p className="text-sm text-slate-500 m-0">ไม่พบผู้กำกับดูแลตามตัวกรอง</p>
           ) : (
-            filteredOverseers.map((ov) => {
-              const open = openOverseers.has(ov.id);
-              const m = personMetrics.get(ov.id);
-              const kids = visibleStaff(ov.id);
-              const last = overseerLastDate.get(ov.id) || m?.lastDate || '';
-              const level = m?.level ?? 0;
-              return (
-                <div key={ov.id} className="so-tree__node">
-                  <button
-                    type="button"
-                    className={`so-tree__row so-tree__row--branch so-perf-row so-perf--${level}`}
-                    onClick={() => toggle(openOverseers, ov.id, setOpenOverseers)}
-                    aria-expanded={open}
+            (() => {
+              const rollupPeople = (list: ActivityPerson[]) => {
+                const pcts = list.map((p) => personMetrics.get(p.id)?.pct ?? 0);
+                const rollup = rollupFromSchoolPcts(pcts);
+                const bookings = list.reduce(
+                  (n, p) => n + (personMetrics.get(p.id)?.bookings ?? 0),
+                  0
+                );
+                const reportsDone = list.reduce(
+                  (n, p) => n + (personMetrics.get(p.id)?.reportsDone ?? 0),
+                  0
+                );
+                const schools = list.reduce(
+                  (n, p) => n + (personMetrics.get(p.id)?.schools ?? 0),
+                  0
+                );
+                const last = latestDate(
+                  list.map(
+                    (p) =>
+                      overseerLastDate.get(p.id) ||
+                      personMetrics.get(p.id)?.lastDate ||
+                      ''
+                  )
+                );
+                return { ...rollup, bookings, reportsDone, schools, last };
+              };
+
+              const renderPersonLeaf = (
+                person: ActivityPerson,
+                indent: '' | 'indent' | 'indent2'
+              ) => {
+                const sm = personMetrics.get(person.id);
+                const active = Boolean(sm?.hasActivity);
+                const sl = sm?.level ?? 0;
+                const indentClass =
+                  indent === 'indent2'
+                    ? 'so-tree__row--indent2'
+                    : indent === 'indent'
+                      ? 'so-tree__row--indent'
+                      : '';
+                const roleLabel = roleDisplayLabel(person.role, person.overseer_tier);
+                return (
+                  <div
+                    key={person.id}
+                    className={`so-tree__row so-tree__row--leaf ${indentClass} so-perf-row so-perf--${sl} ${
+                      active ? 'so-tree__row--active' : ''
+                    }`}
                   >
-                    <ChevronDown
-                      size={16}
-                      className={`so-tree__chevron ${open ? 'is-open' : ''}`}
-                    />
+                    <span className="so-tree__dot" aria-hidden />
                     <div className="so-tree__main">
                       <strong>
-                        {labelOf(ov)}
-                        <span className="so-tree__last">ล่าสุด {formatThaiDate(last)}</span>
+                        {labelOf(person)}
+                        <span className="so-tree__last">
+                          ล่าสุด {formatThaiDate(sm?.lastDate || '')}
+                        </span>
                       </strong>
                       <span className="so-tree__meta">
-                        {ROLE_LABELS[normalizeRole(ov.role)]} · ลูกทีม {kids.length} คน
-                        {m ? ` · รายงาน ${m.pct}%` : ''}
+                        {roleLabel}
+                        {active
+                          ? ` · มีกิจกรรม · รายงาน ${sm?.pct ?? 0}%`
+                          : ' · ยังไม่มีกิจกรรม'}
                       </span>
                     </div>
-                    <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
+                    <div className="so-tree__metrics">
                       <MetricLink
-                        href={schoolsHref({ person: ov.id })}
-                        value={m?.schools ?? 0}
+                        href={schoolsHref({ person: person.id })}
+                        value={sm?.schools ?? 0}
                         label="รร."
                       />
                       <MetricLink
-                        href={schoolsHref({ person: ov.id, visit: 'planned' })}
-                        value={m?.bookings ?? 0}
+                        href={schoolsHref({ person: person.id, visit: 'planned' })}
+                        value={sm?.bookings ?? 0}
                         label="นัด"
                       />
                       <MetricLink
-                        href={schoolsHref({ person: ov.id, visit: 'visited' })}
-                        value={m?.reportsDone ?? 0}
+                        href={schoolsHref({ person: person.id, visit: 'visited' })}
+                        value={sm?.reportsDone ?? 0}
                         label="รายงาน"
                       />
                     </div>
-                  </button>
-                  {open && (
-                    <div className="so-tree__children">
-                      {kids.length === 0 ? (
-                        <p className="text-xs text-slate-500 px-3 py-2 m-0">ไม่มีเจ้าหน้าที่ในสาย</p>
-                      ) : (
-                        kids.map((st) => {
-                          const sm = personMetrics.get(st.id);
-                          const active = Boolean(sm?.hasActivity);
-                          const sl = sm?.level ?? 0;
-                          return (
-                            <div
-                              key={st.id}
-                              className={`so-tree__row so-tree__row--leaf so-perf-row so-perf--${sl} ${
-                                active ? 'so-tree__row--active' : ''
-                              }`}
-                            >
-                              <span className="so-tree__dot" aria-hidden />
-                              <div className="so-tree__main">
-                                <strong>
-                                  {labelOf(st)}
-                                  <span className="so-tree__last">
-                                    ล่าสุด {formatThaiDate(sm?.lastDate || '')}
-                                  </span>
-                                </strong>
-                                <span className="so-tree__meta">
-                                  {ROLE_LABELS[normalizeRole(st.role)]}
-                                  {active
-                                    ? ` · มีกิจกรรม · รายงาน ${sm?.pct ?? 0}%`
-                                    : ' · ยังไม่มีกิจกรรม'}
-                                </span>
-                              </div>
-                              <div className="so-tree__metrics">
-                                <MetricLink
-                                  href={schoolsHref({ person: st.id })}
-                                  value={sm?.schools ?? 0}
-                                  label="รร."
-                                />
-                                <MetricLink
-                                  href={schoolsHref({ person: st.id, visit: 'planned' })}
-                                  value={sm?.bookings ?? 0}
-                                  label="นัด"
-                                />
-                                <MetricLink
-                                  href={schoolsHref({ person: st.id, visit: 'visited' })}
-                                  value={sm?.reportsDone ?? 0}
-                                  label="รายงาน"
-                                />
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })
+                  </div>
+                );
+              };
+
+              /** Type 2 = gov_domain level; staff under them = school level */
+              const renderType2Node = (
+                t2: ActivityPerson,
+                parentSelected: boolean,
+                indent: '' | 'indent'
+              ) => {
+                const staffKids = visibleStaffOf(
+                  t2.id,
+                  parentSelected || selectedPeople.has(t2.id)
+                );
+                const m = personMetrics.get(t2.id);
+                const last = overseerLastDate.get(t2.id) || m?.lastDate || '';
+                const level = m?.level ?? 0;
+                const roleLabel = roleDisplayLabel(t2.role, t2.overseer_tier);
+                const indentClass = indent === 'indent' ? 'so-tree__row--indent' : '';
+                const staffIndent = indent === 'indent' ? 'indent2' : 'indent';
+
+                if (staffKids.length === 0) {
+                  return renderPersonLeaf(t2, indent === 'indent' ? 'indent' : '');
+                }
+
+                const open = openOverseers.has(t2.id);
+                return (
+                  <div key={t2.id} className="so-tree__node">
+                    <button
+                      type="button"
+                      className={`so-tree__row so-tree__row--branch ${indentClass} so-perf-row so-perf--${level}`}
+                      onClick={() => toggle(openOverseers, t2.id, setOpenOverseers)}
+                      aria-expanded={open}
+                    >
+                      <ChevronDown
+                        size={16}
+                        className={`so-tree__chevron ${open ? 'is-open' : ''}`}
+                      />
+                      <div className="so-tree__main">
+                        <strong>
+                          {labelOf(t2)}
+                          <span className="so-tree__last">ล่าสุด {formatThaiDate(last)}</span>
+                        </strong>
+                        <span className="so-tree__meta">
+                          {roleLabel} · ลูกทีม {staffKids.length} คน
+                          {m ? ` · รายงาน ${m.pct}%` : ''}
+                        </span>
+                      </div>
+                      <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
+                        <MetricLink
+                          href={schoolsHref({ person: t2.id })}
+                          value={m?.schools ?? 0}
+                          label="รร."
+                        />
+                        <MetricLink
+                          href={schoolsHref({ person: t2.id, visit: 'planned' })}
+                          value={m?.bookings ?? 0}
+                          label="นัด"
+                        />
+                        <MetricLink
+                          href={schoolsHref({ person: t2.id, visit: 'visited' })}
+                          value={m?.reportsDone ?? 0}
+                          label="รายงาน"
+                        />
+                      </div>
+                    </button>
+                    {open && (
+                      <div className="so-tree__children">
+                        {staffKids.map((st) => renderPersonLeaf(st, staffIndent))}
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+
+              /** Role group = province level (อาสาสมัคร / เจ้าหน้าที่) */
+              const renderRoleGroup = (
+                groupKey: string,
+                title: string,
+                hint: string,
+                members: ActivityPerson[],
+                mode: 'type2' | 'staff',
+                nested: boolean,
+                parentSelected: boolean
+              ) => {
+                if (members.length === 0) return null;
+                const open = openRoleGroups.has(groupKey);
+                const agg = rollupPeople(members);
+                const indentClass = nested ? 'so-tree__row--indent' : '';
+                const childIndent = nested ? ('indent' as const) : ('' as const);
+
+                return (
+                  <div key={groupKey} className="so-tree__node">
+                    <button
+                      type="button"
+                      className={`so-tree__row so-tree__row--branch ${indentClass} so-perf-row so-perf--${agg.level}`}
+                      onClick={() => toggle(openRoleGroups, groupKey, setOpenRoleGroups)}
+                      aria-expanded={open}
+                    >
+                      <ChevronDown
+                        size={16}
+                        className={`so-tree__chevron ${open ? 'is-open' : ''}`}
+                      />
+                      <div className="so-tree__main">
+                        <strong>
+                          {title}
+                          <span className="so-tree__last">
+                            ล่าสุด {formatThaiDate(agg.last)}
+                          </span>
+                        </strong>
+                        <span className="so-tree__meta">
+                          {hint} · {members.length} คน · รายงาน {agg.pct}%
+                        </span>
+                      </div>
+                      <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
+                        <span className="so-metric so-metric--static">
+                          <strong>{agg.schools}</strong>
+                          <span>รร.</span>
+                        </span>
+                        <span className="so-metric so-metric--static">
+                          <strong>{agg.bookings}</strong>
+                          <span>นัด</span>
+                        </span>
+                        <span className="so-metric so-metric--static">
+                          <strong>{agg.reportsDone}</strong>
+                          <span>รายงาน</span>
+                        </span>
+                      </div>
+                    </button>
+                    {open && (
+                      <div className="so-tree__children">
+                        {mode === 'type2'
+                          ? members.map((t2) =>
+                              renderType2Node(t2, parentSelected, childIndent)
+                            )
+                          : members.map((st) =>
+                              renderPersonLeaf(
+                                st,
+                                nested ? 'indent2' : 'indent'
+                              )
+                            )}
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+
+              return filteredPersonSections.map((section) => {
+                if (section.kind === 'role-type2') {
+                  return renderRoleGroup(
+                    'role:type2',
+                    ROLE_LABELS.volunteer,
+                    'กลุ่มอาสาสมัคร (Type 2)',
+                    section.people,
+                    'type2',
+                    false,
+                    false
+                  );
+                }
+                if (section.kind === 'role-staff') {
+                  return renderRoleGroup(
+                    'role:staff',
+                    ROLE_LABELS.staff,
+                    'กลุ่มเจ้าหน้าที่',
+                    section.people,
+                    'staff',
+                    false,
+                    false
+                  );
+                }
+
+                const ov = section.person;
+                const open = openOverseers.has(ov.id);
+                const m = personMetrics.get(ov.id);
+                const teamCount = section.type2.length + section.staff.length;
+                const last = overseerLastDate.get(ov.id) || m?.lastDate || '';
+                const level = m?.level ?? 0;
+                const roleLabel = roleDisplayLabel(ov.role, ov.overseer_tier);
+                const parentSelected = selectedPeople.has(ov.id);
+
+                return (
+                  <div key={ov.id} className="so-tree__node">
+                    <button
+                      type="button"
+                      className={`so-tree__row so-tree__row--branch so-perf-row so-perf--${level}`}
+                      onClick={() => toggle(openOverseers, ov.id, setOpenOverseers)}
+                      aria-expanded={open}
+                    >
+                      <ChevronDown
+                        size={16}
+                        className={`so-tree__chevron ${open ? 'is-open' : ''}`}
+                      />
+                      <div className="so-tree__main">
+                        <strong>
+                          {labelOf(ov)}
+                          <span className="so-tree__last">ล่าสุด {formatThaiDate(last)}</span>
+                        </strong>
+                        <span className="so-tree__meta">
+                          {roleLabel} · ลูกทีม {teamCount} คน
+                          {m ? ` · รายงาน ${m.pct}%` : ''}
+                        </span>
+                      </div>
+                      <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
+                        <MetricLink
+                          href={schoolsHref({ person: ov.id })}
+                          value={m?.schools ?? 0}
+                          label="รร."
+                        />
+                        <MetricLink
+                          href={schoolsHref({ person: ov.id, visit: 'planned' })}
+                          value={m?.bookings ?? 0}
+                          label="นัด"
+                        />
+                        <MetricLink
+                          href={schoolsHref({ person: ov.id, visit: 'visited' })}
+                          value={m?.reportsDone ?? 0}
+                          label="รายงาน"
+                        />
+                      </div>
+                    </button>
+                    {open && (
+                      <div className="so-tree__children">
+                        {teamCount === 0 ? (
+                          <p className="text-xs text-slate-500 px-3 py-2 m-0">
+                            ไม่มีลูกทีมในสาย
+                          </p>
+                        ) : (
+                          <>
+                            {renderRoleGroup(
+                              `role:type2:${ov.id}`,
+                              ROLE_LABELS.volunteer,
+                              'กลุ่มอาสาสมัคร (Type 2)',
+                              section.type2,
+                              'type2',
+                              true,
+                              parentSelected
+                            )}
+                            {renderRoleGroup(
+                              `role:staff:${ov.id}`,
+                              ROLE_LABELS.staff,
+                              'กลุ่มเจ้าหน้าที่',
+                              section.staff,
+                              'staff',
+                              true,
+                              parentSelected
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()
           )}
         </div>
       ) : (

@@ -22,7 +22,7 @@ CREATE TEMP TABLE _os10_t2 (
   auth_email text NOT NULL,
   full_name text NOT NULL,
   name_prefix text,
-  position text NOT NULL DEFAULT 'องคมนตรี',
+  position text NOT NULL DEFAULT 'อาสาสมัคร',
   role text NOT NULL DEFAULT 'overseer',
   password text NOT NULL DEFAULT 'login1234',
   assigned_provinces text[] NOT NULL,

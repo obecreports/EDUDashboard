@@ -28,6 +28,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <PendingNav />
         <AppNavbar
           role={role}
+          overseerTier={profile?.overseer_tier ?? null}
           displayName={
             profile
               ? formatPersonLabel(role, profile.name_prefix, profile.full_name) ||

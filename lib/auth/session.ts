@@ -527,6 +527,7 @@ export async function adminSetReportsTo(
         return { ok: false, error: 'ไม่สามารถตั้งหัวหน้าเป็นตนเองได้' };
       }
       patch.overseer_tier = 'type2';
+      patch.position = 'อาสาสมัคร';
       // Clip provinces to parent set (keep subset already assigned)
       const allowed = new Set(boss.assigned_provinces ?? []);
       const clipped = (user.assigned_provinces ?? []).filter((p) => allowed.has(p));
@@ -535,6 +536,9 @@ export async function adminSetReportsTo(
       }
     } else if (userRole === 'overseer' && bossRole === 'super_overseer') {
       patch.overseer_tier = 'type1';
+      if (!user.position || user.position === 'อาสาสมัคร') {
+        patch.position = 'องคมนตรี';
+      }
     }
   }
 

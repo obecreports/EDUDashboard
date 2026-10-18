@@ -61,6 +61,7 @@ async function ProfileBody() {
         position={profile.position ?? ''}
         email={profile.email ?? ''}
         role={role}
+        overseerTier={profile.overseer_tier ?? null}
         domainLines={domainLines}
         bossName={boss?.full_name ?? ''}
       />

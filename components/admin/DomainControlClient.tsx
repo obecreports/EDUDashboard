@@ -48,8 +48,53 @@ export function DomainControlClient({
   const labelOf = (u: Account) =>
     formatPersonLabel(u.role, u.name_prefix, u.full_name) || u.full_name;
 
+  /** Sort / search by bare name so คำนำหน้า does not hide users */
+  const nameKey = (u: Account) => (u.full_name || '').trim();
+
+  const roleBadge = (u: Account) => {
+    if (u.role === 'overseer') {
+      return overseerTierLabel(effectiveOverseerTier(u.role, u.overseer_tier));
+    }
+    return ROLE_LABELS[u.role];
+  };
+
+  const matchesQuery = (u: Account, raw: string) => {
+    const q = raw.trim().toLowerCase();
+    if (!q) return true;
+    const prefix = (u.name_prefix ?? '').trim().toLowerCase();
+    const full = (u.full_name ?? '').trim().toLowerCase();
+    const labeled = labelOf(u).toLowerCase();
+    const email = (u.email ?? '').toLowerCase();
+    const badge = roleBadge(u).toLowerCase();
+    // Match name without prefix, with prefix, or compact "นางสาวสุนันทา…"
+    const compact = `${prefix}${full}`.replace(/\s+/g, '');
+    const qCompact = q.replace(/\s+/g, '');
+    return (
+      labeled.includes(q) ||
+      full.includes(q) ||
+      prefix.includes(q) ||
+      email.includes(q) ||
+      u.id.toLowerCase().includes(q) ||
+      compact.includes(qCompact) ||
+      `${labeled} (${badge})`.includes(q)
+    );
+  };
+
+  const findUserFromInput = (value: string, pool: Account[]) => {
+    const v = value.trim();
+    if (!v) return undefined;
+    return pool.find(
+      (u) =>
+        labelOf(u) === v ||
+        u.email === v ||
+        u.full_name === v ||
+        `${labelOf(u)} (${roleBadge(u)})` === v ||
+        matchesQuery(u, v)
+    );
+  };
+
   const [roleFilter, setRoleFilter] = useState<
-    'all' | 'overseer' | 'volunteer' | 'staff'
+    'all' | 'type1' | 'type2' | 'volunteer' | 'staff'
   >('all');
   const [nameQuery, setNameQuery] = useState('');
   const [selectedId, setSelectedId] = useState('');
@@ -88,17 +133,22 @@ export function DomainControlClient({
 
   const filteredUsers = useMemo(() => {
     let list = assignable;
-    if (roleFilter !== 'all') list = list.filter((a) => a.role === roleFilter);
-    if (nameQuery.trim()) {
-      const q = nameQuery.trim().toLowerCase();
+    if (roleFilter === 'type1') {
+      list = list.filter((a) => isOverseerType1(a.role, a.overseer_tier));
+    } else if (roleFilter === 'type2') {
+      // Type 2 overseers present as อาสาสมัคร in UI
+      list = list.filter((a) => isOverseerType2(a.role, a.overseer_tier));
+    } else if (roleFilter === 'volunteer') {
       list = list.filter(
-        (a) =>
-          labelOf(a).toLowerCase().includes(q) ||
-          a.email.toLowerCase().includes(q) ||
-          a.id.toLowerCase().includes(q)
+        (a) => a.role === 'volunteer' || isOverseerType2(a.role, a.overseer_tier)
       );
+    } else if (roleFilter === 'staff') {
+      list = list.filter((a) => a.role === 'staff');
     }
-    return list.sort((a, b) => labelOf(a).localeCompare(labelOf(b), 'th'));
+    if (nameQuery.trim()) {
+      list = list.filter((a) => matchesQuery(a, nameQuery));
+    }
+    return list.sort((a, b) => nameKey(a).localeCompare(nameKey(b), 'th'));
   }, [assignable, roleFilter, nameQuery]);
 
   const selected = assignable.find((a) => a.id === selectedId) ?? null;
@@ -241,13 +291,6 @@ export function DomainControlClient({
     });
   };
 
-  const roleBadge = (u: Account) => {
-    if (u.role === 'overseer') {
-      return overseerTierLabel(effectiveOverseerTier(u.role, u.overseer_tier));
-    }
-    return ROLE_LABELS[u.role];
-  };
-
   return (
     <div className="grid gap-4">
       {msg && <div className="ed-card p-3 text-sm text-tm-blue bg-tm-blue-50">{msg}</div>}
@@ -257,7 +300,8 @@ export function DomainControlClient({
           <div>
             <h2 className="ed-section-title text-base m-0">1 · ค้นหาและเลือกผู้ใช้</h2>
             <p className="text-sm text-slate-600 m-0 mt-1">
-              องคมนตรี Type 1 / Type 2 = มอบหมายจังหวัด · Staff = เขตพื้นที่การศึกษา
+              ค้นด้วยชื่อจริงได้โดยไม่ต้องใส่คำนำหน้า · Type 1 / Type 2 = จังหวัด · Staff =
+              เขตพื้นที่การศึกษา
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -268,7 +312,12 @@ export function DomainControlClient({
                 value={roleFilter}
                 onChange={(e) => {
                   setRoleFilter(
-                    e.target.value as 'all' | 'overseer' | 'volunteer' | 'staff'
+                    e.target.value as
+                      | 'all'
+                      | 'type1'
+                      | 'type2'
+                      | 'volunteer'
+                      | 'staff'
                   );
                   setSelectedId('');
                   setTags([]);
@@ -276,8 +325,9 @@ export function DomainControlClient({
                 }}
               >
                 <option value="all">ทั้งหมด</option>
-                <option value="overseer">{ROLE_LABELS.overseer}</option>
-                <option value="volunteer">{ROLE_LABELS.volunteer}</option>
+                <option value="type1">องคมนตรี (Type 1)</option>
+                <option value="type2">อาสาสมัคร (Type 2)</option>
+                <option value="volunteer">{ROLE_LABELS.volunteer} (บัญชี)</option>
                 <option value="staff">{ROLE_LABELS.staff}</option>
               </select>
             </label>
@@ -290,19 +340,20 @@ export function DomainControlClient({
                 onChange={(e) => {
                   const value = e.target.value;
                   setNameQuery(value);
-                  const match = filteredUsers.find(
-                    (u) =>
-                      labelOf(u) === value ||
-                      u.email === value ||
-                      `${labelOf(u)} (${roleBadge(u)})` === value
-                  );
-                  if (match) pickUser(match.id);
-                  else setSelectedId('');
+                  const match = findUserFromInput(value, filteredUsers);
+                  if (match && (labelOf(match) === value.trim() ||
+                    match.email === value.trim() ||
+                    match.full_name === value.trim() ||
+                    `${labelOf(match)} (${roleBadge(match)})` === value.trim())) {
+                    pickUser(match.id);
+                  } else {
+                    setSelectedId('');
+                  }
                 }}
-                placeholder="พิมพ์ชื่อหรือเลือกจากรายการ"
+                placeholder="พิมพ์ชื่อ (ไม่ต้องใส่คำนำหน้า) หรือเลือกรายการ"
               />
               <datalist id="domain-user-combo">
-                {filteredUsers.slice(0, 80).map((u) => (
+                {filteredUsers.map((u) => (
                   <option
                     key={u.id}
                     value={`${labelOf(u)} (${roleBadge(u)})`}
@@ -313,21 +364,29 @@ export function DomainControlClient({
           </div>
 
           {filteredUsers.length > 0 && !selected && (
-            <div className="domain-user-pick">
-              {filteredUsers.slice(0, 12).map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  className="domain-user-pick__item"
-                  onClick={() => pickUser(u.id)}
-                >
-                  <strong>{labelOf(u)}</strong>
-                  <span>
-                    {roleBadge(u)} · {u.email}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <>
+              <p className="text-xs text-slate-500 m-0">
+                พบ {filteredUsers.length} คน — คลิกเพื่อเลือก
+              </p>
+              <div className="domain-user-pick">
+                {filteredUsers.map((u) => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    className="domain-user-pick__item"
+                    onClick={() => pickUser(u.id)}
+                  >
+                    <strong>{labelOf(u)}</strong>
+                    <span>
+                      {roleBadge(u)} · {u.email}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {filteredUsers.length === 0 && (
+            <p className="text-sm text-slate-500 m-0">ไม่พบผู้ใช้ที่ตรงเงื่อนไข</p>
           )}
         </section>
 
