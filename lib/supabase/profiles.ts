@@ -3,7 +3,12 @@ import {
   normalizeStoredUser,
   type StoredUserProfile,
 } from '@/lib/auth/mock-users';
-import { normalizeRole, type UserRole } from '@/lib/types';
+import {
+  normalizeOverseerTier,
+  normalizeRole,
+  type OverseerTier,
+  type UserRole,
+} from '@/lib/types';
 
 type ProfileRow = {
   id: string;
@@ -12,6 +17,7 @@ type ProfileRow = {
   name_prefix?: string | null;
   position: string | null;
   role: string | null;
+  overseer_tier?: string | null;
   assigned_zone: string | null;
   assigned_provinces?: string[] | null;
   assigned_districts?: string[] | null;
@@ -29,6 +35,7 @@ function mapRow(row: ProfileRow): StoredUserProfile {
     name_prefix: row.name_prefix ?? null,
     position: row.position ?? '',
     role: normalizeRole((row.role ?? 'staff') as UserRole),
+    overseer_tier: normalizeOverseerTier(row.overseer_tier),
     assigned_zone: row.assigned_zone,
     assigned_provinces: row.assigned_provinces ?? [],
     assigned_districts: row.assigned_districts ?? [],
@@ -39,7 +46,7 @@ function mapRow(row: ProfileRow): StoredUserProfile {
 }
 
 const PROFILE_SELECT =
-  'id, email, full_name, name_prefix, position, role, assigned_zone, assigned_provinces, assigned_districts, reports_to, disabled, birthday, must_change_password';
+  'id, email, full_name, name_prefix, position, role, overseer_tier, assigned_zone, assigned_provinces, assigned_districts, reports_to, disabled, birthday, must_change_password';
 
 export async function fetchAllUserProfiles(): Promise<StoredUserProfile[]> {
   try {
@@ -182,6 +189,10 @@ export async function createUserInDb(input: {
         error: 'สร้างใน auth แล้ว แต่ยังไม่พบโปรไฟล์ — ตรวจ user_profiles',
       };
     }
+    if (role === 'overseer') {
+      await updateUserProfileInDb(id, { overseer_tier: 'type1' });
+      return { ok: true, user: { ...row, overseer_tier: 'type1' } };
+    }
     return { ok: true, user: row };
   } catch (e) {
     return {
@@ -198,6 +209,7 @@ export async function updateUserProfileInDb(
     name_prefix: string | null;
     position: string;
     role: UserRole;
+    overseer_tier: OverseerTier | null;
     assigned_zone: string | null;
     assigned_provinces: string[];
     assigned_districts: string[];
@@ -214,6 +226,9 @@ export async function updateUserProfileInDb(
     if (patch.name_prefix !== undefined) body.name_prefix = patch.name_prefix;
     if (patch.position !== undefined) body.position = patch.position;
     if (patch.role !== undefined) body.role = normalizeRole(patch.role);
+    if (patch.overseer_tier !== undefined) {
+      body.overseer_tier = normalizeOverseerTier(patch.overseer_tier);
+    }
     if (patch.assigned_zone !== undefined) body.assigned_zone = patch.assigned_zone;
     if (patch.assigned_provinces !== undefined) {
       body.assigned_provinces = patch.assigned_provinces;

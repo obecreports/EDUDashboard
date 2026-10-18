@@ -74,6 +74,7 @@ export async function readStoredUsers(): Promise<StoredUserProfile[]> {
         full_name: u.full_name,
         position: u.position,
         role: u.role,
+        overseer_tier: u.overseer_tier ?? null,
         assigned_zone: u.assigned_zone,
         assigned_provinces: u.assigned_provinces,
         assigned_districts: u.assigned_districts,
@@ -97,6 +98,7 @@ export async function readStoredUsers(): Promise<StoredUserProfile[]> {
         full_name: u.full_name,
         position: u.position,
         role: u.role,
+        overseer_tier: u.overseer_tier ?? null,
         assigned_zone: u.assigned_zone,
         assigned_provinces: u.assigned_provinces,
         assigned_districts: u.assigned_districts,
@@ -191,6 +193,7 @@ export async function createMockUser(input: {
     name_prefix: null,
     position,
     role,
+    overseer_tier: role === 'overseer' ? 'type1' : null,
     assigned_zone: null,
     assigned_provinces: [],
     assigned_districts: [],
@@ -230,6 +233,7 @@ export async function updateUserProfileFields(
       | 'name_prefix'
       | 'position'
       | 'role'
+      | 'overseer_tier'
       | 'assigned_zone'
       | 'assigned_provinces'
       | 'assigned_districts'

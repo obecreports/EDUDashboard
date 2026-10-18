@@ -56,6 +56,7 @@ const ICONS: Record<string, LucideIcon> = {
   '/tickets': ClipboardPen,
   '/admin/accounts': Users,
   '/admin/domain': Network,
+  '/admin/org-map': Network,
   '/admin/schools': School,
   '/admin/tickets': ClipboardPen,
   '/admin/settings': Settings,

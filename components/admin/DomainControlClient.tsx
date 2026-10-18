@@ -2,11 +2,16 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { assignGeoAction } from '@/app/actions/admin';
+import { assignGeoAction, setReportsToAction } from '@/app/actions/admin';
 import {
   ROLE_LABELS,
+  effectiveOverseerTier,
   formatPersonLabel,
   isOverseerLike,
+  isOverseerType1,
+  isOverseerType2,
+  overseerTierLabel,
+  type OverseerTier,
   type UserRole,
 } from '@/lib/types';
 import { X } from 'lucide-react';
@@ -17,6 +22,7 @@ type Account = {
   full_name: string;
   name_prefix?: string | null;
   role: UserRole;
+  overseer_tier?: OverseerTier | null;
   reports_to: string | null;
   assigned_provinces: string[];
   /** Staff: Gov_Domain area_id values (legacy may still be province|district) */
@@ -42,11 +48,15 @@ export function DomainControlClient({
   const labelOf = (u: Account) =>
     formatPersonLabel(u.role, u.name_prefix, u.full_name) || u.full_name;
 
-  const [roleFilter, setRoleFilter] = useState<'all' | 'overseer' | 'volunteer' | 'staff'>('all');
+  const [roleFilter, setRoleFilter] = useState<
+    'all' | 'overseer' | 'volunteer' | 'staff'
+  >('all');
   const [nameQuery, setNameQuery] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagPick, setTagPick] = useState('');
+  const [tierDraft, setTierDraft] = useState<OverseerTier>('type1');
+  const [parentDraft, setParentDraft] = useState('');
 
   useEffect(() => {
     setAccounts(accountsProp);
@@ -64,9 +74,14 @@ export function DomainControlClient({
   };
 
   const assignable = useMemo(
+    () => accounts.filter((a) => isOverseerLike(a.role) || a.role === 'staff'),
+    [accounts]
+  );
+
+  const type1Overseers = useMemo(
     () =>
       accounts.filter(
-        (a) => isOverseerLike(a.role) || a.role === 'staff'
+        (a) => a.role === 'overseer' && isOverseerType1(a.role, a.overseer_tier)
       ),
     [accounts]
   );
@@ -88,6 +103,14 @@ export function DomainControlClient({
 
   const selected = assignable.find((a) => a.id === selectedId) ?? null;
 
+  const parentProvinces = useMemo(() => {
+    if (!selected || tierDraft !== 'type2') return provinces;
+    const parentId = parentDraft || selected.reports_to;
+    const parent = accounts.find((a) => a.id === parentId);
+    if (!parent) return [] as string[];
+    return parent.assigned_provinces ?? [];
+  }, [selected, tierDraft, parentDraft, accounts, provinces]);
+
   const pickUser = (id: string) => {
     setSelectedId(id);
     const u = assignable.find((a) => a.id === id);
@@ -101,15 +124,26 @@ export function DomainControlClient({
     );
     setTagPick('');
     setMsg(null);
+    if (u.role === 'overseer') {
+      setTierDraft(effectiveOverseerTier(u.role, u.overseer_tier) ?? 'type1');
+      setParentDraft(u.reports_to ?? '');
+    } else {
+      setTierDraft('type1');
+      setParentDraft('');
+    }
   };
 
   const availableTags = useMemo(() => {
     if (!selected) return [] as string[];
     if (isOverseerLike(selected.role)) {
-      return provinces.filter((t) => !tags.includes(t));
+      const pool =
+        selected.role === 'overseer' && tierDraft === 'type2'
+          ? parentProvinces
+          : provinces;
+      return pool.filter((t) => !tags.includes(t));
     }
     return areas.filter((a) => !tags.includes(a.id)).map((a) => a.id);
-  }, [selected, provinces, areas, tags]);
+  }, [selected, provinces, areas, tags, tierDraft, parentProvinces]);
 
   const addTag = (value: string) => {
     if (!value || tags.includes(value)) return;
@@ -127,14 +161,52 @@ export function DomainControlClient({
       return;
     }
     startTransition(async () => {
+      // Type 2 must link parent Type 1 first
+      if (selected.role === 'overseer' && tierDraft === 'type2') {
+        if (!parentDraft) {
+          setMsg('เลือกองคมนตรีระดับ 1 ที่เป็นหัวหน้าก่อน');
+          return;
+        }
+        const link = await setReportsToAction(
+          (() => {
+            const fd = new FormData();
+            fd.set('userId', selected.id);
+            fd.set('reportsTo', parentDraft);
+            return fd;
+          })()
+        );
+        if (!link.ok) {
+          setMsg(link.error || 'ตั้งหัวหน้าไม่สำเร็จ');
+          return;
+        }
+      }
+      if (
+        selected.role === 'overseer' &&
+        tierDraft === 'type1' &&
+        selected.reports_to &&
+        isOverseerType2(selected.role, selected.overseer_tier)
+      ) {
+        // Promoting back to Type 1: clear overseer parent via SO if already set, or leave reports_to
+        // Tier is set on geo save
+      }
+
       const fd = new FormData();
       fd.set('userId', selected.id);
+      if (selected.role === 'overseer') {
+        fd.set('overseerTier', tierDraft);
+      }
       if (isOverseerLike(selected.role)) {
-        fd.set('provinces', JSON.stringify(tags));
+        const allowed =
+          selected.role === 'overseer' && tierDraft === 'type2'
+            ? new Set(parentProvinces)
+            : null;
+        const nextTags = allowed
+          ? tags.filter((t) => allowed.has(t))
+          : tags;
+        fd.set('provinces', JSON.stringify(nextTags));
         fd.set('districts', '[]');
       } else {
         fd.set('provinces', '[]');
-        // Staff tags = Gov_Domain area_id list
         fd.set('districts', JSON.stringify(tags));
       }
       const res = await assignGeoAction(fd);
@@ -143,17 +215,37 @@ export function DomainControlClient({
         return;
       }
       setAccounts((prev) =>
-        prev.map((a) =>
-          a.id !== selected.id
-            ? a
-            : isOverseerLike(selected.role)
-              ? { ...a, assigned_provinces: [...tags] }
-              : { ...a, assigned_districts: [...tags] }
-        )
+        prev.map((a) => {
+          if (a.id !== selected.id) return a;
+          if (isOverseerLike(selected.role)) {
+            return {
+              ...a,
+              assigned_provinces: [...tags].filter((t) =>
+                selected.role === 'overseer' && tierDraft === 'type2'
+                  ? parentProvinces.includes(t)
+                  : true
+              ),
+              overseer_tier:
+                selected.role === 'overseer' ? tierDraft : a.overseer_tier,
+              reports_to:
+                selected.role === 'overseer' && tierDraft === 'type2'
+                  ? parentDraft || a.reports_to
+                  : a.reports_to,
+            };
+          }
+          return { ...a, assigned_districts: [...tags] };
+        })
       );
       setMsg(`บันทึกพื้นที่จัดการของ ${labelOf(selected)} แล้ว`);
       router.refresh();
     });
+  };
+
+  const roleBadge = (u: Account) => {
+    if (u.role === 'overseer') {
+      return overseerTierLabel(effectiveOverseerTier(u.role, u.overseer_tier));
+    }
+    return ROLE_LABELS[u.role];
   };
 
   return (
@@ -165,7 +257,7 @@ export function DomainControlClient({
           <div>
             <h2 className="ed-section-title text-base m-0">1 · ค้นหาและเลือกผู้ใช้</h2>
             <p className="text-sm text-slate-600 m-0 mt-1">
-              องคมนตรี / อาสาสมัคร = มอบหมายจังหวัด · Staff = เขตพื้นที่การศึกษา
+              องคมนตรี Type 1 / Type 2 = มอบหมายจังหวัด · Staff = เขตพื้นที่การศึกษา
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -202,7 +294,7 @@ export function DomainControlClient({
                     (u) =>
                       labelOf(u) === value ||
                       u.email === value ||
-                      `${labelOf(u)} (${ROLE_LABELS[u.role]})` === value
+                      `${labelOf(u)} (${roleBadge(u)})` === value
                   );
                   if (match) pickUser(match.id);
                   else setSelectedId('');
@@ -213,7 +305,7 @@ export function DomainControlClient({
                 {filteredUsers.slice(0, 80).map((u) => (
                   <option
                     key={u.id}
-                    value={`${labelOf(u)} (${ROLE_LABELS[u.role]})`}
+                    value={`${labelOf(u)} (${roleBadge(u)})`}
                   />
                 ))}
               </datalist>
@@ -231,7 +323,7 @@ export function DomainControlClient({
                 >
                   <strong>{labelOf(u)}</strong>
                   <span>
-                    {ROLE_LABELS[u.role]} · {u.email}
+                    {roleBadge(u)} · {u.email}
                   </span>
                 </button>
               ))}
@@ -246,13 +338,77 @@ export function DomainControlClient({
               <p className="text-sm text-slate-600 m-0 mt-1">
                 <strong className="text-tm-blue">{labelOf(selected)}</strong>
                 {' · '}
-                {ROLE_LABELS[selected.role]}
+                {roleBadge(selected)}
                 {' · '}
                 {isOverseerLike(selected.role)
                   ? 'เลือกจังหวัด (หลายรายการได้)'
                   : 'เลือกเขตพื้นที่การศึกษา (หลายรายการได้)'}
               </p>
             </div>
+
+            {selected.role === 'overseer' && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1 text-sm font-semibold">
+                  ระดับองคมนตรี
+                  <select
+                    className="form-input"
+                    value={tierDraft}
+                    onChange={(e) => {
+                      const next = e.target.value as OverseerTier;
+                      setTierDraft(next);
+                      setTags((prev) => {
+                        if (next !== 'type2') return prev;
+                        const parent = accounts.find(
+                          (a) => a.id === (parentDraft || selected.reports_to)
+                        );
+                        const allowed = new Set(parent?.assigned_provinces ?? []);
+                        return prev.filter((t) => allowed.has(t));
+                      });
+                    }}
+                  >
+                    <option value="type1">ระดับ 1 (Type 1)</option>
+                    <option value="type2">ระดับ 2 (Type 2)</option>
+                  </select>
+                </label>
+                {tierDraft === 'type2' && (
+                  <label className="grid gap-1 text-sm font-semibold">
+                    หัวหน้า Type 1
+                    <select
+                      className="form-input"
+                      value={parentDraft}
+                      onChange={(e) => {
+                        const pid = e.target.value;
+                        setParentDraft(pid);
+                        const parent = accounts.find((a) => a.id === pid);
+                        const allowed = new Set(parent?.assigned_provinces ?? []);
+                        setTags((prev) => prev.filter((t) => allowed.has(t)));
+                      }}
+                    >
+                      <option value="">— เลือกองคมนตรีระดับ 1 —</option>
+                      {type1Overseers
+                        .filter((o) => o.id !== selected.id)
+                        .map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {labelOf(o)}
+                            {o.assigned_provinces.length
+                              ? ` (${o.assigned_provinces.join(', ')})`
+                              : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+            )}
+
+            {selected.role === 'overseer' &&
+              tierDraft === 'type2' &&
+              parentProvinces.length === 0 && (
+                <p className="text-sm text-amber-800 bg-amber-50 rounded-lg px-3 py-2 m-0">
+                  หัวหน้า Type 1 ยังไม่มีจังหวัด — มอบหมายจังหวัดให้ Type 1 ก่อน
+                  หรือเลือกหัวหน้าอื่น
+                </p>
+              )}
 
             <div className="domain-tag-list">
               {tags.length === 0 && (

@@ -28,8 +28,22 @@ async function SchoolDetailBody({ id }: { id: string }) {
 
   if (!school) notFound();
 
-  const fullAccess = canAccessSchoolDetail(profile, school, isAuthenticated);
-  const commentsAllowed = canComment(profile, school, isAuthenticated);
+  const usersForScope = await readStoredUsers().catch(() => []);
+  const directory = usersForScope.map((u) => ({
+    id: u.id,
+    role: u.role,
+    overseer_tier: u.overseer_tier ?? null,
+    assigned_provinces: u.assigned_provinces,
+    assigned_districts: u.assigned_districts,
+    reports_to: u.reports_to,
+  }));
+  const fullAccess = canAccessSchoolDetail(
+    profile,
+    school,
+    isAuthenticated,
+    directory
+  );
+  const commentsAllowed = canComment(profile, school, isAuthenticated, directory);
   const canEdit = false;
 
   const cookieExtras = await readSchoolExtras(school.school_id);
@@ -40,7 +54,7 @@ async function SchoolDetailBody({ id }: { id: string }) {
     fullAccess ? fetchPillarScoreBySchoolId(school.school_id) : Promise.resolve(null),
     fullAccess ? fetchSiteVisitsForSchool(school.school_id) : Promise.resolve([]),
     fullAccess ? readCalendarEvents() : Promise.resolve([]),
-    fullAccess ? readStoredUsers() : Promise.resolve([]),
+    fullAccess ? Promise.resolve(usersForScope) : Promise.resolve([]),
   ]);
 
   const initialSwot = swotHasContent(dbSwot)

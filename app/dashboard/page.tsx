@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { getSessionProfile } from '@/lib/auth/session';
 import { fetchCompareScoresByYear, fetchSchools } from '@/lib/supabase/schools';
-import { isFieldRole, schoolsInScope } from '@/lib/auth/scope';
+import { isFieldRole, schoolsInScope, toScopeDirectory } from '@/lib/auth/scope';
 import { SCORE_YEAR_CURRENT, SCORE_YEAR_PREVIOUS } from '@/lib/scores/years';
 import { normalizeRole, ROLE_LABELS } from '@/lib/types';
 import { StaffDashboardClient } from '@/components/dashboard/StaffDashboardClient';
@@ -12,6 +12,7 @@ import {
   listMyCalendarEvents,
 } from '@/app/actions/visits';
 import { fetchAllUserProfiles } from '@/lib/supabase/profiles';
+import { readStoredUsers } from '@/lib/auth/user-store';
 import { fetchAllSchoolComments } from '@/lib/supabase/school-swot';
 import { eventHasMappedReport, type ReportActivityLink } from '@/lib/activity/complete';
 import { normalizeStatus } from '@/lib/visits/labels';
@@ -32,25 +33,36 @@ async function DashboardBody() {
 
   const isSO = r === 'super_overseer';
   const isStaff = r === 'staff';
-  const [all, calendarEvents, myEvents, profiles, comments, staffComments, compareScoresByYear] =
-    await Promise.all([
-      fetchSchools().catch(() => []),
-      listAllCookieCalendarEvents().catch(() => []),
-      isStaff ? listMyCalendarEvents().catch(() => []) : Promise.resolve([]),
-      isSO ? fetchAllUserProfiles().catch(() => []) : Promise.resolve([]),
-      isSO ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
-      isStaff ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
-      isSO
-        ? fetchCompareScoresByYear().catch((err) => {
-            console.error('[dashboard] fetchCompareScoresByYear failed', err);
-            return {
-              [SCORE_YEAR_PREVIOUS]: {},
-              [SCORE_YEAR_CURRENT]: {},
-            };
-          })
-        : Promise.resolve({}),
-    ]);
-  const scoped = schoolsInScope(profile, all);
+  const [
+    all,
+    calendarEvents,
+    myEvents,
+    profiles,
+    comments,
+    staffComments,
+    compareScoresByYear,
+    directoryUsers,
+  ] = await Promise.all([
+    fetchSchools().catch(() => []),
+    listAllCookieCalendarEvents().catch(() => []),
+    isStaff ? listMyCalendarEvents().catch(() => []) : Promise.resolve([]),
+    isSO ? fetchAllUserProfiles().catch(() => []) : Promise.resolve([]),
+    isSO ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
+    isStaff ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
+    isSO
+      ? fetchCompareScoresByYear().catch((err) => {
+          console.error('[dashboard] fetchCompareScoresByYear failed', err);
+          return {
+            [SCORE_YEAR_PREVIOUS]: {},
+            [SCORE_YEAR_CURRENT]: {},
+          };
+        })
+      : Promise.resolve({}),
+    // Type 2 readable scope needs parent Type 1 provinces
+    !isSO ? readStoredUsers().catch(() => []) : Promise.resolve([]),
+  ]);
+  const directory = toScopeDirectory(isSO ? profiles : directoryUsers);
+  const scoped = schoolsInScope(profile, all, directory);
 
   const today = todayYmd();
   const staffReportLinks: ReportActivityLink[] = staffComments.map((c) => ({
@@ -88,8 +100,9 @@ async function DashboardBody() {
         full_name: u.full_name,
         name_prefix: u.name_prefix ?? null,
         role: normalizeRole(u.role),
+        overseer_tier: u.overseer_tier ?? null,
         reports_to: u.reports_to,
-        schoolIds: schoolsInScope(u, all).map((s) => String(s.school_id)),
+        schoolIds: schoolsInScope(u, all, directory).map((s) => String(s.school_id)),
       }))
     : [];
 

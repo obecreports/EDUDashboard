@@ -26,7 +26,7 @@ import {
   type VisitStatusThai,
 } from '@/lib/visits/labels';
 import { normalizeRole } from '@/lib/types';
-import { isFieldRole } from '@/lib/auth/scope';
+import { assertSchoolInActionScope, isFieldRole } from '@/lib/auth/scope';
 
 export async function createVisitLog(formData: FormData) {
   const schoolId = Number(formData.get('school_id'));
@@ -46,6 +46,9 @@ export async function createVisitLog(formData: FormData) {
   if (!isDbUserId(profile.id)) {
     return { ok: false, error: 'บัญชีนี้ยังไม่อยู่ในฐานข้อมูล — รัน migration 007' };
   }
+
+  const schoolGate = await assertSchoolInActionScope(profile, schoolId);
+  if (!schoolGate.ok) return { ok: false, error: schoolGate.error };
 
   const db = await insertSiteVisitEvent({
     staffId: profile.id,
@@ -137,6 +140,9 @@ export async function createCalendarEventAction(formData: FormData) {
       error: 'บัญชีนี้ยังไม่อยู่ในฐานข้อมูล — รัน migration 007 แล้วเข้าสู่ระบบใหม่',
     };
   }
+
+  const schoolGate = await assertSchoolInActionScope(profile, schoolIds[0]);
+  if (!schoolGate.ok) return { ok: false as const, error: schoolGate.error };
 
   // Non-SO cannot invite SO users as participants
   const creatorRole = normalizeRole(role);
@@ -263,6 +269,9 @@ export async function updateCalendarEventAction(formData: FormData) {
   if (!visitReasons.length) {
     return { ok: false as const, error: 'กรุณาเลือกเหตุผลการลงพื้นที่อย่างน้อย 1 รายการ' };
   }
+
+  const schoolGate = await assertSchoolInActionScope(profile, schoolIds[0]);
+  if (!schoolGate.ok) return { ok: false as const, error: schoolGate.error };
 
   const creatorRole = normalizeRole(role);
   if (creatorRole !== 'super_overseer' && participantIds.length) {

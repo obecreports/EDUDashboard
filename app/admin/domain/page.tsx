@@ -39,8 +39,11 @@ export default async function AdminDomainPage() {
     <div className="page-shell py-6">
       <h1 className="ed-section-title mb-2">มอบหมายพื้นที่จัดการ</h1>
       <p className="text-slate-600 mb-4 text-sm">
-        มอบหมายจังหวัดให้ Overseer หรือเขตพื้นที่การศึกษา (Gov_Domain) ให้ Staff — Staff
-        ในเขตที่อยู่ในจังหวัดของ Overseer จะถูกเชื่อมสายบังคับบัญชาอัตโนมัติ
+        มอบหมายจังหวัดให้องคมนตรี Type 1 / Type 2 (Type 2 เลือกได้เฉพาะจังหวัดของหัวหน้า Type 1)
+        หรือเขตพื้นที่การศึกษา (Gov_Domain) ให้ Staff — สายบังคับบัญชาละเอียดที่{' '}
+        <a href="/admin/org-map" className="text-tm-blue underline">
+          แผนผังสายบังคับบัญชา
+        </a>
       </p>
       <DomainControlClient
         accounts={fieldAccounts}

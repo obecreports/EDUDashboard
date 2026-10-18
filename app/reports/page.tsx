@@ -9,7 +9,7 @@ import {
 import { fetchReportDraftsForStaff } from '@/lib/supabase/report-drafts';
 import { fetchSchools } from '@/lib/supabase/schools';
 import { fetchSchoolExtrasBundle } from '@/lib/supabase/school-swot';
-import { isFieldRole, isSchoolInScope } from '@/lib/auth/scope';
+import { isFieldRole, isSchoolInScope, toScopeDirectory } from '@/lib/auth/scope';
 import { formatPersonLabel, normalizeRole, PAGE_BANNERS } from '@/lib/types';
 import { ReportsClient } from '@/components/reports/ReportsClient';
 import { PageBanner } from '@/components/layout/PageBanner';
@@ -27,8 +27,9 @@ export default async function ReportsPage() {
     fetchSchools().catch(() => []),
     readStoredUsers().catch(() => []),
   ]);
+  const directory = toScopeDirectory(users);
   const domainSchools = schools.filter(
-    (s) => r === 'super_overseer' || isSchoolInScope(profile, s)
+    (s) => r === 'super_overseer' || isSchoolInScope(profile, s, directory)
   );
 
   const nameById = new Map(

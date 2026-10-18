@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getSessionProfile } from '@/lib/auth/session';
 import { fetchSchools } from '@/lib/supabase/schools';
-import { isFieldRole, schoolsInScope } from '@/lib/auth/scope';
+import { isFieldRole, schoolsActionable } from '@/lib/auth/scope';
 import { normalizeRole } from '@/lib/types';
 import { NewTicketForm } from '@/components/tickets/NewTicketForm';
 
@@ -19,7 +19,7 @@ export default async function NewTicketPage({
   }
 
   const all = await fetchSchools();
-  const scoped = schoolsInScope(profile, all);
+  const scoped = schoolsActionable(profile, all);
 
   return (
     <div className="page-shell py-6" style={{ maxWidth: 640 }}>

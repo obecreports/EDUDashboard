@@ -4,8 +4,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Activity, ChevronDown, School, UserRound } from 'lucide-react';
 import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
-import type { UserRole } from '@/lib/types';
-import { ROLE_LABELS, formatPersonLabel, normalizeRole } from '@/lib/types';
+import type { OverseerTier, UserRole } from '@/lib/types';
+import {
+  ROLE_LABELS,
+  effectiveOverseerTier,
+  formatPersonLabel,
+  isOverseerType1,
+  isOverseerType2,
+  normalizeRole,
+  overseerTierLabel,
+} from '@/lib/types';
 import {
   countCompleteEvents,
   eventHasMappedReport,
@@ -22,6 +30,7 @@ export type ActivityPerson = {
   full_name: string;
   name_prefix?: string | null;
   role: UserRole;
+  overseer_tier?: OverseerTier | null;
   reports_to: string | null;
   schoolIds: string[];
 };
@@ -289,6 +298,31 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     [people]
   );
 
+  const type1Overseers = useMemo(
+    () =>
+      overseers.filter(
+        (p) =>
+          normalizeRole(p.role) === 'volunteer' ||
+          isOverseerType1(p.role, p.overseer_tier)
+      ),
+    [overseers]
+  );
+
+  const type2Under = useMemo(() => {
+    const map = new Map<string, ActivityPerson[]>();
+    for (const p of overseers) {
+      if (!isOverseerType2(p.role, p.overseer_tier) || !p.reports_to) continue;
+      const list = map.get(p.reports_to) ?? [];
+      list.push(p);
+      map.set(p.reports_to, list);
+    }
+    for (const [k, list] of map) {
+      list.sort((a, b) => labelOf(a).localeCompare(labelOf(b), 'th'));
+      map.set(k, list);
+    }
+    return map;
+  }, [overseers]);
+
   const staffUnder = useMemo(() => {
     const map = new Map<string, ActivityPerson[]>();
     for (const p of people) {
@@ -304,30 +338,73 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     return map;
   }, [people]);
 
-  /** Overseer rollup lastDate includes staff under them (in filtered months) */
+  /** Overseer rollup lastDate includes Type 2 + staff under them (in filtered months) */
   const overseerLastDate = useMemo(() => {
     const map = new Map<string, string>();
     for (const ov of overseers) {
       const dates = [(personMetrics.get(ov.id)?.lastDate || '')];
+      for (const t2 of type2Under.get(ov.id) ?? []) {
+        dates.push(personMetrics.get(t2.id)?.lastDate || '');
+        for (const st of staffUnder.get(t2.id) ?? []) {
+          dates.push(personMetrics.get(st.id)?.lastDate || '');
+        }
+      }
       for (const st of staffUnder.get(ov.id) ?? []) {
         dates.push(personMetrics.get(st.id)?.lastDate || '');
       }
       map.set(ov.id, latestDate(dates));
     }
     return map;
-  }, [overseers, staffUnder, personMetrics]);
+  }, [overseers, type2Under, staffUnder, personMetrics]);
 
   const personFilterTree = useMemo((): FilterTreeNode[] => {
-    const nodes: FilterTreeNode[] = overseers.map((ov) => ({
-      id: ov.id,
-      label: labelOf(ov),
-      hint: 'Overseer',
-      children: (staffUnder.get(ov.id) ?? []).map((st) => ({
-        id: st.id,
-        label: labelOf(st),
-        hint: 'Staff',
-      })),
-    }));
+    const nestedType2 = new Set<string>();
+    const nodes: FilterTreeNode[] = type1Overseers.map((ov) => {
+      const children: FilterTreeNode[] = [];
+      for (const t2 of type2Under.get(ov.id) ?? []) {
+        nestedType2.add(t2.id);
+        children.push({
+          id: t2.id,
+          label: labelOf(t2),
+          hint: overseerTierLabel('type2'),
+          children: (staffUnder.get(t2.id) ?? []).map((st) => ({
+            id: st.id,
+            label: labelOf(st),
+            hint: 'Staff',
+          })),
+        });
+      }
+      for (const st of staffUnder.get(ov.id) ?? []) {
+        children.push({
+          id: st.id,
+          label: labelOf(st),
+          hint: 'Staff',
+        });
+      }
+      return {
+        id: ov.id,
+        label: labelOf(ov),
+        hint:
+          normalizeRole(ov.role) === 'volunteer'
+            ? ROLE_LABELS.volunteer
+            : overseerTierLabel(effectiveOverseerTier(ov.role, ov.overseer_tier)),
+        children,
+      };
+    });
+    // Orphan Type 2 (no Type 1 parent in list)
+    for (const p of overseers) {
+      if (!isOverseerType2(p.role, p.overseer_tier) || nestedType2.has(p.id)) continue;
+      nodes.push({
+        id: p.id,
+        label: labelOf(p),
+        hint: overseerTierLabel('type2'),
+        children: (staffUnder.get(p.id) ?? []).map((st) => ({
+          id: st.id,
+          label: labelOf(st),
+          hint: 'Staff',
+        })),
+      });
+    }
     for (const p of people) {
       if (normalizeRole(p.role) !== 'staff') continue;
       if (p.reports_to && staffUnder.has(p.reports_to)) continue;
@@ -335,7 +412,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       nodes.push({ id: p.id, label: labelOf(p), hint: 'Staff' });
     }
     return nodes;
-  }, [overseers, staffUnder, people]);
+  }, [type1Overseers, type2Under, staffUnder, overseers, people]);
 
   const placeFilterTree = useMemo((): FilterTreeNode[] => {
     const byProv = new Map<string, Map<string, ActivitySchool[]>>();

@@ -13,7 +13,7 @@ import {
   saveSchoolSwot,
   type SchoolAchievements,
 } from '@/lib/auth/user-store';
-import { isFieldRole } from '@/lib/auth/scope';
+import { assertSchoolInActionScope, isFieldRole } from '@/lib/auth/scope';
 import { normalizeRole } from '@/lib/types';
 import {
   insertSchoolStaffComment,
@@ -77,6 +77,9 @@ export async function postSchoolCommentAction(formData: FormData) {
         .filter(Boolean)
     : [];
   if (!schoolId || !text) return { ok: false as const, error: 'กรุณากรอกความคิดเห็น' };
+
+  const schoolGate = await assertSchoolInActionScope(gate.profile, schoolId);
+  if (!schoolGate.ok) return { ok: false as const, error: schoolGate.error };
 
   const staffName = gate.profile.full_name || gate.profile.email || 'Staff';
   const created_at = reportDate
@@ -197,6 +200,9 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
   if (!schoolId) {
     return { ok: false as const, error: 'กรุณาเลือกโรงเรียน' };
   }
+
+  const schoolGate = await assertSchoolInActionScope(gate.profile, schoolId);
+  if (!schoolGate.ok) return { ok: false as const, error: schoolGate.error };
 
   // 4-section comments are optional — allow empty body when onsite/ops present
   const bodyBoxes =

@@ -78,6 +78,9 @@ export interface SchoolFull {
   Gov_Domain?: { area_id?: string; area_name?: string };
 }
 
+/** Overseer hierarchy under role=overseer (NULL for other roles) */
+export type OverseerTier = 'type1' | 'type2';
+
 export interface UserProfile {
   id: string;
   email: string | null;
@@ -86,6 +89,11 @@ export interface UserProfile {
   name_prefix?: string | null;
   position: string | null;
   role: UserRole;
+  /**
+   * type1 = top องคมนตรี; type2 = under a Type 1 via reports_to.
+   * Null/undefined for non-overseer. Missing on legacy overseer → treat as type1.
+   */
+  overseer_tier?: OverseerTier | null;
   /** @deprecated legacy educational area ids */
   assigned_zone: string | null;
   assigned_provinces: string[];
@@ -176,6 +184,45 @@ export function isOverseerLike(role: string | null | undefined): boolean {
   return r === 'overseer' || r === 'volunteer';
 }
 
+export function normalizeOverseerTier(
+  raw: string | null | undefined
+): OverseerTier | null {
+  if (raw === 'type1' || raw === 'type2') return raw;
+  return null;
+}
+
+/**
+ * Effective tier for an overseer profile.
+ * Legacy overseer rows without a tier are treated as Type 1.
+ */
+export function effectiveOverseerTier(
+  role: string | null | undefined,
+  tier: OverseerTier | null | undefined
+): OverseerTier | null {
+  if (normalizeRole(role) !== 'overseer') return null;
+  return normalizeOverseerTier(tier) ?? 'type1';
+}
+
+export function isOverseerType1(
+  role: string | null | undefined,
+  tier?: OverseerTier | null
+): boolean {
+  return effectiveOverseerTier(role, tier) === 'type1';
+}
+
+export function isOverseerType2(
+  role: string | null | undefined,
+  tier?: OverseerTier | null
+): boolean {
+  return effectiveOverseerTier(role, tier) === 'type2';
+}
+
+export function overseerTierLabel(tier: OverseerTier | null | undefined): string {
+  if (tier === 'type2') return 'องคมนตรี (ระดับ 2)';
+  if (tier === 'type1') return 'องคมนตรี (ระดับ 1)';
+  return ROLE_LABELS.overseer;
+}
+
 /** Join name_prefix + full_name (space). Empty prefix → full name only. */
 export function formatDisplayName(
   namePrefix: string | null | undefined,
@@ -223,6 +270,7 @@ export const NAV_CATALOG: NavItem[] = [
   { href: '/tickets', label: 'คำขอแก้ไขข้อมูล', roles: FIELD_ROLES },
   { href: '/admin/accounts', label: 'จัดการบัญชี', roles: ADMIN_ROLES },
   { href: '/admin/domain', label: 'มอบหมายพื้นที่จัดการ', roles: ADMIN_ROLES },
+  { href: '/admin/org-map', label: 'แผนผังสายบังคับบัญชา', roles: ADMIN_ROLES },
   { href: '/admin/schools', label: 'แก้ไขข้อมูลโรงเรียน', roles: ADMIN_ROLES },
   { href: '/admin/tickets', label: 'จัดการคำขอ', roles: ADMIN_ROLES },
   { href: '/admin/settings', label: 'ตั้งค่าระบบ', roles: ['super_admin'] },

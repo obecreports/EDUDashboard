@@ -397,10 +397,10 @@ export function NewScheduleClient({
 
         {selectableTeammates.length > 0 && (
           <fieldset className="grid gap-2 m-0 p-0 border-0">
-            <legend className="text-sm font-semibold mb-1">สมาชิกทีม (ซิงก์ปฏิทิน)</legend>
+            <legend className="text-sm font-semibold mb-1">เลือกผู้เข้าร่วม</legend>
             <p className="text-xs text-slate-500 m-0">
-              คุณเป็นผู้บันทึกอัตโนมัติ · เลือกสมาชิกเพิ่มเพื่อให้เห็นนัดในปฏิทินของตน
-              {!isSo ? ' · ไม่สามารถเลือกผู้กำกับดูแลสูงสุด (SO) ได้' : ''}
+              เลือกสมาชิกเพิ่มเพื่อให้เห็นนัดในปฏิทินของตน
+              {!isSo ? '' : ''}
             </p>
             <div className="managed-filters__chip-row">
               {selectableTeammates.map((t) => (

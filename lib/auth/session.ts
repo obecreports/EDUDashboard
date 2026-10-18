@@ -1,9 +1,16 @@
 import { cookies } from 'next/headers';
-import type { UserProfile, UserRole } from '@/lib/types';
-import { normalizeRole } from '@/lib/types';
+import type { OverseerTier, UserProfile, UserRole } from '@/lib/types';
+import {
+  effectiveOverseerTier,
+  isOverseerType1,
+  isOverseerType2,
+  normalizeOverseerTier,
+  normalizeRole,
+} from '@/lib/types';
 import {
   AUTH_CREDENTIALS_COOKIE,
   AUTH_SESSION_COOKIE,
+  MOCK_LOGIN_PASSWORD,
   MOCK_USER_SEEDS,
   type AuthSession,
   type CredentialsMap,
@@ -46,6 +53,7 @@ export async function readAuthSession(): Promise<AuthSession | null> {
   return {
     ...parsed,
     role: normalizeRole(parsed.role),
+    overseer_tier: normalizeOverseerTier(parsed.overseer_tier),
     assigned_provinces: parsed.assigned_provinces ?? [],
     assigned_districts: parsed.assigned_districts ?? [],
     reports_to: parsed.reports_to ?? null,
@@ -75,13 +83,18 @@ function profileFromStored(
   session: AuthSession,
   stored: Awaited<ReturnType<typeof findUserById>>
 ): UserProfile {
+  const role = normalizeRole(stored?.role ?? session.role);
   return {
     id: session.id,
     email: session.email,
     full_name: stored?.full_name ?? session.full_name,
     name_prefix: stored?.name_prefix ?? null,
     position: stored?.position ?? session.position,
-    role: normalizeRole(stored?.role ?? session.role),
+    role,
+    overseer_tier: effectiveOverseerTier(
+      role,
+      stored?.overseer_tier ?? session.overseer_tier
+    ),
     assigned_zone: stored?.assigned_zone ?? session.assigned_zone,
     assigned_provinces: stored?.assigned_provinces ?? session.assigned_provinces ?? [],
     assigned_districts: stored?.assigned_districts ?? session.assigned_districts ?? [],
@@ -110,6 +123,7 @@ export async function getSessionProfile(): Promise<{
       session: {
         ...session,
         role: profile.role,
+        overseer_tier: profile.overseer_tier ?? null,
         assigned_zone: profile.assigned_zone,
         assigned_provinces: profile.assigned_provinces,
         assigned_districts: profile.assigned_districts,
@@ -125,6 +139,7 @@ export async function getSessionProfile(): Promise<{
       full_name: 'ผู้เยี่ยมชม',
       position: null,
       role: 'guest',
+      overseer_tier: null,
       assigned_zone: null,
       assigned_provinces: [],
       assigned_districts: [],
@@ -159,15 +174,27 @@ export async function loginWithPassword(email: string, password: string): Promis
     (s) => s.email.toLowerCase() === email.trim().toLowerCase()
   );
   const creds = await readCredentials();
-  const state = creds[user.id] ?? {
-    password: seed?.password ?? null,
-    tempPassword: seed?.tempPassword ?? null,
-    mustChangePassword: seed?.mustChangePassword ?? false,
-  };
+  const fromCookie = creds[user.id];
+  // Cookie overrides → mock seed → default UAT password for DB-only accounts
+  // (e.g. OS10T01–OS10T13 from migration 020 are in user_profiles but not MOCK_USER_SEEDS)
+  let resolvedPassword =
+    fromCookie?.password !== undefined
+      ? fromCookie.password
+      : (seed?.password ?? null);
+  let resolvedTemp =
+    fromCookie?.tempPassword !== undefined
+      ? fromCookie.tempPassword
+      : (seed?.tempPassword ?? null);
+  const mustChangePassword = Boolean(
+    fromCookie?.mustChangePassword ?? seed?.mustChangePassword ?? false
+  );
+  if (resolvedPassword == null && resolvedTemp == null) {
+    resolvedPassword = MOCK_LOGIN_PASSWORD;
+  }
 
   const input = password.trim();
-  const matchedPassword = state.password != null && state.password === input;
-  const matchedTemp = state.tempPassword != null && state.tempPassword === input;
+  const matchedPassword = resolvedPassword != null && resolvedPassword === input;
+  const matchedTemp = resolvedTemp != null && resolvedTemp === input;
 
   if (!matchedPassword && !matchedTemp) {
     return { ok: false, error: 'รหัสผ่านไม่ถูกต้อง' };
@@ -180,11 +207,12 @@ export async function loginWithPassword(email: string, password: string): Promis
     full_name: user.full_name,
     position: user.position,
     role,
+    overseer_tier: effectiveOverseerTier(role, user.overseer_tier),
     assigned_zone: user.assigned_zone,
     assigned_provinces: user.assigned_provinces ?? [],
     assigned_districts: user.assigned_districts ?? [],
     reports_to: user.reports_to ?? null,
-    mustChangePassword: matchedTemp || Boolean(state.mustChangePassword),
+    mustChangePassword: matchedTemp || mustChangePassword,
     authVia: matchedTemp ? 'temp' : 'password',
     lastActiveAt: Date.now(),
   };
@@ -306,6 +334,8 @@ export async function adminAssignGeo(
     districts?: string[];
     /** Provinces covered by staff areas (for hierarchy linking) */
     staffAreaProvinces?: string[];
+    /** Optional explicit tier when assigning overseer provinces */
+    overseerTier?: OverseerTier | null;
   }
 ): Promise<ChangePasswordResult> {
   const session = await readAuthSession();
@@ -318,17 +348,48 @@ export async function adminAssignGeo(
   const user = await findUserById(userId);
   if (!user) return { ok: false, error: 'ไม่พบผู้ใช้' };
 
+  const userRole = normalizeRole(user.role);
+  const tier =
+    input.overseerTier !== undefined
+      ? normalizeOverseerTier(input.overseerTier)
+      : effectiveOverseerTier(userRole, user.overseer_tier);
+
   const patch: Parameters<typeof updateUserProfileFields>[1] = {};
   if (input.provinces) {
-    patch.assigned_provinces = [...new Set(input.provinces.map((p) => p.trim()).filter(Boolean))];
+    let nextProvinces = [
+      ...new Set(input.provinces.map((p) => p.trim()).filter(Boolean)),
+    ];
+    // Type 2: only provinces within parent Type 1 assignment
+    if (userRole === 'overseer' && tier === 'type2') {
+      const parentId = user.reports_to;
+      if (!parentId) {
+        return {
+          ok: false,
+          error: 'องคมนตรีระดับ 2 ต้องมีหัวหน้า Type 1 ก่อนมอบหมายจังหวัด',
+        };
+      }
+      const parent = await findUserById(parentId);
+      if (!parent || !isOverseerType1(parent.role, parent.overseer_tier)) {
+        return {
+          ok: false,
+          error: 'หัวหน้าขององคมนตรีระดับ 2 ต้องเป็นองคมนตรีระดับ 1',
+        };
+      }
+      const allowed = new Set(parent.assigned_provinces ?? []);
+      nextProvinces = nextProvinces.filter((p) => allowed.has(p));
+    }
+    patch.assigned_provinces = nextProvinces;
   }
   if (input.districts) {
     patch.assigned_districts = [...new Set(input.districts.map((d) => d.trim()).filter(Boolean))];
   }
+  if (userRole === 'overseer' && input.overseerTier !== undefined) {
+    patch.overseer_tier = tier;
+  }
 
-  // Domain hierarchy: staff areas → overseer who owns overlapping province
+  // Domain hierarchy: staff areas → prefer Type 2 then Type 1 overlapping province
   const nextDistricts = patch.assigned_districts ?? user.assigned_districts;
-  if (normalizeRole(user.role) === 'staff' && nextDistricts.length > 0) {
+  if (userRole === 'staff' && nextDistricts.length > 0) {
     const provincesFromAreas = [
       ...new Set(
         (input.staffAreaProvinces ?? []).concat(
@@ -341,19 +402,23 @@ export async function adminAssignGeo(
     ];
     if (provincesFromAreas.length > 0) {
       const all = await readStoredUsers();
+      const overlap = (u: (typeof all)[number]) =>
+        !u.disabled &&
+        provincesFromAreas.some((p) => u.assigned_provinces.includes(p));
       const boss =
         all.find(
           (u) =>
             normalizeRole(u.role) === 'overseer' &&
-            !u.disabled &&
-            provincesFromAreas.some((p) => u.assigned_provinces.includes(p))
+            isOverseerType2(u.role, u.overseer_tier) &&
+            overlap(u)
         ) ??
         all.find(
           (u) =>
-            normalizeRole(u.role) === 'volunteer' &&
-            !u.disabled &&
-            provincesFromAreas.some((p) => u.assigned_provinces.includes(p))
-        );
+            normalizeRole(u.role) === 'overseer' &&
+            isOverseerType1(u.role, u.overseer_tier) &&
+            overlap(u)
+        ) ??
+        all.find((u) => normalizeRole(u.role) === 'volunteer' && overlap(u));
       if (boss) patch.reports_to = boss.id;
     }
   }
@@ -361,10 +426,31 @@ export async function adminAssignGeo(
   const result = await updateUserProfileFields(userId, patch);
   if (!result.ok) return result;
 
+  // When Type 1 provinces shrink, clip Type 2 children to remaining set
+  if (
+    userRole === 'overseer' &&
+    isOverseerType1(userRole, tier ?? user.overseer_tier) &&
+    patch.assigned_provinces
+  ) {
+    const allowed = new Set(patch.assigned_provinces);
+    const all = await readStoredUsers();
+    for (const child of all) {
+      if (
+        !isOverseerType2(child.role, child.overseer_tier) ||
+        child.reports_to !== userId
+      ) {
+        continue;
+      }
+      const clipped = (child.assigned_provinces ?? []).filter((p) => allowed.has(p));
+      if (clipped.length !== child.assigned_provinces.length) {
+        await updateUserProfileFields(child.id, { assigned_provinces: clipped });
+      }
+    }
+  }
+
   // When องคมนตรี / อาสาสมัคร provinces change, re-link staff under those provinces
   if (
-    (normalizeRole(user.role) === 'overseer' ||
-      normalizeRole(user.role) === 'volunteer') &&
+    (userRole === 'overseer' || userRole === 'volunteer') &&
     patch.assigned_provinces
   ) {
     const provinces = new Set(patch.assigned_provinces);
@@ -399,6 +485,7 @@ export async function adminAssignGeo(
       }
       const underThis = [...staffProvinces].some((p) => provinces.has(p));
       if (underThis && staff.reports_to !== userId) {
+        // Prefer linking to Type 2 when staff already under a Type 2 of this Type 1
         await updateUserProfileFields(staff.id, { reports_to: userId });
       }
     }
@@ -417,11 +504,41 @@ export async function adminSetReportsTo(
   if (role !== 'admin' && role !== 'super_admin') {
     return { ok: false, error: 'ไม่มีสิทธิ์ตั้งสายบังคับบัญชา' };
   }
+
+  const user = await findUserById(userId);
+  if (!user) return { ok: false, error: 'ไม่พบผู้ใช้' };
+  const userRole = normalizeRole(user.role);
+
+  const patch: Parameters<typeof updateUserProfileFields>[1] = {
+    reports_to: reportsTo,
+  };
+
   if (reportsTo) {
     const boss = await findUserById(reportsTo);
     if (!boss) return { ok: false, error: 'ไม่พบหัวหน้า' };
+    const bossRole = normalizeRole(boss.role);
+
+    // Overseer → Overseer means Type 2 under Type 1
+    if (userRole === 'overseer' && bossRole === 'overseer') {
+      if (!isOverseerType1(boss.role, boss.overseer_tier)) {
+        return { ok: false, error: 'องคมนตรีระดับ 2 ต้องอยู่ภายใต้ระดับ 1 เท่านั้น' };
+      }
+      if (boss.id === userId) {
+        return { ok: false, error: 'ไม่สามารถตั้งหัวหน้าเป็นตนเองได้' };
+      }
+      patch.overseer_tier = 'type2';
+      // Clip provinces to parent set (keep subset already assigned)
+      const allowed = new Set(boss.assigned_provinces ?? []);
+      const clipped = (user.assigned_provinces ?? []).filter((p) => allowed.has(p));
+      if (clipped.length !== user.assigned_provinces.length) {
+        patch.assigned_provinces = clipped;
+      }
+    } else if (userRole === 'overseer' && bossRole === 'super_overseer') {
+      patch.overseer_tier = 'type1';
+    }
   }
-  return updateUserProfileFields(userId, { reports_to: reportsTo });
+
+  return updateUserProfileFields(userId, patch);
 }
 
 export async function issueTemporaryPassword(
@@ -489,6 +606,7 @@ export async function listMockAccountsForAdmin() {
       name_prefix: u.name_prefix ?? null,
       position: u.position,
       role: u.role,
+      overseer_tier: u.overseer_tier ?? null,
       assigned_zone: u.assigned_zone,
       assigned_provinces: u.assigned_provinces,
       assigned_districts: u.assigned_districts,

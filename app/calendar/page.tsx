@@ -5,7 +5,12 @@ import {
   listCalendarEventsForStaffIds,
   listMyCalendarEvents,
 } from '@/app/actions/visits';
-import { calendarPeers, isFieldRole, schoolsInScope } from '@/lib/auth/scope';
+import {
+  calendarPeers,
+  isFieldRole,
+  schoolsInScope,
+  toScopeDirectory,
+} from '@/lib/auth/scope';
 import { normalizeRole, PAGE_BANNERS, ROLE_LABELS } from '@/lib/types';
 import { fetchSchools } from '@/lib/supabase/schools';
 import { StaffVisitHubClient } from '@/components/staff/StaffVisitHubClient';
@@ -37,6 +42,7 @@ export default async function CalendarPage({
       users.map((u) => ({
         id: u.id,
         role: u.role,
+        overseer_tier: u.overseer_tier ?? null,
         assigned_provinces: u.assigned_provinces,
         assigned_districts: u.assigned_districts,
         reports_to: u.reports_to,
@@ -57,7 +63,8 @@ export default async function CalendarPage({
     if (isMine || isPeer) byId.set(e.id, e);
   }
   const visibleEvents = [...byId.values()];
-  const scoped = schoolsInScope(profile, schools);
+  const directory = toScopeDirectory(users);
+  const scoped = schoolsInScope(profile, schools, directory);
   const peerUsers = users
     .filter((u) => peerIds.has(u.id) || u.id === profile.id)
     .map((u) => ({

@@ -1,5 +1,5 @@
-import type { UserRole } from '@/lib/types';
-import { normalizeRole } from '@/lib/types';
+import type { OverseerTier, UserRole } from '@/lib/types';
+import { normalizeOverseerTier, normalizeRole } from '@/lib/types';
 
 export const AUTH_SESSION_COOKIE = 'coned-auth-session';
 export const AUTH_CREDENTIALS_COOKIE = 'coned-auth-credentials';
@@ -21,6 +21,8 @@ export interface MockUserSeed {
   name_prefix?: string | null;
   position: string;
   role: UserRole;
+  /** type1 for OS*; type2 for sub-overseer; omit for non-overseer */
+  overseer_tier?: OverseerTier | null;
   assigned_zone: string | null;
   assigned_provinces: string[];
   assigned_districts: string[];
@@ -425,6 +427,7 @@ export interface AuthSession {
   full_name: string;
   position: string;
   role: UserRole;
+  overseer_tier?: OverseerTier | null;
   assigned_zone: string | null;
   assigned_provinces: string[];
   assigned_districts: string[];
@@ -450,6 +453,7 @@ export type StoredUserProfile = {
   name_prefix?: string | null;
   position: string;
   role: UserRole;
+  overseer_tier?: OverseerTier | null;
   assigned_zone: string | null;
   assigned_provinces: string[];
   assigned_districts: string[];
@@ -484,13 +488,19 @@ export function normalizeStoredUser(
       : raw.name_prefix == null
         ? null
         : String(raw.name_prefix).trim() || null;
+  const role = normalizeRole(raw.role);
+  const tier =
+    role === 'overseer'
+      ? normalizeOverseerTier(raw.overseer_tier) ?? 'type1'
+      : null;
   return {
     id: raw.id,
     email: raw.email,
     full_name: raw.full_name ?? '',
     name_prefix: prefix,
     position: raw.position ?? '',
-    role: normalizeRole(raw.role),
+    role,
+    overseer_tier: tier,
     assigned_zone: raw.assigned_zone ?? null,
     assigned_provinces: Array.isArray(raw.assigned_provinces) ? raw.assigned_provinces : [],
     assigned_districts: Array.isArray(raw.assigned_districts) ? raw.assigned_districts : [],

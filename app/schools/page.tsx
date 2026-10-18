@@ -3,7 +3,7 @@ import { fetchSchools } from '@/lib/supabase/schools';
 import { ManagedSchoolsClient } from '@/components/schools/ManagedSchoolsClient';
 import { ManagedSchoolsSkeleton } from '@/components/ui/PageSkeleton';
 import { getSessionProfile } from '@/lib/auth/session';
-import { isFieldRole, schoolsInScope } from '@/lib/auth/scope';
+import { isFieldRole, schoolsInScope, toScopeDirectory } from '@/lib/auth/scope';
 import { formatPersonLabel, normalizeRole, type UserRole } from '@/lib/types';
 import { listAllCookieCalendarEvents } from '@/app/actions/visits';
 import { enrichSchoolsWithVisits } from '@/lib/schools/visit-enrich';
@@ -58,7 +58,12 @@ async function SchoolsBody({
 
   const r = normalizeRole(role);
   const staffMode = isAuthenticated && isFieldRole(r);
-  const scoped = staffMode ? schoolsInScope(profile, schools) : schools;
+  const profilesForScope =
+    staffMode && profile
+      ? await fetchAllUserProfiles().catch(() => [])
+      : [];
+  const directory = toScopeDirectory(profilesForScope);
+  const scoped = staffMode ? schoolsInScope(profile, schools, directory) : schools;
   const inScopeIds = staffMode ? scoped.map((s) => String(s.school_id)) : [];
 
   let domainPeople: DomainPersonOption[] = [];
@@ -68,7 +73,7 @@ async function SchoolsBody({
     profile &&
     (r === 'super_overseer' || r === 'overseer' || r === 'volunteer')
   ) {
-    const profiles = await fetchAllUserProfiles().catch(() => []);
+    const profiles = profilesForScope;
     if (r === 'super_overseer') {
       domainPeopleLabel = 'ผู้รับผิดชอบพื้นที่ (องคมนตรี · อาสาสมัคร · ศึกษานิเทศก์)';
       domainPeople = profiles
@@ -84,24 +89,40 @@ async function SchoolsBody({
           full_name: u.full_name,
           name_prefix: u.name_prefix ?? null,
           role: normalizeRole(u.role),
-          schoolIds: schoolsInScope(u, schools).map((s) => String(s.school_id)),
+          schoolIds: schoolsInScope(u, schools, directory).map((s) =>
+            String(s.school_id)
+          ),
           reports_to: u.reports_to ?? null,
         }));
     } else {
       domainPeopleLabel = 'เจ้าหน้าที่ในสายบังคับบัญชา';
+      const directReports = profiles.filter(
+        (u) => u.reports_to === profile.id && !u.disabled
+      );
+      const type2Ids = new Set(
+        directReports
+          .filter((u) => normalizeRole(u.role) === 'overseer')
+          .map((u) => u.id)
+      );
       domainPeople = profiles
-        .filter(
-          (u) =>
+        .filter((u) => {
+          if (u.disabled) return false;
+          if (u.reports_to === profile.id) return true;
+          // Type 1 also sees staff under nested Type 2
+          return (
             normalizeRole(u.role) === 'staff' &&
-            u.reports_to === profile.id &&
-            !u.disabled
-        )
+            !!u.reports_to &&
+            type2Ids.has(u.reports_to)
+          );
+        })
         .map((u) => ({
           id: u.id,
           full_name: u.full_name,
           name_prefix: u.name_prefix ?? null,
           role: normalizeRole(u.role),
-          schoolIds: schoolsInScope(u, schools).map((s) => String(s.school_id)),
+          schoolIds: schoolsInScope(u, schools, directory).map((s) =>
+            String(s.school_id)
+          ),
           reports_to: u.reports_to ?? null,
         }));
     }

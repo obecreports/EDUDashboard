@@ -5,7 +5,7 @@ import { fetchSchools } from '@/lib/supabase/schools';
 import {
   calendarPeers,
   isFieldRole,
-  isSchoolInScope,
+  isSchoolActionable,
 } from '@/lib/auth/scope';
 import {
   formatPersonLabel,
@@ -35,7 +35,7 @@ export default async function NewSchedulePage({
   ]);
 
   const domain = schools
-    .filter((s) => r === 'super_overseer' || isSchoolInScope(profile, s))
+    .filter((s) => r === 'super_overseer' || isSchoolActionable(profile, s))
     .map((s) => ({
       id: String(s.school_id),
       name: s.school_name_th,
@@ -51,6 +51,7 @@ export default async function NewSchedulePage({
       users.map((u) => ({
         id: u.id,
         role: u.role,
+        overseer_tier: u.overseer_tier ?? null,
         assigned_provinces: u.assigned_provinces,
         assigned_districts: u.assigned_districts,
         reports_to: u.reports_to,

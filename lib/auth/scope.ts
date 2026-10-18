@@ -1,11 +1,31 @@
-import type { SchoolFull, UserProfile, UserRole } from '@/lib/types';
+import type { OverseerTier, SchoolFull, UserProfile, UserRole } from '@/lib/types';
 import { districtKey, isOverseerLike, normalizeRole } from '@/lib/types';
 import type { StoredUserProfile } from '@/lib/auth/mock-users';
+import {
+  isSchoolActionable,
+  isSchoolReadable,
+  schoolsActionable,
+  schoolsReadable,
+} from '@/lib/auth/permissions';
 
 export type ScopeUser = Pick<
   UserProfile | StoredUserProfile,
   'id' | 'role' | 'assigned_provinces' | 'assigned_districts' | 'reports_to'
->;
+> & {
+  overseer_tier?: OverseerTier | null;
+};
+
+export {
+  getActionableProvinces,
+  getReadableProvinces,
+  isSchoolActionable,
+  isSchoolReadable,
+  schoolsActionable,
+  schoolsReadable,
+  toScopeDirectory,
+  assertSchoolInActionScope,
+  ACTION_SCOPE_ERROR,
+} from '@/lib/auth/permissions';
 
 export function isFieldRole(role: UserRole): boolean {
   const r = normalizeRole(role);
@@ -24,69 +44,59 @@ export function schoolDistrictKey(school: Pick<SchoolFull, 'province' | 'distric
   return districtKey(p, d);
 }
 
-/** True if school falls under user's assigned geo scope */
-export function isSchoolInScope(user: ScopeUser | null | undefined, school: SchoolFull): boolean {
-  if (!user) return false;
-  const role = normalizeRole(user.role);
-  if (role === 'super_overseer') return true;
-  if (role === 'admin' || role === 'super_admin' || role === 'guest') return false;
-
-  const province = school.province?.trim() ?? '';
-  const key = schoolDistrictKey(school);
-
-  if (isOverseerLike(role)) {
-    return Boolean(province) && (user.assigned_provinces ?? []).includes(province);
-  }
-
-  if (role === 'staff') {
-    const assigned = user.assigned_districts ?? [];
-    if (!assigned.length) return false;
-    // Preferred: Gov_Domain / เขตพื้นที่การศึกษา (area_id or area_name)
-    const areaId = school.area_id != null ? String(school.area_id) : '';
-    const areaName = school.area_name?.trim() ?? '';
-    if (areaId && assigned.includes(areaId)) return true;
-    if (areaName && assigned.includes(areaName)) return true;
-    // Legacy: province|district keys
-    return Boolean(key) && assigned.includes(key!);
-  }
-
-  return false;
+/**
+ * View-scope school check (Type 2 → parent Type 1 provinces when directory given).
+ * Prefer passing `directory` for Overseer Type 2 so readable scope expands correctly.
+ */
+export function isSchoolInScope(
+  user: ScopeUser | null | undefined,
+  school: SchoolFull,
+  directory: ScopeUser[] = []
+): boolean {
+  return isSchoolReadable(user, school, directory);
 }
 
-export function schoolsInScope(user: ScopeUser | null | undefined, schools: SchoolFull[]): SchoolFull[] {
-  if (!user) return [];
-  const role = normalizeRole(user.role);
-  if (role === 'super_overseer') return schools;
-  return schools.filter((s) => isSchoolInScope(user, s));
+/** View-scope school list. Pass `directory` so Type 2 inherits parent provinces. */
+export function schoolsInScope(
+  user: ScopeUser | null | undefined,
+  schools: SchoolFull[],
+  directory: ScopeUser[] = []
+): SchoolFull[] {
+  return schoolsReadable(user, schools, directory);
 }
 
-/** Full login detail (scores, comments) vs guest-like */
+/** Full login detail (scores, comments) vs guest-like — uses readable scope. */
 export function canAccessSchoolDetail(
   user: ScopeUser | null | undefined,
   school: SchoolFull,
-  isAuthenticated: boolean
+  isAuthenticated: boolean,
+  directory: ScopeUser[] = []
 ): boolean {
   if (!isAuthenticated || !user) return false;
   const role = normalizeRole(user.role);
   if (role === 'super_overseer') return true;
-  if (role === 'staff' || isOverseerLike(role)) return isSchoolInScope(user, school);
+  if (role === 'staff' || isOverseerLike(role)) {
+    return isSchoolReadable(user, school, directory);
+  }
   return false;
 }
 
 export function canSeeScores(
   user: ScopeUser | null | undefined,
   school: SchoolFull,
-  isAuthenticated: boolean
+  isAuthenticated: boolean,
+  directory: ScopeUser[] = []
 ): boolean {
-  return canAccessSchoolDetail(user, school, isAuthenticated);
+  return canAccessSchoolDetail(user, school, isAuthenticated, directory);
 }
 
 export function canComment(
   user: ScopeUser | null | undefined,
   school: SchoolFull,
-  isAuthenticated: boolean
+  isAuthenticated: boolean,
+  directory: ScopeUser[] = []
 ): boolean {
-  return canAccessSchoolDetail(user, school, isAuthenticated);
+  return canAccessSchoolDetail(user, school, isAuthenticated, directory);
 }
 
 /** SWOT is read-only for all field roles */
@@ -94,10 +104,26 @@ export function canEditSwot(_user: ScopeUser | null | undefined): boolean {
   return false;
 }
 
+function addSubordinatesOf(
+  bossId: string,
+  allUsers: ScopeUser[],
+  ids: Set<string>
+) {
+  for (const u of allUsers) {
+    if (u.reports_to !== bossId) continue;
+    const ur = normalizeRole(u.role);
+    if (ur === 'staff' || ur === 'volunteer' || ur === 'overseer') {
+      ids.add(u.id);
+      if (ur === 'overseer') addSubordinatesOf(u.id, allUsers, ids);
+    }
+  }
+}
+
 /**
  * Calendar peer visibility:
  * - staff: self + overseer/volunteer/super_overseer in chain + peers under same boss
- * - overseer / volunteer: self + chain + staff under command (+ volunteers under องคมนตรี)
+ * - overseer Type 1: self + Type 2 under them + their staff/volunteers + SO chain
+ * - overseer Type 2 / volunteer: self + boss chain + staff under command
  * - super_overseer: everyone in field roles
  */
 export function calendarPeers(
@@ -116,16 +142,19 @@ export function calendarPeers(
 
   if (isOverseerLike(role)) {
     if (user.reports_to) ids.add(user.reports_to);
+    const boss = allUsers.find((u) => u.id === user.reports_to);
+    if (boss?.reports_to) ids.add(boss.reports_to);
+
+    addSubordinatesOf(user.id, allUsers, ids);
+
     for (const u of allUsers) {
       const ur = normalizeRole(u.role);
-      if (ur === 'staff' && u.reports_to === user.id) ids.add(u.id);
-      if (ur === 'volunteer' && u.reports_to === user.id) ids.add(u.id);
       if (ur === 'super_overseer') ids.add(u.id);
-      // อาสาสมัคร also sees their องคมนตรี peers under same SO via reports_to
       if (role === 'volunteer' && ur === 'overseer' && u.id === user.reports_to) {
         ids.add(u.id);
       }
     }
+
     return [...ids];
   }
 
@@ -135,6 +164,10 @@ export function calendarPeers(
       ids.add(bossId);
       const boss = allUsers.find((u) => u.id === bossId);
       if (boss?.reports_to) ids.add(boss.reports_to);
+      const grand = boss?.reports_to
+        ? allUsers.find((u) => u.id === boss.reports_to)
+        : undefined;
+      if (grand?.reports_to) ids.add(grand.reports_to);
       for (const u of allUsers) {
         if (normalizeRole(u.role) === 'staff' && u.reports_to === bossId) {
           ids.add(u.id);
@@ -155,4 +188,12 @@ export function postLoginPath(role: UserRole): string {
   if (r === 'staff' || isOverseerLike(r) || r === 'super_overseer') return '/dashboard';
   if (r === 'admin' || r === 'super_admin') return '/admin/accounts';
   return '/';
+}
+
+/** @deprecated use isSchoolActionable — kept for clarity at call sites */
+export function canActOnSchool(
+  user: ScopeUser | null | undefined,
+  school: SchoolFull
+): boolean {
+  return isSchoolActionable(user, school);
 }

@@ -17,7 +17,7 @@ import {
   fetchReportDraftsForStaff,
   upsertReportDraftInDb,
 } from '@/lib/supabase/report-drafts';
-import { isFieldRole } from '@/lib/auth/scope';
+import { assertSchoolInActionScope, isFieldRole } from '@/lib/auth/scope';
 import { normalizeRole } from '@/lib/types';
 
 async function requireFieldUser() {
@@ -60,6 +60,9 @@ export async function saveReportDraftAction(formData: FormData): Promise<
 
   if (!school_id) return { ok: false, error: 'เลือกโรงเรียนก่อนบันทึกร่าง' };
   if (!report_date) return { ok: false, error: 'เลือกวันที่รายงาน' };
+
+  const schoolGate = await assertSchoolInActionScope(gate.profile, school_id);
+  if (!schoolGate.ok) return { ok: false, error: schoolGate.error };
 
   const payload = {
     id: draft_id,

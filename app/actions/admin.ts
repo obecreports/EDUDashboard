@@ -294,16 +294,22 @@ export async function assignGeoAction(formData: FormData) {
     ];
   }
 
+  const tierRaw = String(formData.get('overseerTier') || '').trim();
+  const overseerTier =
+    tierRaw === 'type1' || tierRaw === 'type2' ? tierRaw : undefined;
+
   const result = await adminAssignGeo(userId, {
     provinces,
     districts,
     staffAreaProvinces,
+    overseerTier,
   });
   if (!result.ok) return { ok: false as const, error: result.error };
   revalidatePath('/admin/domain');
   revalidatePath('/admin/assignments');
   revalidatePath('/admin/org-map');
   revalidatePath('/dashboard');
+  revalidatePath('/calendar');
   revalidatePath('/staff/profile');
   return { ok: true as const };
 }
