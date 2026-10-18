@@ -131,20 +131,19 @@ export function AboutProjectView({
           </p>
           <ol className="about-timeline">
             <li>
-              <strong>2541</strong>
-              <span>จุดเริ่มต้นโครงการ</span>
+              <strong>ก.พ. 2555</strong>
+              <b>จัดตั้งโครงการทางการ</b>
+              <span>ในหลวง ร.9 พระราชทานทรัพย์ส่วนพระองค์ มอบองคมนตรีขับเคลื่อนงาน</span>
             </li>
             <li>
-              <strong>2550</strong>
-              <span>ขยายผลทั่วประเทศ</span>
-            </li>
-            <li>
-              <strong>2560</strong>
-              <span>พัฒนาระบบอย่างเป็นรูปธรรม</span>
+              <strong>2555–2559</strong>
+              <b>ขยายผลสู่ 155 โรงเรียน</b>
+              <span>คัดเลือกโรงเรียนเข้าร่วมปีละ 1 รุ่น รวม 4 รุ่น ครอบคลุมโรงเรียน สพฐ. และ สช.</span>
             </li>
             <li>
               <strong>ปัจจุบัน</strong>
-              <span>{totalSchools} โรงเรียน ก้าวสู่อนาคตที่ยั่งยืน</span>
+              <b>ต่อยอดโมเดลคุณธรรม</b>
+              <span>ประยุกต์ &quot;บางมูลนากโมเดล&quot; สร้างความเข้มแข็งร่วมกับภาคเอกชนและอาสาสมัคร</span>
             </li>
           </ol>
         </article>

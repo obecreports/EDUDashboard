@@ -299,7 +299,7 @@ export function StaffManagedSchoolsClient({ schools, staffName }: Props) {
                       <div
                         className="ed-school-card__cover"
                         style={{
-                          background: `linear-gradient(135deg, ${st.bg}, #dbeafe)`,
+                          background: `linear-gradient(135deg, ${st.bg}, ${st.border})`,
                         }}
                       />
                       <div className="p-4 space-y-3">

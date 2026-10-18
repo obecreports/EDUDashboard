@@ -21,45 +21,44 @@ export const DEV_STATUS_ORDER: DevStatusKey[] = [
 ];
 
 /**
- * Accent colors (exact):
- * 1 #742A2A · 2 #C05621 · 3 #A0AEC0 · 4 #2B6CB0 · 5 #234E52
- * Card base uses pastel fills (not solid brand fill).
+ * Rank accents / pastel fills (CSS --rank-1…5 / --rank-*-bg):
+ * 1 #E55B8C · 2 #EDC93D · 3 #8FD05A · 4 #20B8AE · 5 #2F6FDE
  */
 export const DEV_STATUS: Record<DevStatusKey, DevStatusMeta> = {
   develop: {
     key: 'develop',
     label: 'ควรพัฒนา',
-    color: '#742A2A',
-    bg: '#FEE2E2',
-    border: '#FECACA',
+    color: '#E55B8C',
+    bg: '#FDECF2',
+    border: '#F5C4D4',
   },
   fair: {
     key: 'fair',
     label: 'พอใช้',
-    color: '#C05621',
-    bg: '#FFEDD5',
-    border: '#FED7AA',
+    color: '#EDC93D',
+    bg: '#FFF8D8',
+    border: '#F5E8A0',
   },
   good: {
     key: 'good',
     label: 'ดี',
-    color: '#A0AEC0',
-    bg: '#F1F5F9',
-    border: '#CBD5E1',
+    color: '#8FD05A',
+    bg: '#F0FAE7',
+    border: '#CDEBB0',
   },
   veryGood: {
     key: 'veryGood',
     label: 'ดีมาก',
-    color: '#2B6CB0',
-    bg: '#DBEAFE',
-    border: '#93C5FD',
+    color: '#20B8AE',
+    bg: '#E8FBF8',
+    border: '#B0E8E2',
   },
   excellent: {
     key: 'excellent',
     label: 'ยอดเยี่ยม',
-    color: '#234E52',
-    bg: '#CCFBF1',
-    border: '#5EEAD4',
+    color: '#2F6FDE',
+    bg: '#EDF4FF',
+    border: '#B8CFEF',
   },
 };
 

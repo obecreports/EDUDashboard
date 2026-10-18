@@ -56,6 +56,7 @@ import {
   SCORE_YEAR_PREVIOUS,
   scoreYearToBeLabel,
 } from '@/lib/scores/years';
+import { statusFromScore } from '@/lib/theme/status';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
@@ -83,25 +84,12 @@ function labelOf(
   return lookup?.[code] || lookup?.[code.replace(/_score$/, '')] || fallback;
 }
 
-/** Normalize 0–100 pillar scores onto 0–5 strategy scale for color/label thresholds */
-function scoreOnFive(score: number) {
-  return score > 5 ? score / 20 : score;
-}
-
 function scoreColor(score: number) {
-  const s = scoreOnFive(score);
-  if (s >= 4) return '#059669';
-  if (s >= 3) return '#65a30d';
-  if (s >= 2) return '#d97706';
-  return '#ea580c';
+  return statusFromScore(score).color;
 }
 
 function qualityLabel(score: number) {
-  const s = scoreOnFive(score);
-  if (s >= 4) return 'ดีเยี่ยม';
-  if (s >= 3) return 'ดี';
-  if (s >= 2) return 'พอใช้';
-  return 'ต้องปรับปรุง';
+  return statusFromScore(score).label;
 }
 
 type LevelRow = { code: string; name: string; boy: number; girl: number; sum: number };

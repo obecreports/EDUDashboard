@@ -141,31 +141,29 @@ const HEATMAP_FILL_COLOR: maplibregl.ExpressionSpecification = [
   ],
 ];
 
-/** Score heatmap (3 pillars / 5 angles) — pastel red → green */
+/** Score heatmap (3 pillars / 5 angles) — rank pastel bands */
 const SCORE_HEATMAP_FILL_COLOR: maplibregl.ExpressionSpecification = [
   'case',
   ['boolean', ['feature-state', 'hover'], false],
-  '#34d399',
+  '#20B8AE',
   ['boolean', ['feature-state', 'selected'], false],
-  '#10b981',
+  '#2F6FDE',
   [
     'interpolate',
     ['linear'],
     ['coalesce', ['feature-state', 'density'], 0],
     0,
-    '#fef2f2',
+    '#FDECF2',
     0.2,
-    '#fecaca',
+    '#FDECF2',
     0.4,
-    '#fed7aa',
-    0.55,
-    '#fef08a',
-    0.7,
-    '#bbf7d0',
-    0.85,
-    '#86efac',
+    '#FFF8D8',
+    0.6,
+    '#F0FAE7',
+    0.8,
+    '#E8FBF8',
     1,
-    '#6ee7b7',
+    '#EDF4FF',
   ],
 ];
 
@@ -182,25 +180,25 @@ const DEFAULT_CIRCLE_COLOR: maplibregl.ExpressionSpecification = [
 ];
 
 /**
- * Score-view school dots — same 5 pastel bands as scorePastelLevel / school cards
+ * Score-view school dots — same 5 rank bands as scorePastelLevel / school cards
  * (density 0–1 = score / heatScaleMax).
  */
 const SCORE_CIRCLE_COLOR: maplibregl.ExpressionSpecification = [
   'case',
   ['boolean', ['feature-state', 'hover'], false],
-  '#34d399',
+  '#2F6FDE',
   [
     'step',
     ['coalesce', ['feature-state', 'density'], 0],
-    '#fecaca',
+    '#E55B8C',
     0.2,
-    '#fed7aa',
+    '#EDC93D',
     0.4,
-    '#fde047',
+    '#8FD05A',
     0.6,
-    '#bbf7d0',
+    '#20B8AE',
     0.8,
-    '#6ee7b7',
+    '#2F6FDE',
   ],
 ];
 
