@@ -371,62 +371,111 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     return map;
   }, [overseers, type2Under, staffUnder, personMetrics]);
 
+  /**
+   * Person filter dropdown mirrors tracking tree:
+   * role group (อาสาสมัคร / ศึกษานิเทศก์) → person name → staff under Type 2
+   */
   const personFilterTree = useMemo((): FilterTreeNode[] => {
     const nestedType2 = new Set<string>();
-    const nodes: FilterTreeNode[] = type1Overseers.map((ov) => {
-      const children: FilterTreeNode[] = [];
-      for (const t2 of type2Under.get(ov.id) ?? []) {
-        nestedType2.add(t2.id);
-        children.push({
-          id: t2.id,
-          label: labelOf(t2),
-          hint: overseerTierLabel('type2'),
-          children: (staffUnder.get(t2.id) ?? []).map((st) => ({
-            id: st.id,
-            label: labelOf(st),
-            hint: 'Staff',
-          })),
-        });
-      }
-      for (const st of staffUnder.get(ov.id) ?? []) {
-        children.push({
+    const nestedStaff = new Set<string>();
+
+    const type2Node = (t2: ActivityPerson): FilterTreeNode => {
+      const staffKids = staffUnder.get(t2.id) ?? [];
+      for (const st of staffKids) nestedStaff.add(st.id);
+      return {
+        id: t2.id,
+        label: labelOf(t2),
+        hint: overseerTierLabel('type2'),
+        children: staffKids.length
+          ? staffKids.map((st) => ({
+              id: st.id,
+              label: labelOf(st),
+              hint: ROLE_LABELS.staff,
+            }))
+          : undefined,
+      };
+    };
+
+    const roleType2Group = (
+      key: string,
+      members: ActivityPerson[]
+    ): FilterTreeNode | null => {
+      if (!members.length) return null;
+      return {
+        id: key,
+        label: ROLE_LABELS.volunteer,
+        hint: 'กลุ่มอาสาสมัคร',
+        groupOnly: true,
+        children: members.map(type2Node),
+      };
+    };
+
+    const roleStaffGroup = (
+      key: string,
+      members: ActivityPerson[]
+    ): FilterTreeNode | null => {
+      if (!members.length) return null;
+      return {
+        id: key,
+        label: ROLE_LABELS.staff,
+        hint: 'กลุ่มเจ้าหน้าที่',
+        groupOnly: true,
+        children: members.map((st) => ({
           id: st.id,
           label: labelOf(st),
-          hint: 'Staff',
-        });
+          hint: ROLE_LABELS.staff,
+        })),
+      };
+    };
+
+    const nodes: FilterTreeNode[] = [];
+
+    for (const ov of type1Overseers) {
+      const t2s = type2Under.get(ov.id) ?? [];
+      const directStaff = staffUnder.get(ov.id) ?? [];
+      for (const t2 of t2s) {
+        nestedType2.add(t2.id);
+        for (const st of staffUnder.get(t2.id) ?? []) nestedStaff.add(st.id);
       }
-      return {
+      for (const st of directStaff) nestedStaff.add(st.id);
+
+      const children: FilterTreeNode[] = [];
+      const g2 = roleType2Group(`g:type2:${ov.id}`, t2s);
+      const gs = roleStaffGroup(`g:staff:${ov.id}`, directStaff);
+      if (g2) children.push(g2);
+      if (gs) children.push(gs);
+
+      nodes.push({
         id: ov.id,
         label: labelOf(ov),
         hint:
           normalizeRole(ov.role) === 'volunteer'
             ? ROLE_LABELS.volunteer
             : overseerTierLabel(effectiveOverseerTier(ov.role, ov.overseer_tier)),
-        children,
-      };
-    });
-    // Orphan Type 2 (no Type 1 parent in list)
-    for (const p of overseers) {
-      if (!isOverseerType2(p.role, p.overseer_tier) || nestedType2.has(p.id)) continue;
-      nodes.push({
-        id: p.id,
-        label: labelOf(p),
-        hint: overseerTierLabel('type2'),
-        children: (staffUnder.get(p.id) ?? []).map((st) => ({
-          id: st.id,
-          label: labelOf(st),
-          hint: 'Staff',
-        })),
+        children: children.length ? children : undefined,
       });
     }
+
+    const orphanType2: ActivityPerson[] = [];
+    for (const p of overseers) {
+      if (!isOverseerType2(p.role, p.overseer_tier) || nestedType2.has(p.id)) continue;
+      orphanType2.push(p);
+    }
+    const gOrphanT2 = roleType2Group('g:type2', orphanType2);
+    if (gOrphanT2) nodes.push(gOrphanT2);
+
+    const orphanStaff: ActivityPerson[] = [];
     for (const p of people) {
       if (normalizeRole(p.role) !== 'staff') continue;
-      if (p.reports_to && staffUnder.has(p.reports_to)) continue;
-      if (nodes.some((n) => n.id === p.id)) continue;
-      nodes.push({ id: p.id, label: labelOf(p), hint: 'Staff' });
+      if (nestedStaff.has(p.id)) continue;
+      if (p.reports_to && peopleById.has(p.reports_to)) continue;
+      orphanStaff.push(p);
     }
+    const gOrphanStaff = roleStaffGroup('g:staff', orphanStaff);
+    if (gOrphanStaff) nodes.push(gOrphanStaff);
+
     return nodes;
-  }, [type1Overseers, type2Under, staffUnder, overseers, people]);
+  }, [type1Overseers, type2Under, staffUnder, overseers, people, peopleById]);
 
   const placeFilterTree = useMemo((): FilterTreeNode[] => {
     const byProv = new Map<string, Map<string, ActivitySchool[]>>();
@@ -963,7 +1012,22 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
             <p className="text-sm text-slate-500 m-0">ไม่พบผู้กำกับดูแลตามตัวกรอง</p>
           ) : (
             (() => {
-              const rollupPeople = (list: ActivityPerson[]) => {
+              /** Unique school count across people (no double-count when scopes overlap) */
+              const distinctSchoolsOf = (...groups: ActivityPerson[][]) => {
+                const ids = new Set<string>();
+                for (const list of groups) {
+                  for (const p of list) {
+                    for (const sid of p.schoolIds) ids.add(sid);
+                  }
+                }
+                return ids.size;
+              };
+
+              const rollupPeople = (
+                list: ActivityPerson[],
+                /** Extra people whose schools count toward the group (e.g. staff under Type 2) */
+                schoolScopeExtra: ActivityPerson[] = []
+              ) => {
                 const pcts = list.map((p) => personMetrics.get(p.id)?.pct ?? 0);
                 const rollup = rollupFromSchoolPcts(pcts);
                 const bookings = list.reduce(
@@ -974,10 +1038,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                   (n, p) => n + (personMetrics.get(p.id)?.reportsDone ?? 0),
                   0
                 );
-                const schools = list.reduce(
-                  (n, p) => n + (personMetrics.get(p.id)?.schools ?? 0),
-                  0
-                );
+                const schools = distinctSchoolsOf(list, schoolScopeExtra);
                 const last = latestDate(
                   list.map(
                     (p) =>
@@ -1068,6 +1129,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                 }
 
                 const open = openOverseers.has(t2.id);
+                const schoolCount = distinctSchoolsOf([t2], staffKids);
                 return (
                   <div key={t2.id} className="so-tree__node">
                     <button
@@ -1093,7 +1155,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                       <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
                         <MetricLink
                           href={schoolsHref({ person: t2.id })}
-                          value={m?.schools ?? 0}
+                          value={schoolCount}
                           label="รร."
                         />
                         <MetricLink
@@ -1129,7 +1191,13 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
               ) => {
                 if (members.length === 0) return null;
                 const open = openRoleGroups.has(groupKey);
-                const agg = rollupPeople(members);
+                const staffUnderMembers =
+                  mode === 'type2'
+                    ? members.flatMap((t2) =>
+                        visibleStaffOf(t2.id, parentSelected || selectedPeople.has(t2.id))
+                      )
+                    : [];
+                const agg = rollupPeople(members, staffUnderMembers);
                 const indentClass = nested ? 'so-tree__row--indent' : '';
                 const childIndent = nested ? ('indent' as const) : ('' as const);
 
@@ -1194,7 +1262,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                   return renderRoleGroup(
                     'role:type2',
                     ROLE_LABELS.volunteer,
-                    'กลุ่มอาสาสมัคร (Type 2)',
+                    'กลุ่มอาสาสมัคร',
                     section.people,
                     'type2',
                     false,
@@ -1221,6 +1289,15 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                 const level = m?.level ?? 0;
                 const roleLabel = roleDisplayLabel(ov.role, ov.overseer_tier);
                 const parentSelected = selectedPeople.has(ov.id);
+                const staffUnderType2 = section.type2.flatMap((t2) =>
+                  visibleStaffOf(t2.id, parentSelected || selectedPeople.has(t2.id))
+                );
+                const schoolCount = distinctSchoolsOf(
+                  [ov],
+                  section.type2,
+                  section.staff,
+                  staffUnderType2
+                );
 
                 return (
                   <div key={ov.id} className="so-tree__node">
@@ -1247,7 +1324,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                       <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
                         <MetricLink
                           href={schoolsHref({ person: ov.id })}
-                          value={m?.schools ?? 0}
+                          value={schoolCount}
                           label="รร."
                         />
                         <MetricLink
@@ -1273,7 +1350,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                             {renderRoleGroup(
                               `role:type2:${ov.id}`,
                               ROLE_LABELS.volunteer,
-                              'กลุ่มอาสาสมัคร (Type 2)',
+                              'กลุ่มอาสาสมัคร',
                               section.type2,
                               'type2',
                               true,

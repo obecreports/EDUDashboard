@@ -2,7 +2,12 @@ import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { getSessionProfile } from '@/lib/auth/session';
 import { fetchCompareScoresByYear, fetchSchools } from '@/lib/supabase/schools';
-import { isFieldRole, schoolsInScope, toScopeDirectory } from '@/lib/auth/scope';
+import {
+  isFieldRole,
+  schoolsActionable,
+  schoolsInScope,
+  toScopeDirectory,
+} from '@/lib/auth/scope';
 import { SCORE_YEAR_CURRENT, SCORE_YEAR_PREVIOUS } from '@/lib/scores/years';
 import {
   effectiveOverseerTier,
@@ -134,7 +139,9 @@ async function DashboardBody() {
           return type1TeamIds?.has(u.id) ?? false;
         })
         .map((u) => {
-          const personSchools = schoolsInScope(u, all, directory)
+          // Person-tracking school counts = action scope (Type 2: own provinces only),
+          // not view scope (Type 2 can see parent Type 1 provinces).
+          const personSchools = schoolsActionable(u, all)
             .map((s) => String(s.school_id))
             .filter((id) => (isSO ? true : scopedIdSet.has(id)));
           return {
