@@ -277,21 +277,29 @@ export async function assignGeoAction(formData: FormData) {
   // Staff districts field now stores Gov_Domain area_ids — resolve provinces for hierarchy
   let staffAreaProvinces: string[] | undefined;
   if (districts.length > 0) {
-    const { fetchSchools } = await import('@/lib/supabase/schools');
-    const schools = await fetchSchools().catch(() => []);
+    const { fetchSchools, fetchGovDomains } = await import('@/lib/supabase/schools');
+    const [schools, govDomains] = await Promise.all([
+      fetchSchools().catch(() => []),
+      fetchGovDomains().catch(() => []),
+    ]);
     const areaSet = new Set(districts.map(String));
-    staffAreaProvinces = [
-      ...new Set(
-        schools
-          .filter(
-            (s) =>
-              (s.area_id != null && areaSet.has(String(s.area_id))) ||
-              (s.area_name && areaSet.has(s.area_name))
-          )
-          .map((s) => s.province?.trim())
-          .filter(Boolean) as string[]
-      ),
-    ];
+    const fromSchools = schools
+      .filter(
+        (s) =>
+          (s.area_id != null && areaSet.has(String(s.area_id))) ||
+          (s.area_name && areaSet.has(s.area_name))
+      )
+      .map((s) => s.province?.trim())
+      .filter(Boolean) as string[];
+    const fromGov = (govDomains as { area_id?: unknown; area_name?: string; province_name?: string }[])
+      .filter(
+        (g) =>
+          (g.area_id != null && areaSet.has(String(g.area_id))) ||
+          (g.area_name && areaSet.has(g.area_name))
+      )
+      .map((g) => (g.province_name ?? '').trim())
+      .filter(Boolean);
+    staffAreaProvinces = [...new Set([...fromSchools, ...fromGov])];
   }
 
   const tierRaw = String(formData.get('overseerTier') || '').trim();

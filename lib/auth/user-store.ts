@@ -26,6 +26,7 @@ import { isDbOnlyMode } from '@/lib/auth/db-mode';
 export type { ReportDraft };
 import type { UserRole } from '@/lib/types';
 import { ALL_ROLES, normalizeRole } from '@/lib/types';
+import { allocateNextLoginId } from '@/lib/auth/login-id';
 import {
   emptySchoolSwot,
   normalizeSchoolSwot,
@@ -165,10 +166,12 @@ export async function createMockUser(input: {
   const position = input.position.trim();
   if (!full_name || !position) return { ok: false, error: 'กรุณากรอกชื่อและตำแหน่ง' };
 
-  const loginId =
-    input.email?.trim() ||
-    full_name.replace(/\s+/g, '').toLowerCase().slice(0, 24) ||
-    `user${Date.now()}`;
+  const manualLogin = input.email?.trim();
+  let loginId = manualLogin || '';
+  if (!loginId) {
+    const existing = (await readStoredUsers()).map((u) => u.email).filter(Boolean);
+    loginId = allocateNextLoginId(role, existing);
+  }
   if (await findUserByEmail(loginId)) return { ok: false, error: 'รหัสผู้ใช้นี้มีอยู่แล้ว' };
 
   const tempPassword = MOCK_LOGIN_PASSWORD;

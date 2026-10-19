@@ -29,8 +29,8 @@ export function OrgMapClient({ accounts }: { accounts: Account[] }) {
 
   const type1 = accounts.filter((a) => isOverseerType1(a.role, a.overseer_tier));
   const type2 = accounts.filter((a) => isOverseerType2(a.role, a.overseer_tier));
-  const volunteers = accounts.filter((a) => a.role === 'volunteer');
-  const bossesForStaff = [...type1, ...type2, ...volunteers];
+  /** Staff always reports to Type 1 (geo: Gov district → province) — not Type 2 */
+  const bossesForStaff = type1;
   const supers = accounts.filter((a) => a.role === 'super_overseer');
   const staff = accounts.filter((a) => a.role === 'staff');
 
@@ -51,7 +51,10 @@ export function OrgMapClient({ accounts }: { accounts: Account[] }) {
       {msg && <div className="ed-card p-3 text-sm text-tm-blue bg-tm-blue-50">{msg}</div>}
 
       <section className="ed-card p-4">
-        <h2 className="font-bold text-tm-blue mb-3">Staff → Overseer</h2>
+        <h2 className="font-bold text-tm-blue mb-3">Staff → Type 1 (จังหวัด)</h2>
+        <p className="text-sm text-slate-600 mb-3 m-0">
+          ศึกษานิเทศก์รายงานต่อองคมนตรี Type 1 ตามจังหวัดของเขต (Gov_Domain) — ไม่ผูกตรงกับ Type 2
+        </p>
         <div className="grid gap-3">
           {staff.map((s) => (
             <form

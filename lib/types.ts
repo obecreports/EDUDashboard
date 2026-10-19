@@ -122,7 +122,7 @@ export interface SchoolFull {
   labelLookup?: Record<string, string>;
   School_Score?: Record<string, number | string>;
   School_People?: Record<string, number | string>;
-  Gov_Domain?: { area_id?: string; area_name?: string };
+  Gov_Domain?: { area_id?: string; area_name?: string; province_name?: string };
 }
 
 /** Overseer hierarchy under role=overseer (NULL for other roles) */
@@ -264,14 +264,18 @@ export function isOverseerType2(
   return effectiveOverseerTier(role, tier) === 'type2';
 }
 
+/**
+ * Hierarchy labels:
+ * - Type 1 underboss → องคมนตรี
+ * - Type 2 underboss assist → อาสาสมัคร (sees like boss, own territory)
+ */
 export function overseerTierLabel(tier: OverseerTier | null | undefined): string {
-  // Type 2 presents as อาสาสมัคร in product UI; Type 1 remains องคมนตรี
   if (tier === 'type2') return ROLE_LABELS.volunteer;
   if (tier === 'type1') return ROLE_LABELS.overseer;
   return ROLE_LABELS.overseer;
 }
 
-/** User-facing บทบาท label (Type 2 overseer → อาสาสมัคร). */
+/** User-facing บทบาท: SO boss · Type1 underboss · Type2 assist · staff. */
 export function roleDisplayLabel(
   role: string | null | undefined,
   tier?: OverseerTier | null

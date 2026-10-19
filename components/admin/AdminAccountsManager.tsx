@@ -194,15 +194,18 @@ export function AdminAccountsManager({
             <input name="position" className="form-input" required />
           </label>
           <label className="block text-sm">
-            รหัสผู้ใช้ (ไม่บังคับ)
+            รหัสผู้ใช้ (ว่าง = สร้างอัตโนมัติ)
             <input
               name="email"
               type="text"
               className="form-input"
-              placeholder="staff03 / AS02 / OS15"
+              placeholder="ว่าง = staff0001 / OS0015 / AS0001"
               autoCapitalize="off"
               spellCheck={false}
             />
+            <span className="text-xs text-slate-500 font-normal">
+              ตามบทบาท + เลข 4 หลัก · หรือใส่เองถ้าต้องการ
+            </span>
           </label>
           <label className="block text-sm">
             บทบาท
@@ -227,6 +230,7 @@ export function AdminAccountsManager({
           <thead style={{ background: 'var(--tm-blue-50)', color: 'var(--tm-blue)' }}>
             <tr>
               <th className="text-left p-3">ชื่อ</th>
+              <th className="text-left p-3">รหัสผู้ใช้</th>
               <th className="text-left p-3">ตำแหน่ง</th>
               <th className="text-left p-3">บทบาท</th>
               <th className="text-left p-3">สถานะ</th>
@@ -243,7 +247,7 @@ export function AdminAccountsManager({
               return (
                 <tr key={a.id} className="border-t border-slate-100 align-top">
                   {editing ? (
-                    <td className="p-3" colSpan={5}>
+                    <td className="p-3" colSpan={6}>
                       <div className="grid gap-3 max-w-2xl">
                         <h3 className="font-bold text-tm-blue text-sm m-0">
                           แก้ไขผู้ใช้ · {a.email}
@@ -373,7 +377,9 @@ export function AdminAccountsManager({
                           {formatPersonLabel(a.role, a.name_prefix, a.full_name) ||
                             formatDisplayName(a.name_prefix, a.full_name)}
                         </div>
-                        <div className="text-xs text-slate-500">{a.email}</div>
+                      </td>
+                      <td className="p-3">
+                        <code className="text-xs font-semibold text-tm-blue">{a.email}</code>
                       </td>
                       <td className="p-3">{a.position || '—'}</td>
                       <td className="p-3">{ROLE_LABELS[targetRole] ?? a.role}</td>

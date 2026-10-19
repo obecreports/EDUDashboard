@@ -3,9 +3,15 @@ import { fetchSchools } from '@/lib/supabase/schools';
 import { ManagedSchoolsClient } from '@/components/schools/ManagedSchoolsClient';
 import { ManagedSchoolsSkeleton } from '@/components/ui/PageSkeleton';
 import { getSessionProfile } from '@/lib/auth/session';
-import { isFieldRole, schoolsInScope, toScopeDirectory } from '@/lib/auth/scope';
+import {
+  addSubordinatesOf,
+  calendarPeers,
+  isFieldRole,
+  schoolsInScope,
+  toScopeDirectory,
+} from '@/lib/auth/scope';
 import { formatPersonLabel, normalizeRole, type UserRole } from '@/lib/types';
-import { listAllCookieCalendarEvents } from '@/app/actions/visits';
+import { listCalendarEventsForStaffIds } from '@/app/actions/visits';
 import { enrichSchoolsWithVisits } from '@/lib/schools/visit-enrich';
 import { fetchAllUserProfiles } from '@/lib/supabase/profiles';
 import { fetchAllSchoolComments } from '@/lib/supabase/school-swot';
@@ -41,9 +47,19 @@ async function SchoolsBody({
     fetchSchools().catch(() => []),
   ]);
 
-  const [calendarEvents, comments] = isAuthenticated
+  const r = normalizeRole(role);
+  const staffMode = isAuthenticated && isFieldRole(r);
+  const profilesForScope =
+    staffMode && profile
+      ? await fetchAllUserProfiles().catch(() => [])
+      : [];
+  const directory = toScopeDirectory(profilesForScope);
+
+  const [calendarEvents, comments] = isAuthenticated && profile
     ? await Promise.all([
-        listAllCookieCalendarEvents().catch(() => []),
+        listCalendarEventsForStaffIds(calendarPeers(profile, directory)).catch(
+          () => []
+        ),
         fetchAllSchoolComments().catch(() => []),
       ])
     : [[], []];
@@ -56,13 +72,6 @@ async function SchoolsBody({
   }));
   const schools = enrichSchoolsWithVisits(schoolsRaw, calendarEvents, reportLinks);
 
-  const r = normalizeRole(role);
-  const staffMode = isAuthenticated && isFieldRole(r);
-  const profilesForScope =
-    staffMode && profile
-      ? await fetchAllUserProfiles().catch(() => [])
-      : [];
-  const directory = toScopeDirectory(profilesForScope);
   const scoped = staffMode ? schoolsInScope(profile, schools, directory) : schools;
   const inScopeIds = staffMode ? scoped.map((s) => String(s.school_id)) : [];
 
@@ -96,25 +105,10 @@ async function SchoolsBody({
         }));
     } else {
       domainPeopleLabel = 'เจ้าหน้าที่ในสายบังคับบัญชา';
-      const directReports = profiles.filter(
-        (u) => u.reports_to === profile.id && !u.disabled
-      );
-      const type2Ids = new Set(
-        directReports
-          .filter((u) => normalizeRole(u.role) === 'overseer')
-          .map((u) => u.id)
-      );
+      const teamIds = new Set<string>();
+      addSubordinatesOf(profile.id, directory, teamIds);
       domainPeople = profiles
-        .filter((u) => {
-          if (u.disabled) return false;
-          if (u.reports_to === profile.id) return true;
-          // Type 1 also sees staff under nested Type 2
-          return (
-            normalizeRole(u.role) === 'staff' &&
-            !!u.reports_to &&
-            type2Ids.has(u.reports_to)
-          );
-        })
+        .filter((u) => !u.disabled && teamIds.has(u.id))
         .map((u) => ({
           id: u.id,
           full_name: u.full_name,

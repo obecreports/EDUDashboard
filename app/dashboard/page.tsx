@@ -3,6 +3,8 @@ import { Suspense } from 'react';
 import { getSessionProfile } from '@/lib/auth/session';
 import { fetchCompareScoresByYear, fetchSchools } from '@/lib/supabase/schools';
 import {
+  addSubordinatesOf,
+  calendarPeers,
   isFieldRole,
   schoolsActionable,
   schoolsInScope,
@@ -18,7 +20,7 @@ import {
 import { StaffDashboardClient } from '@/components/dashboard/StaffDashboardClient';
 import { ManagedSchoolsSkeleton } from '@/components/ui/PageSkeleton';
 import {
-  listAllCookieCalendarEvents,
+  listCalendarEventsForStaffIds,
   listMyCalendarEvents,
 } from '@/app/actions/visits';
 import { fetchAllUserProfiles } from '@/lib/supabase/profiles';
@@ -49,7 +51,6 @@ async function DashboardBody() {
 
   const [
     all,
-    calendarEvents,
     myEvents,
     profiles,
     comments,
@@ -58,7 +59,6 @@ async function DashboardBody() {
     directoryUsers,
   ] = await Promise.all([
     fetchSchools().catch(() => []),
-    listAllCookieCalendarEvents().catch(() => []),
     isStaff ? listMyCalendarEvents().catch(() => []) : Promise.resolve([]),
     useSoDashboard ? fetchAllUserProfiles().catch(() => []) : Promise.resolve([]),
     useSoDashboard ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
@@ -72,16 +72,41 @@ async function DashboardBody() {
           };
         })
       : Promise.resolve({}),
-    // Type 2 readable scope needs parent Type 1 provinces
-    !useSoDashboard ? readStoredUsers().catch(() => []) : Promise.resolve([]),
+    // Type 2 readable scope needs parent Type 1 provinces; SO/T1 peers need full directory
+    readStoredUsers().catch(() => []),
   ]);
 
-  const directory = toScopeDirectory(useSoDashboard ? profiles : directoryUsers);
+  const directory = toScopeDirectory(
+    useSoDashboard && profiles.length ? profiles : directoryUsers
+  );
   const scoped = schoolsInScope(profile, all, directory);
   const scopedIdSet = new Set(scoped.map((s) => String(s.school_id)));
   const myProvinces = new Set(
     (profile.assigned_provinces ?? []).map((p) => p.trim()).filter(Boolean)
   );
+
+  /**
+   * Staff in Type 1 provinces by geo (Gov district / schools), even if reports_to
+   * is missing or points outside the org tree — school view already uses geo;
+   * person view must match.
+   */
+  const geoStaffInScope = (() => {
+    if (!isT1) return [] as string[];
+    const source = profiles.length ? profiles : directoryUsers;
+    return source
+      .filter((u) => normalizeRole(u.role) === 'staff' && !u.disabled)
+      .filter((u) =>
+        schoolsActionable(u, all).some((s) => scopedIdSet.has(String(s.school_id)))
+      )
+      .map((u) => u.id);
+  })();
+
+  const peerIds = [
+    ...new Set([...calendarPeers(profile, directory), ...geoStaffInScope]),
+  ];
+  const calendarEvents = useSoDashboard
+    ? await listCalendarEventsForStaffIds(peerIds).catch(() => [])
+    : [];
 
   const today = todayYmd();
   const staffReportLinks: ReportActivityLink[] = staffComments.map((c) => ({
@@ -113,20 +138,12 @@ async function DashboardBody() {
     (u) => isFieldRole(normalizeRole(u.role)) && !u.disabled
   );
 
-  /** Type 1: self + Type 2 / staff / volunteers in their command chain */
+  /** Type 1: reports_to subtree + geo-overlapping staff (not self) */
   const type1TeamIds = (() => {
     if (!isT1) return null as Set<string> | null;
     const ids = new Set<string>([profile.id]);
-    const direct = fieldProfiles.filter((u) => u.reports_to === profile.id);
-    for (const u of direct) ids.add(u.id);
-    const type2Ids = new Set(
-      direct
-        .filter((u) => normalizeRole(u.role) === 'overseer')
-        .map((u) => u.id)
-    );
-    for (const u of fieldProfiles) {
-      if (u.reports_to && type2Ids.has(u.reports_to)) ids.add(u.id);
-    }
+    addSubordinatesOf(profile.id, directory, ids);
+    for (const id of geoStaffInScope) ids.add(id);
     return ids;
   })();
 
@@ -134,7 +151,7 @@ async function DashboardBody() {
     ? fieldProfiles
         .filter((u) => {
           if (isSO) return true;
-          // Type 1: team only — do not list themselves
+          // Type 1: team only — hide self; panel shows 2 top groups (Type 2 + staff)
           if (u.id === profile.id) return false;
           return type1TeamIds?.has(u.id) ?? false;
         })

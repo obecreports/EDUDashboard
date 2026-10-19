@@ -17,11 +17,16 @@ export function enrichSchoolsWithVisits(
 
   const bySchool = new Map<string, StaffCalendarEvent[]>();
   for (const e of events) {
-    if (!e.school_id) continue;
-    const key = String(e.school_id);
-    const list = bySchool.get(key) ?? [];
-    list.push(e);
-    bySchool.set(key, list);
+    const keys = new Set<string>();
+    if (e.school_id) keys.add(String(e.school_id));
+    for (const sid of e.school_ids ?? []) {
+      if (sid) keys.add(String(sid));
+    }
+    for (const key of keys) {
+      const list = bySchool.get(key) ?? [];
+      list.push(e);
+      bySchool.set(key, list);
+    }
   }
 
   return schools.map((s) => {

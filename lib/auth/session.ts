@@ -387,7 +387,7 @@ export async function adminAssignGeo(
     patch.overseer_tier = tier;
   }
 
-  // Domain hierarchy: staff areas → prefer Type 2 then Type 1 overlapping province
+  // Staff Gov_Domain districts → province → report to Type 1 (not Type 2)
   const nextDistricts = patch.assigned_districts ?? user.assigned_districts;
   if (userRole === 'staff' && nextDistricts.length > 0) {
     const provincesFromAreas = [
@@ -402,23 +402,13 @@ export async function adminAssignGeo(
     ];
     if (provincesFromAreas.length > 0) {
       const all = await readStoredUsers();
-      const overlap = (u: (typeof all)[number]) =>
-        !u.disabled &&
-        provincesFromAreas.some((p) => u.assigned_provinces.includes(p));
-      const boss =
-        all.find(
-          (u) =>
-            normalizeRole(u.role) === 'overseer' &&
-            isOverseerType2(u.role, u.overseer_tier) &&
-            overlap(u)
-        ) ??
-        all.find(
-          (u) =>
-            normalizeRole(u.role) === 'overseer' &&
-            isOverseerType1(u.role, u.overseer_tier) &&
-            overlap(u)
-        ) ??
-        all.find((u) => normalizeRole(u.role) === 'volunteer' && overlap(u));
+      const boss = all.find(
+        (u) =>
+          !u.disabled &&
+          normalizeRole(u.role) === 'overseer' &&
+          isOverseerType1(u.role, u.overseer_tier) &&
+          provincesFromAreas.some((p) => u.assigned_provinces.includes(p))
+      );
       if (boss) patch.reports_to = boss.id;
     }
   }
@@ -448,18 +438,34 @@ export async function adminAssignGeo(
     }
   }
 
-  // When องคมนตรี / อาสาสมัคร provinces change, re-link staff under those provinces
+  // Type 1 province change → re-link staff whose Gov districts fall in those provinces
+  // (staff always reports_to Type 1; Type 2 never owns staff via reports_to)
   if (
-    (userRole === 'overseer' || userRole === 'volunteer') &&
+    userRole === 'overseer' &&
+    isOverseerType1(userRole, tier ?? user.overseer_tier) &&
     patch.assigned_provinces
   ) {
     const provinces = new Set(patch.assigned_provinces);
     const all = await readStoredUsers();
     let areaProvinceMap: Map<string, string[]> | null = null;
     try {
-      const { fetchSchools } = await import('@/lib/supabase/schools');
-      const schools = await fetchSchools().catch(() => []);
+      const { fetchSchools, fetchGovDomains } = await import('@/lib/supabase/schools');
+      const [schools, govDomains] = await Promise.all([
+        fetchSchools().catch(() => []),
+        fetchGovDomains().catch(() => []),
+      ]);
       areaProvinceMap = new Map();
+      for (const g of govDomains as {
+        area_id?: unknown;
+        province_name?: string | null;
+      }[]) {
+        const aid = g.area_id != null ? String(g.area_id) : '';
+        const p = (g.province_name ?? '').trim();
+        if (!aid || !p) continue;
+        const list = areaProvinceMap.get(aid) ?? [];
+        if (!list.includes(p)) list.push(p);
+        areaProvinceMap.set(aid, list);
+      }
       for (const s of schools) {
         const aid = s.area_id != null ? String(s.area_id) : '';
         const p = s.province?.trim();
@@ -484,10 +490,8 @@ export async function adminAssignGeo(
         }
       }
       const underThis = [...staffProvinces].some((p) => provinces.has(p));
-      if (underThis && staff.reports_to !== userId) {
-        // Prefer linking to Type 2 when staff already under a Type 2 of this Type 1
-        await updateUserProfileFields(staff.id, { reports_to: userId });
-      }
+      if (!underThis || staff.reports_to === userId) continue;
+      await updateUserProfileFields(staff.id, { reports_to: userId });
     }
   }
 
@@ -517,6 +521,19 @@ export async function adminSetReportsTo(
     const boss = await findUserById(reportsTo);
     if (!boss) return { ok: false, error: 'ไม่พบหัวหน้า' };
     const bossRole = normalizeRole(boss.role);
+
+    // Staff → Type 1 only (Gov district / province), never Type 2
+    if (userRole === 'staff') {
+      if (
+        bossRole !== 'overseer' ||
+        !isOverseerType1(boss.role, boss.overseer_tier)
+      ) {
+        return {
+          ok: false,
+          error: 'ศึกษานิเทศก์ต้องรายงานต่อองคมนตรี Type 1 เท่านั้น (ตามจังหวัดของเขต)',
+        };
+      }
+    }
 
     // Overseer → Overseer means Type 2 under Type 1
     if (userRole === 'overseer' && bossRole === 'overseer') {

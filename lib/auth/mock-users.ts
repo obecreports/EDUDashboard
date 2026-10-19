@@ -48,17 +48,17 @@ export const ADMIN_LOGIN_PASSWORD = 'Admin123456';
 export const UAT_USER_IDS = {
   staff: 'a1111111-1111-4111-8111-111111111101',
   staff2: 'a1111111-1111-4111-8111-111111111102',
-  /** AS01 · อาสาสมัคร (demo; assists OS10) */
+  /** @deprecated AS01 removed from mock seeds — UUID kept for legacy FKs */
   volunteer: 'a1111111-1111-4111-8111-111111111103',
-  /** @deprecated use volunteer — same UUID */
+  /** @deprecated same as volunteer */
   overseer: 'a1111111-1111-4111-8111-111111111103',
-  /** sirdawpong · พลเอกดาว์พงษ์ รัตนสุวรรณ */
+  /** sirdawpong · boss (super_overseer) */
   super_overseer: 'a1111111-1111-4111-8111-111111111104',
   /** sirthanu · ดร.ธนุ วงษ์จินดา */
   super_overseer2: 'a1111111-1111-4111-8111-111111111107',
   admin: 'a1111111-1111-4111-8111-111111111105',
   super_admin: 'a1111111-1111-4111-8111-111111111106',
-  /** OS01–OS14 · องคมนตรี (migration 014) */
+  /** OS01–OS14 · Type 1 underboss (migration 014) */
   os01: 'a1111111-1111-4111-8111-111111111201',
   os02: 'a1111111-1111-4111-8111-111111111202',
   os03: 'a1111111-1111-4111-8111-111111111203',
@@ -73,23 +73,27 @@ export const UAT_USER_IDS = {
   os12: 'a1111111-1111-4111-8111-111111111212',
   os13: 'a1111111-1111-4111-8111-111111111213',
   os14: 'a1111111-1111-4111-8111-111111111214',
+  /** OS10T01 · Type 2 underboss assist under OS10 (migration 020) */
+  os10t01: 'a1111111-1111-4111-8111-111111111301',
 } as const;
 
 /**
  * Demo / UAT accounts — `email` stores short login ID (not a mailbox).
- * Password: MOCK_LOGIN_PASSWORD. Profiles also live in Supabase (014/015).
+ * Hierarchy: SO (boss) → OS Type1 (underboss) ← staff via Gov district/province;
+ * Type 2 (assist) also under Type 1 — staff does not reports_to Type 2.
+ * Password: MOCK_LOGIN_PASSWORD. Profiles also live in Supabase (014/020).
  */
 export const MOCK_USER_SEEDS: MockUserSeed[] = [
   {
     id: UAT_USER_IDS.staff,
-    email: 'staff01',
-    full_name: 'สมชาย ใจดี',
+    email: 'staff03',
+    full_name: 'วิชัย ใฝ่รู้',
     position: 'ศึกษานิเทศก์',
     role: 'staff',
     assigned_zone: null,
     assigned_provinces: [],
     assigned_districts: [],
-    reports_to: UAT_USER_IDS.volunteer,
+    reports_to: UAT_USER_IDS.os10,
     password: MOCK_LOGIN_PASSWORD,
     tempPassword: null,
     mustChangePassword: false,
@@ -97,26 +101,12 @@ export const MOCK_USER_SEEDS: MockUserSeed[] = [
   },
   {
     id: UAT_USER_IDS.staff2,
-    email: 'staff02',
-    full_name: 'มานี รักงาน',
+    email: 'staff04',
+    full_name: 'ปัญญา มีสุข',
     position: 'ศึกษานิเทศก์',
     role: 'staff',
     assigned_zone: null,
     assigned_provinces: [],
-    assigned_districts: [],
-    reports_to: UAT_USER_IDS.volunteer,
-    password: MOCK_LOGIN_PASSWORD,
-    tempPassword: null,
-    mustChangePassword: false,
-  },
-  {
-    id: UAT_USER_IDS.volunteer,
-    email: 'AS01',
-    full_name: 'วิภาดา ศรีสุข',
-    position: 'อาสาสมัคร',
-    role: 'volunteer',
-    assigned_zone: null,
-    assigned_provinces: ['กาญจนบุรี'],
     assigned_districts: [],
     reports_to: UAT_USER_IDS.os10,
     password: MOCK_LOGIN_PASSWORD,

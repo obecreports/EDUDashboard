@@ -143,11 +143,13 @@ export function formatFetchError(e: unknown): string {
 const loadGovDomainsRaw = unstable_cache(
   async () => {
     const supabase = createAnonClient();
-    const { data, error } = await supabase.from('Gov_Domain').select('area_id, area_name');
+    const { data, error } = await supabase
+      .from('Gov_Domain')
+      .select('area_id, area_name, province_name');
     if (error) throw error;
     return data ?? [];
   },
-  ['gov-domains-v1'],
+  ['gov-domains-v2-province'],
   { revalidate: 3600, tags: ['gov-domains'] }
 );
 
@@ -187,7 +189,10 @@ async function loadAllSchools(): Promise<SchoolFull[]> {
   const basics = basicsRes.data ?? [];
   if (!basics.length) return [];
 
-  const govMap = new Map<string, { area_id: string; area_name: string }>();
+  const govMap = new Map<
+    string,
+    { area_id: string; area_name: string; province_name?: string | null }
+  >();
   govRows.forEach((g) => {
     if (g.area_id != null) govMap.set(String(g.area_id), g);
   });

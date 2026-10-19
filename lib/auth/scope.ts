@@ -104,7 +104,8 @@ export function canEditSwot(_user: ScopeUser | null | undefined): boolean {
   return false;
 }
 
-function addSubordinatesOf(
+/** Walk reports_to tree: staff, volunteer, and overseer (recurse into overseer + volunteer). */
+export function addSubordinatesOf(
   bossId: string,
   allUsers: ScopeUser[],
   ids: Set<string>
@@ -114,7 +115,9 @@ function addSubordinatesOf(
     const ur = normalizeRole(u.role);
     if (ur === 'staff' || ur === 'volunteer' || ur === 'overseer') {
       ids.add(u.id);
-      if (ur === 'overseer') addSubordinatesOf(u.id, allUsers, ids);
+      if (ur === 'overseer' || ur === 'volunteer') {
+        addSubordinatesOf(u.id, allUsers, ids);
+      }
     }
   }
 }
