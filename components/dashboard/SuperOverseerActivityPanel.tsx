@@ -15,11 +15,7 @@ import {
   overseerTierLabel,
   roleDisplayLabel,
 } from '@/lib/types';
-import {
-  countCompleteEvents,
-  eventHasMappedReport,
-  type ReportActivityLink,
-} from '@/lib/activity/complete';
+import type { ReportActivityLink } from '@/lib/activity/complete';
 import {
   HierarchicalFilterDropdown,
   type FilterTreeNode,
@@ -51,7 +47,8 @@ type Props = {
   reports: ReportActivityLink[];
 };
 
-type PerfLevel = 0 | 1 | 2 | 3 | 4;
+/** Maps onto existing CSS: 0=red, 2=yellow, 4=green */
+type PerfLevel = 0 | 2 | 4;
 
 function schoolsHref(params: Record<string, string>) {
   const q = new URLSearchParams(params);
@@ -62,32 +59,29 @@ function monthKey(ymd: string) {
   return ymd.slice(0, 7);
 }
 
-/** 5 pastel levels from red → green by report completion rate */
-function perfLevelFromPct(pct: number): PerfLevel {
-  if (pct < 20) return 0;
-  if (pct < 40) return 1;
-  if (pct < 60) return 2;
-  if (pct < 80) return 3;
-  return 4;
+function todayYmd() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-function perfLevel(bookings: number, complete: number): PerfLevel {
-  return perfLevelFromPct(perfPct(bookings, complete));
+/** Calendar-day difference (today − last). Negative if last is in the future. */
+function daysBetween(lastYmd: string, today: string) {
+  const a = Date.parse(`${lastYmd}T12:00:00`);
+  const b = Date.parse(`${today}T12:00:00`);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return Number.POSITIVE_INFINITY;
+  return Math.floor((b - a) / 86_400_000);
 }
 
-function perfPct(bookings: number, complete: number) {
-  if (bookings <= 0) return 0;
-  return Math.round((complete / bookings) * 100);
-}
-
-/**
- * Parent (gov / province) color = mean of school completion %.
- * Schools with no bookings count as 0% so 1/5 schools done ≈ 20% (not green).
- */
-function rollupFromSchoolPcts(pcts: number[]): { level: PerfLevel; pct: number } {
-  if (pcts.length === 0) return { level: 0, pct: 0 };
-  const pct = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
-  return { level: perfLevelFromPct(pct), pct };
+/** Row tint from last schedule/report date (rolling 14d / 30d). */
+function recencyLevel(lastYmd: string, today: string): PerfLevel {
+  if (!lastYmd) return 0;
+  const days = daysBetween(lastYmd, today);
+  if (days <= 14) return 4;
+  if (days <= 30) return 2;
+  return 0;
 }
 
 function latestDate(dates: string[]) {
@@ -193,6 +187,7 @@ function MonthMultiDropdown({
 }
 
 export function SuperOverseerActivityPanel({ events, people, schools, reports }: Props) {
+  const today = todayYmd();
   const [tab, setTab] = useState<'people' | 'schools'>('people');
   const [q, setQ] = useState('');
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set());
@@ -265,38 +260,32 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       {
         schools: number;
         bookings: number;
-        reportsDone: number;
-        complete: number;
+        reports: number;
         hasActivity: boolean;
         lastDate: string;
         level: PerfLevel;
-        pct: number;
       }
     >();
     for (const p of people) {
       const mine = eventsByStaff.get(p.id) ?? [];
       const myReports = reportsByStaff.get(p.id) ?? [];
-      const mappedReportIds = new Set<string>();
-      for (const e of mine) {
-        for (const r of myReports) {
-          if (eventHasMappedReport(e, [r])) mappedReportIds.add(r.id);
-        }
-      }
       const bookings = mine.length;
-      const complete = countCompleteEvents(mine, myReports);
+      const reportCount = myReports.length;
+      const lastDate = latestDate([
+        ...mine.map((e) => e.date),
+        ...myReports.map((r) => r.report_date || ''),
+      ]);
       map.set(p.id, {
         schools: p.schoolIds.length,
         bookings,
-        reportsDone: mappedReportIds.size,
-        complete,
-        hasActivity: bookings > 0,
-        lastDate: latestDate(mine.map((e) => e.date)),
-        level: perfLevel(bookings, complete),
-        pct: perfPct(bookings, complete),
+        reports: reportCount,
+        hasActivity: bookings > 0 || reportCount > 0,
+        lastDate,
+        level: recencyLevel(lastDate, today),
       });
     }
     return map;
-  }, [people, eventsByStaff, reportsByStaff]);
+  }, [people, eventsByStaff, reportsByStaff, today]);
 
   const labelOf = (p: ActivityPerson) =>
     formatPersonLabel(p.role, p.name_prefix, p.full_name);
@@ -515,97 +504,126 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     type SchoolLeaf = {
       school: ActivitySchool;
       bookings: number;
-      complete: number;
+      reports: number;
       lastDate: string;
       byWho: { id: string; name: string }[];
       hasActivity: boolean;
       level: PerfLevel;
-      pct: number;
     };
     type AreaNode = {
       area: string;
       bookings: number;
-      complete: number;
+      reports: number;
       lastDate: string;
       schools: SchoolLeaf[];
       level: PerfLevel;
-      pct: number;
     };
     type ProvNode = {
       province: string;
       bookings: number;
-      complete: number;
+      reports: number;
       schoolCount: number;
       lastDate: string;
       areas: AreaNode[];
       level: PerfLevel;
-      pct: number;
     };
+
+    const emptyLeaf = (school: ActivitySchool): SchoolLeaf => ({
+      school,
+      bookings: 0,
+      reports: 0,
+      lastDate: '',
+      byWho: [],
+      hasActivity: false,
+      level: 0,
+    });
 
     const byProv = new Map<string, Map<string, Map<string, SchoolLeaf>>>();
 
-    for (const s of schools) {
-      const province = s.province || 'ไม่ระบุจังหวัด';
-      const area = s.area_name || s.district || 'ไม่ระบุเขต';
-      if (!byProv.has(province)) byProv.set(province, new Map());
-      const areaMap = byProv.get(province)!;
-      if (!areaMap.has(area)) areaMap.set(area, new Map());
-      areaMap.get(area)!.set(s.id, {
-        school: s,
-        bookings: 0,
-        complete: 0,
-        lastDate: '',
-        byWho: [],
-        hasActivity: false,
-        level: 0,
-        pct: 0,
-      });
-    }
-
-    for (const e of filteredEvents) {
-      if (!e.school_id) continue;
-      const sid = String(e.school_id);
-      const school = schoolById.get(sid);
-      const province = school?.province || e.province || 'ไม่ระบุจังหวัด';
-      const area = school?.area_name || school?.district || 'ไม่ระบุเขต';
+    const ensureLeaf = (sid: string, fallback?: ActivitySchool): SchoolLeaf => {
+      const school =
+        schoolById.get(sid) ??
+        fallback ?? {
+          id: sid,
+          name: sid,
+          province: 'ไม่ระบุจังหวัด',
+          district: '',
+          area_name: 'ไม่ระบุเขต',
+        };
+      const province = school.province || 'ไม่ระบุจังหวัด';
+      const area = school.area_name || school.district || 'ไม่ระบุเขต';
       if (!byProv.has(province)) byProv.set(province, new Map());
       const areaMap = byProv.get(province)!;
       if (!areaMap.has(area)) areaMap.set(area, new Map());
       const schoolMap = areaMap.get(area)!;
-      const leaf: SchoolLeaf =
-        schoolMap.get(sid) ??
-        {
-          school: school ?? {
+      const existing = schoolMap.get(sid);
+      if (existing) return existing;
+      const leaf = emptyLeaf({ ...school, id: sid });
+      schoolMap.set(sid, leaf);
+      return leaf;
+    };
+
+    for (const s of schools) {
+      ensureLeaf(s.id, s);
+    }
+
+    const eventSchoolIds = (e: StaffCalendarEvent): string[] => {
+      const fromMulti = (e.school_ids ?? []).map(String).filter(Boolean);
+      if (fromMulti.length > 0) return [...new Set(fromMulti)];
+      return e.school_id ? [String(e.school_id)] : [];
+    };
+
+    const touchWho = (leaf: SchoolLeaf, staffId: string | null | undefined) => {
+      if (!staffId) return;
+      if (leaf.byWho.some((w) => w.id === staffId)) return;
+      const who = peopleById.get(staffId);
+      leaf.byWho.push({
+        id: staffId,
+        name: who ? labelOf(who) || 'ไม่ระบุ' : 'ไม่ระบุ',
+      });
+    };
+
+    for (const e of filteredEvents) {
+      const sids = eventSchoolIds(e);
+      for (const sid of sids) {
+        const known = schoolById.get(sid);
+        const province = known?.province || e.province || 'ไม่ระบุจังหวัด';
+        const area =
+          known?.area_name || known?.district || 'ไม่ระบุเขต';
+        const leaf = ensureLeaf(
+          sid,
+          known ?? {
             id: sid,
             name: e.school_name || sid,
             province,
             district: '',
             area_name: area,
-          },
-          bookings: 0,
-          complete: 0,
-          lastDate: '',
-          byWho: [] as { id: string; name: string }[],
-          hasActivity: false,
-          level: 0,
-          pct: 0,
-        };
-      leaf.bookings += 1;
+          }
+        );
+        leaf.bookings += 1;
+        leaf.hasActivity = true;
+        if (!leaf.lastDate || e.date > leaf.lastDate) leaf.lastDate = e.date;
+        touchWho(leaf, e.staff_id);
+      }
+    }
+
+    for (const r of filteredReports) {
+      const sid = r.school_id ? String(r.school_id) : '';
+      if (!sid) continue;
+      const leaf = ensureLeaf(sid);
+      leaf.reports += 1;
       leaf.hasActivity = true;
-      if (!leaf.lastDate || e.date > leaf.lastDate) leaf.lastDate = e.date;
-      if (eventHasMappedReport(e, filteredReports)) leaf.complete += 1;
-      if (e.staff_id) {
-        const who = peopleById.get(e.staff_id);
-        const name = who
-          ? labelOf(who) || 'ไม่ระบุ'
-          : 'ไม่ระบุ';
-        if (!leaf.byWho.some((w) => w.id === e.staff_id)) {
-          leaf.byWho.push({ id: e.staff_id, name });
+      const rd = r.report_date || '';
+      if (rd && (!leaf.lastDate || rd > leaf.lastDate)) leaf.lastDate = rd;
+      touchWho(leaf, r.staff_id);
+    }
+
+    for (const areaMap of byProv.values()) {
+      for (const schoolMap of areaMap.values()) {
+        for (const leaf of schoolMap.values()) {
+          leaf.level = recencyLevel(leaf.lastDate, today);
         }
       }
-      leaf.level = perfLevel(leaf.bookings, leaf.complete);
-      leaf.pct = perfPct(leaf.bookings, leaf.complete);
-      schoolMap.set(sid, leaf);
     }
 
     const nodes: ProvNode[] = [];
@@ -614,7 +632,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     )) {
       const areas: AreaNode[] = [];
       let provBookings = 0;
-      let provComplete = 0;
+      let provReports = 0;
       let schoolCount = 0;
       const provDates: string[] = [];
       for (const [area, schoolMap] of [...areaMap.entries()].sort((a, b) =>
@@ -624,38 +642,34 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
           a.school.name.localeCompare(b.school.name, 'th')
         );
         const bookings = schoolLeaves.reduce((n, s) => n + s.bookings, 0);
-        const complete = schoolLeaves.reduce((n, s) => n + s.complete, 0);
+        const reports = schoolLeaves.reduce((n, s) => n + s.reports, 0);
         const lastDate = latestDate(schoolLeaves.map((s) => s.lastDate));
-        const areaRollup = rollupFromSchoolPcts(schoolLeaves.map((s) => s.pct));
         schoolCount += schoolLeaves.length;
         provBookings += bookings;
-        provComplete += complete;
+        provReports += reports;
         if (lastDate) provDates.push(lastDate);
         areas.push({
           area,
           bookings,
-          complete,
+          reports,
           lastDate,
           schools: schoolLeaves,
-          level: areaRollup.level,
-          pct: areaRollup.pct,
+          level: recencyLevel(lastDate, today),
         });
       }
-      const allSchoolPcts = areas.flatMap((a) => a.schools.map((s) => s.pct));
-      const provRollup = rollupFromSchoolPcts(allSchoolPcts);
+      const provLast = latestDate(provDates);
       nodes.push({
         province,
         bookings: provBookings,
-        complete: provComplete,
+        reports: provReports,
         schoolCount,
-        lastDate: latestDate(provDates),
+        lastDate: provLast,
         areas,
-        level: provRollup.level,
-        pct: provRollup.pct,
+        level: recencyLevel(provLast, today),
       });
     }
     return nodes;
-  }, [schools, filteredEvents, filteredReports, schoolById, peopleById]);
+  }, [schools, filteredEvents, filteredReports, schoolById, peopleById, today]);
 
   const needle = q.trim().toLowerCase();
 
@@ -836,24 +850,23 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
               return null;
             }
             const bookings = schoolLeaves.reduce((n, s) => n + s.bookings, 0);
-            const complete = schoolLeaves.reduce((n, s) => n + s.complete, 0);
+            const reports = schoolLeaves.reduce((n, s) => n + s.reports, 0);
             const visible =
               schoolLeaves.length
                 ? schoolLeaves
                 : area.schools.filter((leaf) =>
                     placeMatch(prov.province, area.area, leaf.school.id)
                   );
-            const rollup = rollupFromSchoolPcts(visible.map((s) => s.pct));
+            const lastDate = schoolLeaves.length
+              ? latestDate(schoolLeaves.map((s) => s.lastDate))
+              : area.lastDate;
             return {
               ...area,
               schools: visible,
               bookings: schoolLeaves.length ? bookings : area.bookings,
-              complete: schoolLeaves.length ? complete : area.complete,
-              lastDate: schoolLeaves.length
-                ? latestDate(schoolLeaves.map((s) => s.lastDate))
-                : area.lastDate,
-              level: rollup.level,
-              pct: rollup.pct,
+              reports: schoolLeaves.length ? reports : area.reports,
+              lastDate,
+              level: recencyLevel(lastDate, today),
             };
           })
           .filter(Boolean) as typeof prov.areas;
@@ -876,22 +889,20 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
         if (useAreas.length === 0) return null;
 
         const bookings = useAreas.reduce((n, a) => n + a.bookings, 0);
-        const complete = useAreas.reduce((n, a) => n + a.complete, 0);
-        const schoolPcts = useAreas.flatMap((a) => a.schools.map((s) => s.pct));
-        const rollup = rollupFromSchoolPcts(schoolPcts);
+        const reports = useAreas.reduce((n, a) => n + a.reports, 0);
+        const lastDate = latestDate(useAreas.map((a) => a.lastDate));
         return {
           ...prov,
           areas: useAreas,
           bookings,
-          complete,
+          reports,
           schoolCount: useAreas.reduce((n, a) => n + a.schools.length, 0),
-          lastDate: latestDate(useAreas.map((a) => a.lastDate)),
-          level: rollup.level,
-          pct: rollup.pct,
+          lastDate,
+          level: recencyLevel(lastDate, today),
         };
       })
       .filter(Boolean) as typeof provinceTree;
-  }, [provinceTree, selectedPlaces, needle]);
+  }, [provinceTree, selectedPlaces, needle, today]);
 
   const toggle = (set: Set<string>, id: string, setter: (s: Set<string>) => void) => {
     const next = new Set(set);
@@ -901,7 +912,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
   };
 
   const totalBookings = filteredEvents.length;
-  const totalComplete = countCompleteEvents(filteredEvents, filteredReports);
+  const totalReports = filteredReports.length;
 
   return (
     <section className="ed-card p-4 space-y-3 so-activity">
@@ -931,10 +942,11 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
             value={totalBookings}
             label="นัดหมาย"
           />
-          <div className="so-metric so-metric--static">
-            <strong>{totalComplete}</strong>
-            <span>กิจกรรมครบ</span>
-          </div>
+          <MetricLink
+            href={schoolsHref({ visit: 'visited' })}
+            value={totalReports}
+            label="รายงาน"
+          />
         </div>
       </div>
 
@@ -991,14 +1003,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
         />
       </div>
 
-      <div className="so-perf-legend" aria-label="ระดับสีผลงาน">
-        <span>ผลงานรายงาน/นัด:</span>
+      <div className="so-perf-legend" aria-label="ระดับสีกิจกรรมล่าสุด">
+        <span>กิจกรรมล่าสุด:</span>
         {[
-          [0, '0–19%'],
-          [1, '20–39%'],
-          [2, '40–59%'],
-          [3, '60–79%'],
-          [4, '80–100%'],
+          [0, 'เกิน 30 วัน'],
+          [2, 'ใน 30 วัน'],
+          [4, 'ใน 2 สัปดาห์'],
         ].map(([lv, text]) => (
           <span key={String(lv)} className={`so-perf-chip so-perf--${lv}`}>
             {text}
@@ -1028,14 +1038,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                 /** Extra people whose schools count toward the group (e.g. staff under Type 2) */
                 schoolScopeExtra: ActivityPerson[] = []
               ) => {
-                const pcts = list.map((p) => personMetrics.get(p.id)?.pct ?? 0);
-                const rollup = rollupFromSchoolPcts(pcts);
                 const bookings = list.reduce(
                   (n, p) => n + (personMetrics.get(p.id)?.bookings ?? 0),
                   0
                 );
-                const reportsDone = list.reduce(
-                  (n, p) => n + (personMetrics.get(p.id)?.reportsDone ?? 0),
+                const reports = list.reduce(
+                  (n, p) => n + (personMetrics.get(p.id)?.reports ?? 0),
                   0
                 );
                 const schools = distinctSchoolsOf(list, schoolScopeExtra);
@@ -1047,7 +1055,13 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                       ''
                   )
                 );
-                return { ...rollup, bookings, reportsDone, schools, last };
+                return {
+                  level: recencyLevel(last, today),
+                  bookings,
+                  reports,
+                  schools,
+                  last,
+                };
               };
 
               const renderPersonLeaf = (
@@ -1081,9 +1095,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                       </strong>
                       <span className="so-tree__meta">
                         {roleLabel}
-                        {active
-                          ? ` · มีกิจกรรม · รายงาน ${sm?.pct ?? 0}%`
-                          : ' · ยังไม่มีกิจกรรม'}
+                        {active ? ' · มีกิจกรรม' : ' · ยังไม่มีกิจกรรม'}
                       </span>
                     </div>
                     <div className="so-tree__metrics">
@@ -1099,7 +1111,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                       />
                       <MetricLink
                         href={schoolsHref({ person: person.id, visit: 'visited' })}
-                        value={sm?.reportsDone ?? 0}
+                        value={sm?.reports ?? 0}
                         label="รายงาน"
                       />
                     </div>
@@ -1119,7 +1131,6 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                 );
                 const m = personMetrics.get(t2.id);
                 const last = overseerLastDate.get(t2.id) || m?.lastDate || '';
-                const level = m?.level ?? 0;
                 const roleLabel = roleDisplayLabel(t2.role, t2.overseer_tier);
                 const indentClass = indent === 'indent' ? 'so-tree__row--indent' : '';
                 const staffIndent = indent === 'indent' ? 'indent2' : 'indent';
@@ -1130,11 +1141,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
                 const open = openOverseers.has(t2.id);
                 const schoolCount = distinctSchoolsOf([t2], staffKids);
+                const teamAgg = rollupPeople([t2, ...staffKids]);
                 return (
                   <div key={t2.id} className="so-tree__node">
                     <button
                       type="button"
-                      className={`so-tree__row so-tree__row--branch ${indentClass} so-perf-row so-perf--${level}`}
+                      className={`so-tree__row so-tree__row--branch ${indentClass} so-perf-row so-perf--${teamAgg.level}`}
                       onClick={() => toggle(openOverseers, t2.id, setOpenOverseers)}
                       aria-expanded={open}
                     >
@@ -1149,7 +1161,9 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                         </strong>
                         <span className="so-tree__meta">
                           {roleLabel} · ลูกทีม {staffKids.length} คน
-                          {m ? ` · รายงาน ${m.pct}%` : ''}
+                          {teamAgg.reports > 0 || teamAgg.bookings > 0
+                            ? ' · มีกิจกรรม'
+                            : ''}
                         </span>
                       </div>
                       <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
@@ -1160,12 +1174,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                         />
                         <MetricLink
                           href={schoolsHref({ person: t2.id, visit: 'planned' })}
-                          value={m?.bookings ?? 0}
+                          value={teamAgg.bookings}
                           label="นัด"
                         />
                         <MetricLink
                           href={schoolsHref({ person: t2.id, visit: 'visited' })}
-                          value={m?.reportsDone ?? 0}
+                          value={teamAgg.reports}
                           label="รายงาน"
                         />
                       </div>
@@ -1221,7 +1235,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                           </span>
                         </strong>
                         <span className="so-tree__meta">
-                          {hint} · {members.length} คน · รายงาน {agg.pct}%
+                          {hint} · {members.length} คน
+                          {agg.bookings > 0 || agg.reports > 0 ? ' · มีกิจกรรม' : ''}
                         </span>
                       </div>
                       <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
@@ -1234,7 +1249,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                           <span>นัด</span>
                         </span>
                         <span className="so-metric so-metric--static">
-                          <strong>{agg.reportsDone}</strong>
+                          <strong>{agg.reports}</strong>
                           <span>รายงาน</span>
                         </span>
                       </div>
@@ -1286,7 +1301,6 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                 const m = personMetrics.get(ov.id);
                 const teamCount = section.type2.length + section.staff.length;
                 const last = overseerLastDate.get(ov.id) || m?.lastDate || '';
-                const level = m?.level ?? 0;
                 const roleLabel = roleDisplayLabel(ov.role, ov.overseer_tier);
                 const parentSelected = selectedPeople.has(ov.id);
                 const staffUnderType2 = section.type2.flatMap((t2) =>
@@ -1298,12 +1312,15 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                   section.staff,
                   staffUnderType2
                 );
+                const teamAgg = rollupPeople(
+                  [ov, ...section.type2, ...section.staff, ...staffUnderType2]
+                );
 
                 return (
                   <div key={ov.id} className="so-tree__node">
                     <button
                       type="button"
-                      className={`so-tree__row so-tree__row--branch so-perf-row so-perf--${level}`}
+                      className={`so-tree__row so-tree__row--branch so-perf-row so-perf--${teamAgg.level}`}
                       onClick={() => toggle(openOverseers, ov.id, setOpenOverseers)}
                       aria-expanded={open}
                     >
@@ -1318,7 +1335,9 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                         </strong>
                         <span className="so-tree__meta">
                           {roleLabel} · ลูกทีม {teamCount} คน
-                          {m ? ` · รายงาน ${m.pct}%` : ''}
+                          {teamAgg.bookings > 0 || teamAgg.reports > 0
+                            ? ' · มีกิจกรรม'
+                            : ''}
                         </span>
                       </div>
                       <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
@@ -1329,12 +1348,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                         />
                         <MetricLink
                           href={schoolsHref({ person: ov.id, visit: 'planned' })}
-                          value={m?.bookings ?? 0}
+                          value={teamAgg.bookings}
                           label="นัด"
                         />
                         <MetricLink
                           href={schoolsHref({ person: ov.id, visit: 'visited' })}
-                          value={m?.reportsDone ?? 0}
+                          value={teamAgg.reports}
                           label="รายงาน"
                         />
                       </div>
@@ -1402,7 +1421,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                         </span>
                       </strong>
                       <span className="so-tree__meta">
-                        {prov.areas.length} เขต · {prov.schoolCount} รร. · รายงาน {prov.pct}%
+                        {prov.areas.length} เขต · {prov.schoolCount} รร.
+                        {prov.bookings > 0 || prov.reports > 0 ? ' · มีกิจกรรม' : ''}
                       </span>
                     </div>
                     <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
@@ -1418,8 +1438,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                       />
                       <MetricLink
                         href={schoolsHref({ province: prov.province, visit: 'visited' })}
-                        value={prov.complete}
-                        label="ครบ"
+                        value={prov.reports}
+                        label="รายงาน"
                       />
                     </div>
                   </button>
@@ -1448,7 +1468,10 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                                   </span>
                                 </strong>
                                 <span className="so-tree__meta">
-                                  เขตพื้นที่ · {area.schools.length} รร. · รายงาน {area.pct}%
+                                  เขตพื้นที่ · {area.schools.length} รร.
+                                  {area.bookings > 0 || area.reports > 0
+                                    ? ' · มีกิจกรรม'
+                                    : ''}
                                 </span>
                               </div>
                               <div
@@ -1478,8 +1501,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                                     area: area.area,
                                     visit: 'visited',
                                   })}
-                                  value={area.complete}
-                                  label="ครบ"
+                                  value={area.reports}
+                                  label="รายงาน"
                                 />
                               </div>
                             </button>
@@ -1507,20 +1530,29 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                                       </strong>
                                       <span className="so-tree__meta">
                                         {leaf.hasActivity
-                                          ? `โดย ${leaf.byWho.map((w) => w.name).join(', ')} · รายงาน ${leaf.pct}%`
+                                          ? `โดย ${leaf.byWho.map((w) => w.name).join(', ')}`
                                           : 'ยังไม่มีกิจกรรม'}
                                       </span>
                                     </div>
                                     <div className="so-tree__metrics">
                                       <MetricLink
+                                        href={`/schools/${leaf.school.id}`}
+                                        value={1}
+                                        label="รร."
+                                      />
+                                      <MetricLink
                                         href={schoolsHref({ q: leaf.school.name })}
                                         value={leaf.bookings}
                                         label="นัด"
                                       />
-                                      <span className="so-metric so-metric--static">
-                                        <strong>{leaf.complete}</strong>
-                                        <span>ครบ</span>
-                                      </span>
+                                      <MetricLink
+                                        href={schoolsHref({
+                                          q: leaf.school.name,
+                                          visit: 'visited',
+                                        })}
+                                        value={leaf.reports}
+                                        label="รายงาน"
+                                      />
                                     </div>
                                   </div>
                                 ))}

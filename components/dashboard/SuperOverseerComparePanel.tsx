@@ -97,6 +97,17 @@ function schoolAxisLabel(name: string, maxChars = 16) {
   return `${t.slice(0, Math.max(1, maxChars - 1))}…`;
 }
 
+type ChartLegendItem = {
+  text: string;
+  fillStyle: string;
+};
+
+type ChartDataExtras = {
+  fullLabels?: string[];
+  /** When set, bottom legend lists these (e.g. full school names) instead of datasets. */
+  legendItems?: ChartLegendItem[];
+};
+
 function interactiveBarOptions(
   max?: number,
   opts?: { showLegend?: boolean; rotateSchoolLabels?: boolean }
@@ -119,6 +130,19 @@ function interactiveBarOptions(
               padding: 12,
               font: { size: 10, weight: 700 },
               generateLabels(chart) {
+                const extras = chart.data as ChartDataExtras;
+                if (extras.legendItems?.length) {
+                  return extras.legendItems.map((item, i) => ({
+                    text: item.text,
+                    fillStyle: item.fillStyle,
+                    strokeStyle: item.fillStyle,
+                    lineWidth: 0,
+                    hidden: false,
+                    datasetIndex: 0,
+                    index: i,
+                    fontColor: '#334155',
+                  }));
+                }
                 const datasets = chart.data.datasets;
                 return datasets.map((ds, i) => {
                   const meta = chart.getDatasetMeta(i);
@@ -140,6 +164,9 @@ function interactiveBarOptions(
               },
             },
             onClick(_e, legendItem, legend) {
+              const extras = legend.chart.data as ChartDataExtras;
+              // Custom school legend is display-only (one shared dataset).
+              if (extras.legendItems?.length) return;
               const index = legendItem.datasetIndex;
               if (index == null) return;
               const chart = legend.chart;
@@ -153,8 +180,12 @@ function interactiveBarOptions(
         callbacks: {
           title(items) {
             const idx = items[0]?.dataIndex;
-            const labels = items[0]?.chart.data.labels;
-            if (idx == null || !labels) return '';
+            const chart = items[0]?.chart;
+            if (idx == null || !chart) return '';
+            const fullLabels = (chart.data as ChartDataExtras).fullLabels;
+            if (fullLabels?.[idx]) return fullLabels[idx];
+            const labels = chart.data.labels;
+            if (!labels) return '';
             const raw = labels[idx];
             return typeof raw === 'string' ? raw : String(raw ?? '');
           },
@@ -164,7 +195,11 @@ function interactiveBarOptions(
               ctx.dataset.label ||
               '';
             const v = ctx.parsed.y;
-            return `${full}: ${typeof v === 'number' ? v.toLocaleString('th-TH', { maximumFractionDigits: 2 }) : v}`;
+            const num =
+              typeof v === 'number'
+                ? v.toLocaleString('th-TH', { maximumFractionDigits: 2 })
+                : String(v ?? '');
+            return `${full}: ${num}`;
           },
         },
       },
@@ -276,6 +311,7 @@ export function SuperOverseerComparePanel({
       .slice(0, MAX_COMPARE_SCHOOLS)
       .map((s, i) => ({
         school: s,
+        code: `รร.${i + 1}`,
         axisLabel: schoolAxisLabel(s.school_name_th, 14),
         color: SCHOOL_COLORS[i % SCHOOL_COLORS.length]!,
       }));
@@ -285,16 +321,20 @@ export function SuperOverseerComparePanel({
   const angleKeysActive = ANGLE_KEYS.filter((k) => selectedAngles.has(k));
 
   const studentChart = useMemo(() => {
-    const labels = compareSchools.map((c) => c.axisLabel);
+    const labels = compareSchools.map((c) => c.code);
+    const fullLabels = compareSchools.map(
+      (c) => c.school.school_name_th || c.code
+    );
     return {
       labels,
+      fullLabels,
       datasets: [
         {
           label: 'นักเรียน',
           shortLabel: 'นักเรียน',
           fullLabel: 'จำนวนนักเรียน',
           data: compareSchools.map((c) => c.school.studentSummary?.totalStudents ?? 0),
-          backgroundColor: '#2B6CB0',
+          backgroundColor: compareSchools.map((c) => c.color),
           borderRadius: 6,
         },
       ],
@@ -302,21 +342,44 @@ export function SuperOverseerComparePanel({
   }, [compareSchools]);
 
   const staffChart = useMemo(() => {
-    const labels = compareSchools.map((c) => c.axisLabel);
+    const labels = compareSchools.map((c) => c.code);
+    const fullLabels = compareSchools.map(
+      (c) => c.school.school_name_th || c.code
+    );
     return {
       labels,
+      fullLabels,
       datasets: [
         {
           label: 'บุคลากร',
           shortLabel: 'บุคลากร',
           fullLabel: 'จำนวนบุคลากร',
           data: compareSchools.map((c) => c.school.personnelSummary?.totalPersonnel ?? 0),
-          backgroundColor: '#C05621',
+          backgroundColor: compareSchools.map((c) => c.color),
           borderRadius: 6,
         },
       ],
     };
   }, [compareSchools]);
+
+  const schoolCodeKey =
+    compareSchools.length > 0 ? (
+      <ul className="so-compare__legend-key" aria-label="รหัสโรงเรียนในกราฟ">
+        {compareSchools.map((c) => (
+          <li key={String(c.school.school_id)}>
+            <span
+              className="so-compare__legend-swatch"
+              style={{ background: c.color }}
+              aria-hidden
+            />
+            <span className="so-compare__legend-code">{c.code}</span>
+            <span className="so-compare__legend-name">
+              {c.school.school_name_th || c.code}
+            </span>
+          </li>
+        ))}
+      </ul>
+    ) : null;
 
   /** X = pillars; series = each school × selected year (school name on series). */
   const pillarChart = useMemo(() => {
@@ -399,7 +462,7 @@ export function SuperOverseerComparePanel({
 
   const schoolAxisOpts = {
     showLegend: false,
-    rotateSchoolLabels: true,
+    rotateSchoolLabels: false,
   } as const;
 
   return (
@@ -492,6 +555,7 @@ export function SuperOverseerComparePanel({
           <div className="so-compare__chart-body so-compare__chart-body--tall">
             <Bar data={studentChart} options={interactiveBarOptions(undefined, schoolAxisOpts)} />
           </div>
+          {schoolCodeKey}
         </div>
 
         <div className="so-compare__chart-card">
@@ -502,6 +566,7 @@ export function SuperOverseerComparePanel({
           <div className="so-compare__chart-body so-compare__chart-body--tall">
             <Bar data={staffChart} options={interactiveBarOptions(undefined, schoolAxisOpts)} />
           </div>
+          {schoolCodeKey}
         </div>
 
         <div className="so-compare__chart-card so-compare__chart-card--pillars">

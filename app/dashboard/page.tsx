@@ -188,7 +188,10 @@ async function DashboardBody() {
         .filter((c) => {
           if (isSO) return true;
           const sid = c.school_id ? String(c.school_id) : '';
-          return sid ? scopedIdSet.has(sid) : false;
+          if (sid && scopedIdSet.has(sid)) return true;
+          // Fallback: author on Type 1 team when school_id is missing
+          if (!sid && c.staff_id && type1TeamIds?.has(c.staff_id)) return true;
+          return false;
         })
         .map((c) => ({
           id: c.id,
