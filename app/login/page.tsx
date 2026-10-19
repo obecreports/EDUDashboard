@@ -19,6 +19,7 @@ function tipByLogin(loginId: string) {
 
 export default function LoginPage() {
   const os10 = tipByLogin('OS10');
+  const so = tipByLogin('sirdawpong');
   const staff03 = tipByLogin('staff03');
   const staff04 = tipByLogin('staff04');
 
@@ -26,6 +27,10 @@ export default function LoginPage() {
     (u): u is (typeof MOCK_USER_SEEDS)[number] =>
       Boolean(u) && u!.role !== 'admin' && u!.role !== 'super_admin'
   );
+
+  const soLabel = so
+    ? [so.position, so.name_prefix, so.full_name].filter(Boolean).join(' · ')
+    : 'ผู้กำกับดูแลสูงสุด';
 
   return (
     <div className="page-shell" style={{ maxWidth: 480 }}>
@@ -44,29 +49,22 @@ export default function LoginPage() {
 
         <div className="rounded-lg bg-slate-50 p-2 border border-slate-100 text-xs text-slate-600 mb-2">
           <strong className="text-tm-blue">ตัวอย่าง · สายการทำงาน</strong>
-          <p className="m-0 mt-1 text-slate-500">
-            Boss (SO) → Underboss (OS Type 1) → Assist (OS Type 2) · Staff → Type 1
-          </p>
           <ul className="m-0 mt-2 p-0 list-none space-y-1.5 font-mono text-[0.7rem] leading-snug">
             <li>
               <code>sirdawpong</code>
-              <span className="font-sans text-slate-500"> · ผู้กำกับสูงสุด · Boss</span>
+              <span className="font-sans text-slate-500"> · {soLabel}</span>
             </li>
             <li className="pl-3 border-l-2 border-slate-200">
               <code>OS10</code>
               <span className="font-sans text-slate-600">
                 {' '}
-                · องคมนตรี Type 1 · Underboss
-                {os10 ? ` · ${os10.name_prefix ?? ''} ${os10.full_name}`.trim() : ''}
+                · {ROLE_LABELS.overseer}
+                {os10 ? ` · ${[os10.name_prefix, os10.full_name].filter(Boolean).join(' ')}` : ''}
               </span>
             </li>
             <li className="pl-6 border-l-2 border-slate-200">
               <span className="font-sans font-semibold text-slate-700">
-                Type 2 · Underboss assist
-              </span>
-              <span className="font-sans text-slate-500">
-                {' '}
-                · มุมมองคล้ายหัวหน้า · มีพื้นที่ของตนเอง
+                {ROLE_LABELS.volunteer}
               </span>
               <ul className="m-0 mt-1 p-0 list-none space-y-0.5 pl-1">
                 {OS10_TYPE2_SAMPLES.map((t) => (
@@ -82,7 +80,7 @@ export default function LoginPage() {
             </li>
             <li className="pl-9 border-l-2 border-slate-200">
               <span className="font-sans font-semibold text-slate-700">
-                ศึกษานิเทศก์ · Staff
+                {ROLE_LABELS.staff}
               </span>
               <ul className="m-0 mt-1 p-0 list-none space-y-0.5 pl-1">
                 {staff03 && (
@@ -99,26 +97,30 @@ export default function LoginPage() {
                 )}
               </ul>
               <p className="font-sans text-slate-400 m-0 mt-1">
-                รายงานต่อ <code>OS10</code> (Type 1 · ตามจังหวัดของเขต) · รหัสผ่านเดียวกัน
+                รายงานต่อ <code>OS10</code> · ตามจังหวัดของเขต · รหัสผ่านเดียวกัน
               </p>
             </li>
           </ul>
         </div>
 
         <ul className="text-xs space-y-2 m-0 p-0 list-none text-slate-600">
-          {tips.map((u) => (
-            <li key={u.id} className="rounded-lg bg-slate-50 p-2 border border-slate-100">
-              <strong>
-                {ROLE_LABELS[normalizeRole(u.role)]} · {u.full_name}
-              </strong>{' '}
-              — <code>{u.email}</code>
-              <br />
-              รหัส: {u.password ?? MOCK_LOGIN_PASSWORD}
-              {u.tempPassword ? ` · OTP ชั่วคราว: ${u.tempPassword}` : ''}
-            </li>
-          ))}
+          {tips.map((u) => {
+            const role = normalizeRole(u.role);
+            const title =
+              role === 'super_overseer'
+                ? [u.position, u.name_prefix, u.full_name].filter(Boolean).join(' · ')
+                : `${ROLE_LABELS[role]} · ${u.full_name}`;
+            return (
+              <li key={u.id} className="rounded-lg bg-slate-50 p-2 border border-slate-100">
+                <strong>{title}</strong> — <code>{u.email}</code>
+                <br />
+                รหัส: {u.password ?? MOCK_LOGIN_PASSWORD}
+                {u.tempPassword ? ` · OTP ชั่วคราว: ${u.tempPassword}` : ''}
+              </li>
+            );
+          })}
           <li className="rounded-lg bg-slate-50 p-2 border border-slate-100 text-slate-500">
-            องคมนตรี Type 1 ทั้ง 14 คน: <code>OS01</code>–<code>OS14</code> · รหัสเดียวกัน
+            องคมนตรีทั้ง 14 คน: <code>OS01</code>–<code>OS14</code> · รหัสเดียวกัน
           </li>
         </ul>
         <p className="text-xs text-slate-400 mt-3 mb-0">
