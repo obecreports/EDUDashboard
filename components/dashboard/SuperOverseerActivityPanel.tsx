@@ -88,6 +88,14 @@ function latestDate(dates: string[]) {
   return dates.filter(Boolean).sort((a, b) => b.localeCompare(a))[0] || '';
 }
 
+/** Newest lastDate first; empty dates sink to the bottom. */
+function compareLastDateDesc(a: string, b: string) {
+  if (a && b) return b.localeCompare(a);
+  if (a && !b) return -1;
+  if (!a && b) return 1;
+  return 0;
+}
+
 function MetricLink({
   href,
   value,
@@ -319,10 +327,6 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       list.push(p);
       map.set(p.reports_to, list);
     }
-    for (const [k, list] of map) {
-      list.sort((a, b) => labelOf(a).localeCompare(labelOf(b), 'th'));
-      map.set(k, list);
-    }
     return map;
   }, [overseers]);
 
@@ -333,10 +337,6 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       const list = map.get(p.reports_to) ?? [];
       list.push(p);
       map.set(p.reports_to, list);
-    }
-    for (const [k, list] of map) {
-      list.sort((a, b) => a.full_name.localeCompare(b.full_name, 'th'));
-      map.set(k, list);
     }
     return map;
   }, [people]);
@@ -359,6 +359,15 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     }
     return map;
   }, [overseers, type2Under, staffUnder, personMetrics]);
+
+  const personLastActivity = (p: ActivityPerson) =>
+    overseerLastDate.get(p.id) || personMetrics.get(p.id)?.lastDate || '';
+
+  const comparePeopleByActivity = (a: ActivityPerson, b: ActivityPerson) => {
+    const byDate = compareLastDateDesc(personLastActivity(a), personLastActivity(b));
+    if (byDate !== 0) return byDate;
+    return labelOf(a).localeCompare(labelOf(b), 'th');
+  };
 
   /**
    * Person filter dropdown mirrors tracking tree:
@@ -627,20 +636,18 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     }
 
     const nodes: ProvNode[] = [];
-    for (const [province, areaMap] of [...byProv.entries()].sort((a, b) =>
-      a[0].localeCompare(b[0], 'th')
-    )) {
+    for (const [province, areaMap] of byProv.entries()) {
       const areas: AreaNode[] = [];
       let provBookings = 0;
       let provReports = 0;
       let schoolCount = 0;
       const provDates: string[] = [];
-      for (const [area, schoolMap] of [...areaMap.entries()].sort((a, b) =>
-        a[0].localeCompare(b[0], 'th')
-      )) {
-        const schoolLeaves = [...schoolMap.values()].sort((a, b) =>
-          a.school.name.localeCompare(b.school.name, 'th')
-        );
+      for (const [area, schoolMap] of areaMap.entries()) {
+        const schoolLeaves = [...schoolMap.values()].sort((a, b) => {
+          const byDate = compareLastDateDesc(a.lastDate, b.lastDate);
+          if (byDate !== 0) return byDate;
+          return a.school.name.localeCompare(b.school.name, 'th');
+        });
         const bookings = schoolLeaves.reduce((n, s) => n + s.bookings, 0);
         const reports = schoolLeaves.reduce((n, s) => n + s.reports, 0);
         const lastDate = latestDate(schoolLeaves.map((s) => s.lastDate));
@@ -657,6 +664,11 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
           level: recencyLevel(lastDate, today),
         });
       }
+      areas.sort((a, b) => {
+        const byDate = compareLastDateDesc(a.lastDate, b.lastDate);
+        if (byDate !== 0) return byDate;
+        return a.area.localeCompare(b.area, 'th');
+      });
       const provLast = latestDate(provDates);
       nodes.push({
         province,
@@ -668,6 +680,11 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
         level: recencyLevel(provLast, today),
       });
     }
+    nodes.sort((a, b) => {
+      const byDate = compareLastDateDesc(a.lastDate, b.lastDate);
+      if (byDate !== 0) return byDate;
+      return a.province.localeCompare(b.province, 'th');
+    });
     return nodes;
   }, [schools, filteredEvents, filteredReports, schoolById, peopleById, today]);
 
@@ -683,15 +700,17 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
   const visibleStaffOf = (bossId: string, ancestorsSelected: boolean) => {
     const kids = staffUnder.get(bossId) ?? [];
-    return kids.filter((st) => {
-      if (selectedPeople.size > 0) {
-        const anyStaffSelected = kids.some((k) => selectedPeople.has(k.id));
-        if (anyStaffSelected) return selectedPeople.has(st.id);
-        if (ancestorsSelected || selectedPeople.has(bossId)) return true;
-        return selectedPeople.has(st.id);
-      }
-      return personMatches(st);
-    });
+    return kids
+      .filter((st) => {
+        if (selectedPeople.size > 0) {
+          const anyStaffSelected = kids.some((k) => selectedPeople.has(k.id));
+          if (anyStaffSelected) return selectedPeople.has(st.id);
+          if (ancestorsSelected || selectedPeople.has(bossId)) return true;
+          return selectedPeople.has(st.id);
+        }
+        return personMatches(st);
+      })
+      .sort(comparePeopleByActivity);
   };
 
   /**
@@ -769,10 +788,15 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       sections.push({
         kind: 'type1',
         person: ov,
-        type2: type2Visible,
-        staff: staffVisible,
+        type2: [...type2Visible].sort(comparePeopleByActivity),
+        staff: [...staffVisible].sort(comparePeopleByActivity),
       });
     }
+
+    sections.sort((a, b) => {
+      if (a.kind !== 'type1' || b.kind !== 'type1') return 0;
+      return comparePeopleByActivity(a.person, b.person);
+    });
 
     const orphanType2: ActivityPerson[] = [];
     for (const p of overseers) {
@@ -788,7 +812,10 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       orphanType2.push(p);
     }
     if (orphanType2.length > 0) {
-      sections.push({ kind: 'role-type2', people: orphanType2 });
+      sections.push({
+        kind: 'role-type2',
+        people: orphanType2.sort(comparePeopleByActivity),
+      });
     }
 
     const orphanStaff: ActivityPerson[] = [];
@@ -801,7 +828,10 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       orphanStaff.push(p);
     }
     if (orphanStaff.length > 0) {
-      sections.push({ kind: 'role-staff', people: orphanStaff });
+      sections.push({
+        kind: 'role-staff',
+        people: orphanStaff.sort(comparePeopleByActivity),
+      });
     }
 
     return sections;
@@ -814,6 +844,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     peopleById,
     selectedPeople,
     needle,
+    personMetrics,
+    overseerLastDate,
   ]);
 
   const placeMatch = (province: string, area: string, schoolId: string) => {
@@ -860,9 +892,14 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
             const lastDate = schoolLeaves.length
               ? latestDate(schoolLeaves.map((s) => s.lastDate))
               : area.lastDate;
+            const schoolsSorted = [...visible].sort((a, b) => {
+              const byDate = compareLastDateDesc(a.lastDate, b.lastDate);
+              if (byDate !== 0) return byDate;
+              return a.school.name.localeCompare(b.school.name, 'th');
+            });
             return {
               ...area,
-              schools: visible,
+              schools: schoolsSorted,
               bookings: schoolLeaves.length ? bookings : area.bookings,
               reports: schoolLeaves.length ? reports : area.reports,
               lastDate,
@@ -888,20 +925,30 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
         if (useAreas.length === 0) return null;
 
-        const bookings = useAreas.reduce((n, a) => n + a.bookings, 0);
-        const reports = useAreas.reduce((n, a) => n + a.reports, 0);
-        const lastDate = latestDate(useAreas.map((a) => a.lastDate));
+        const areasSorted = [...useAreas].sort((a, b) => {
+          const byDate = compareLastDateDesc(a.lastDate, b.lastDate);
+          if (byDate !== 0) return byDate;
+          return a.area.localeCompare(b.area, 'th');
+        });
+        const bookings = areasSorted.reduce((n, a) => n + a.bookings, 0);
+        const reports = areasSorted.reduce((n, a) => n + a.reports, 0);
+        const lastDate = latestDate(areasSorted.map((a) => a.lastDate));
         return {
           ...prov,
-          areas: useAreas,
+          areas: areasSorted,
           bookings,
           reports,
-          schoolCount: useAreas.reduce((n, a) => n + a.schools.length, 0),
+          schoolCount: areasSorted.reduce((n, a) => n + a.schools.length, 0),
           lastDate,
           level: recencyLevel(lastDate, today),
         };
       })
-      .filter(Boolean) as typeof provinceTree;
+      .filter(Boolean)
+      .sort((a, b) => {
+        const byDate = compareLastDateDesc(a!.lastDate, b!.lastDate);
+        if (byDate !== 0) return byDate;
+        return a!.province.localeCompare(b!.province, 'th');
+      }) as typeof provinceTree;
   }, [provinceTree, selectedPlaces, needle, today]);
 
   const toggle = (set: Set<string>, id: string, setter: (s: Set<string>) => void) => {

@@ -182,6 +182,11 @@ function interactiveBarOptions(
             const idx = items[0]?.dataIndex;
             const chart = items[0]?.chart;
             if (idx == null || !chart) return '';
+            // Prefer names on the dataset (Chart.js keeps custom dataset fields).
+            const fromDs = (
+              items[0]?.dataset as { schoolNames?: string[] } | undefined
+            )?.schoolNames?.[idx];
+            if (fromDs) return fromDs;
             const fullLabels = (chart.data as ChartDataExtras).fullLabels;
             if (fullLabels?.[idx]) return fullLabels[idx];
             const labels = chart.data.labels;
@@ -322,17 +327,17 @@ export function SuperOverseerComparePanel({
 
   const studentChart = useMemo(() => {
     const labels = compareSchools.map((c) => c.code);
-    const fullLabels = compareSchools.map(
+    const schoolNames = compareSchools.map(
       (c) => c.school.school_name_th || c.code
     );
     return {
       labels,
-      fullLabels,
       datasets: [
         {
           label: 'นักเรียน',
           shortLabel: 'นักเรียน',
           fullLabel: 'จำนวนนักเรียน',
+          schoolNames,
           data: compareSchools.map((c) => c.school.studentSummary?.totalStudents ?? 0),
           backgroundColor: compareSchools.map((c) => c.color),
           borderRadius: 6,
@@ -343,17 +348,17 @@ export function SuperOverseerComparePanel({
 
   const staffChart = useMemo(() => {
     const labels = compareSchools.map((c) => c.code);
-    const fullLabels = compareSchools.map(
+    const schoolNames = compareSchools.map(
       (c) => c.school.school_name_th || c.code
     );
     return {
       labels,
-      fullLabels,
       datasets: [
         {
           label: 'บุคลากร',
           shortLabel: 'บุคลากร',
           fullLabel: 'จำนวนบุคลากร',
+          schoolNames,
           data: compareSchools.map((c) => c.school.personnelSummary?.totalPersonnel ?? 0),
           backgroundColor: compareSchools.map((c) => c.color),
           borderRadius: 6,
