@@ -13,7 +13,7 @@ import {
 import { Bar } from 'react-chartjs-2';
 import { ChevronDown } from 'lucide-react';
 import type { PillarScores, SchoolFull, ThreePillarScores } from '@/lib/types';
-import type { CompareScoresByYear } from '@/lib/supabase/schools';
+import type { CompareScoresByYear } from '@/lib/types';
 import {
   HierarchicalFilterDropdown,
   type FilterTreeNode,

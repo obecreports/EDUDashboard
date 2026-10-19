@@ -20,3 +20,16 @@ export function schoolCoverImage(
 export function schoolStorageObjectPath(schoolId: string | number): string {
   return `schools/${schoolId}/cover.jpg`;
 }
+
+/** Stable Storage object key for director photo uploads */
+export function directorStorageObjectPath(directorId: string): string {
+  return `directors/${directorId}/photo.jpg`;
+}
+
+/** Resolve director picture URL (no default asset — UI may hide when empty). */
+export function directorPictureUrl(
+  director: { picture_url?: string | null } | null | undefined
+): string | null {
+  const url = director?.picture_url?.trim();
+  return url || null;
+}

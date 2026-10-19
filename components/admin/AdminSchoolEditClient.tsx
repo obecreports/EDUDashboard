@@ -16,6 +16,9 @@ type AreaOption = { id: string; name: string };
 export type AdminSchoolEditInitial = {
   school_id: string;
   school_name: string;
+  director_id: string | null;
+  director_label: string;
+  /** Kept for form save sync / legacy */
   director_name: string;
   phone_number: string;
   moo: string;
@@ -44,7 +47,6 @@ export function AdminSchoolEditClient({
   const [err, setErr] = useState<string | null>(null);
 
   const [schoolName, setSchoolName] = useState(initial.school_name);
-  const [director, setDirector] = useState(initial.director_name);
   const [phone, setPhone] = useState(initial.phone_number);
   const [moo, setMoo] = useState(initial.moo);
   const [village, setVillage] = useState(initial.village_name);
@@ -94,7 +96,8 @@ export function AdminSchoolEditClient({
       const fd = new FormData();
       fd.set('school_id', initial.school_id);
       fd.set('school_name', schoolName);
-      fd.set('director_name', director);
+      // Director assigned via /admin/directors — keep denormalized name on save
+      fd.set('director_name', initial.director_name);
       fd.set('phone_number', phone);
       fd.set('moo', moo);
       fd.set('village_name', village);
@@ -236,14 +239,23 @@ export function AdminSchoolEditClient({
           />
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="grid gap-1 text-sm font-semibold">
+          <div className="grid gap-1 text-sm font-semibold">
             ผู้อำนวยการ
-            <input
-              className="form-input"
-              value={director}
-              onChange={(e) => setDirector(e.target.value)}
-            />
-          </label>
+            <div className="form-input flex flex-wrap items-center justify-between gap-2 bg-slate-50">
+              <span>
+                {initial.director_id ? initial.director_label : 'TBA'}
+              </span>
+              <Link
+                href={`/admin/directors/assign?school=${encodeURIComponent(initial.school_id)}`}
+                className="text-tm-blue underline text-xs font-semibold"
+              >
+                ย้าย / มอบหมาย
+              </Link>
+            </div>
+            <p className="text-xs text-slate-500 m-0 font-normal">
+              จัดการผู้อำนวยการที่หน้ามอบหมาย (ไม่แก้ชื่อตรงนี้)
+            </p>
+          </div>
           <label className="grid gap-1 text-sm font-semibold">
             เบอร์โทรศัพท์
             <input

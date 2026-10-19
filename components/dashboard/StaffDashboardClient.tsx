@@ -40,7 +40,7 @@ import {
   type ActivitySchool,
 } from '@/components/dashboard/SuperOverseerActivityPanel';
 import { SuperOverseerComparePanel } from '@/components/dashboard/SuperOverseerComparePanel';
-import type { CompareScoresByYear } from '@/lib/supabase/schools';
+import type { CompareScoresByYear } from '@/lib/types';
 import type { ReportActivityLink } from '@/lib/activity/complete';
 import {
   DEV_STATUS,

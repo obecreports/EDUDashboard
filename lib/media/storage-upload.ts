@@ -66,6 +66,26 @@ export async function uploadSchoolCover(
   return { ok: true, url: `${res.url}${res.url.includes('?') ? '&' : '?'}${bust}` };
 }
 
+/** Director photo — same bucket as covers, sibling folder `directors/{id}/`. */
+export async function uploadDirectorPhoto(
+  directorId: string,
+  file: File
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const id = directorId.trim();
+  if (!id) return { ok: false, error: 'ไม่พบรหัสผู้อำนวยการ' };
+  const path = `directors/${id}/photo.jpg`;
+  const res = await uploadCompressed(BUCKET_SCHOOL_COVERS, path, file, COVER_COMPRESS);
+  if (!res.ok) return res;
+  try {
+    const thumb = await compressImageFile(file, REPORT_THUMB_COMPRESS);
+    await uploadBlob(BUCKET_SCHOOL_COVERS, `directors/${id}/photo.thumb.jpg`, thumb);
+  } catch {
+    /* full photo alone is enough */
+  }
+  const bust = `v=${Date.now()}`;
+  return { ok: true, url: `${res.url}${res.url.includes('?') ? '&' : '?'}${bust}` };
+}
+
 /**
  * Upload report photo as full + thumb pair.
  * DB stores the full URL; UI derives `*.thumb.jpg` for list egress savings.

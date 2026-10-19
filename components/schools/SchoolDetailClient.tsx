@@ -33,11 +33,13 @@ import {
   Star,
   TriangleAlert,
   UserCheck,
+  UserRound,
   Users,
   X,
 } from 'lucide-react';
 import type { SchoolFull, ThreePillarScores } from '@/lib/types';
-import { schoolCoverImage } from '@/lib/schools/images';
+import { DIRECTOR_TBA_LABEL, directorDisplayLabel } from '@/lib/types';
+import { directorPictureUrl, schoolCoverImage } from '@/lib/schools/images';
 import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
 import type {
   SchoolAchievements,
@@ -363,6 +365,7 @@ export function SchoolDetailClient({
     .join(' ');
 
   const areaName = school.area_name || school.Gov_Domain?.area_name || '';
+  const directorPhoto = directorPictureUrl(school.director);
 
   const groups = useMemo(() => {
     const kinder = [
@@ -815,10 +818,32 @@ export function SchoolDetailClient({
               </div>
             </div>
             <div className="school-profile-badge">
-              <UserCheck size={18} />
+              <span className="school-profile-badge__avatar" aria-hidden>
+                {directorPhoto ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={directorPhoto}
+                    alt=""
+                    className="school-profile-badge__avatar-img"
+                  />
+                ) : (
+                  <UserRound size={18} className="school-profile-badge__avatar-icon" />
+                )}
+              </span>
               <div>
                 <em>ผู้อำนวยการโรงเรียน</em>
-                <strong>{school.director_name || '—'}</strong>
+                {school.director_id ? (
+                  <strong>
+                    <Link
+                      href={`/schools/${school.school_id}/director`}
+                      className="hover:underline text-inherit"
+                    >
+                      {directorDisplayLabel(school)}
+                    </Link>
+                  </strong>
+                ) : (
+                  <strong>{directorDisplayLabel(school) || DIRECTOR_TBA_LABEL}</strong>
+                )}
               </div>
             </div>
             <div className="school-profile-badge">

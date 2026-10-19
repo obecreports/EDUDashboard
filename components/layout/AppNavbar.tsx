@@ -59,6 +59,7 @@ const ICONS: Record<string, LucideIcon> = {
   '/admin/domain': Network,
   '/admin/org-map': Network,
   '/admin/schools': School,
+  '/admin/directors': UserRound,
   '/admin/tickets': ClipboardPen,
   '/admin/settings': Settings,
 };
@@ -96,8 +97,12 @@ const MANAGE_SCHEDULE_SECTION = 'นัดหมายโรงเรียน';
 const ADMIN_MAIN_BEFORE = ['/schools'] as const;
 const ADMIN_MAIN_AFTER = ['/admin/settings'] as const;
 
-/** จัดการข้อมูล — school detail edit + tickets */
-const MANAGE_DATA_HREFS = ['/admin/schools', '/admin/tickets'] as const;
+/** จัดการข้อมูล — school / director edit + tickets */
+const MANAGE_DATA_HREFS = [
+  '/admin/schools',
+  '/admin/directors',
+  '/admin/tickets',
+] as const;
 
 /** จัดการผู้ใช้งาน — assign domain + manage accounts */
 const MANAGE_USERS_HREFS = ['/admin/domain', '/admin/accounts'] as const;

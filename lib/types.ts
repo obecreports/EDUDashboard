@@ -29,6 +29,48 @@ export interface ThreePillarScores {
   overall: number;
 }
 
+/** Dashboard compare chart row (client-safe) */
+export type SchoolCompareYearScores = {
+  three: ThreePillarScores;
+  sms: PillarScores;
+  overall: number;
+};
+
+/** @deprecated use SchoolCompareYearScores */
+export type SchoolComparePrevScores = SchoolCompareYearScores;
+
+/** Year → school_id → scores */
+export type CompareScoresByYear = Record<
+  string,
+  Record<string, SchoolCompareYearScores>
+>;
+
+/** School director (ผู้อำนวยการ) master row */
+export type DirectorGender = 'male' | 'female' | 'other';
+
+export interface SchoolDirector {
+  director_id: string;
+  name_prefix?: string | null;
+  full_name: string;
+  position_name?: string | null;
+  gender?: DirectorGender | null;
+  picture_url?: string | null;
+}
+
+/** Shown when School_Basic.director_id is null */
+export const DIRECTOR_TBA_LABEL = 'TBA';
+
+/** Assignment history row (safe for client imports — no server deps) */
+export type DirectorHistoryEntry = {
+  id: string;
+  director_id: string;
+  school_id: number;
+  school_name: string;
+  started_at: string;
+  ended_at: string | null;
+  active: boolean;
+};
+
 export interface SchoolFull {
   school_id: string | number;
   school_name_th: string;
@@ -46,6 +88,11 @@ export interface SchoolFull {
   area_special?: string | null;
   latitude?: number | string;
   longitude?: number | string;
+  /** Active director FK; null/undefined = TBA */
+  director_id?: string | null;
+  /** Joined director profile when director_id is set */
+  director?: SchoolDirector | null;
+  /** Denormalized / legacy text name */
   director_name?: string;
   scores?: Record<string, number | string>;
   pillarScores?: PillarScores;
@@ -260,6 +307,23 @@ export function formatDisplayName(
   return `${prefix} ${name}`;
 }
 
+/** Director label for UI; TBA when no linked director and no legacy name. */
+export function directorDisplayLabel(
+  school: Pick<SchoolFull, 'director_id' | 'director' | 'director_name'> | null | undefined
+): string {
+  if (!school) return DIRECTOR_TBA_LABEL;
+  if (school.director) {
+    const labeled = formatDisplayName(
+      school.director.name_prefix,
+      school.director.full_name
+    );
+    if (labeled) return labeled;
+  }
+  const legacy = (school.director_name ?? '').trim();
+  if (legacy) return legacy;
+  return DIRECTOR_TBA_LABEL;
+}
+
 /** Prefer prefix for overseer-like roles; otherwise full name. */
 export function formatPersonLabel(
   role: string | null | undefined,
@@ -297,6 +361,7 @@ export const NAV_CATALOG: NavItem[] = [
   { href: '/admin/domain', label: 'มอบหมายพื้นที่จัดการ', roles: ADMIN_ROLES },
   { href: '/admin/org-map', label: 'แผนผังสายบังคับบัญชา', roles: ADMIN_ROLES },
   { href: '/admin/schools', label: 'แก้ไขข้อมูลโรงเรียน', roles: ADMIN_ROLES },
+  { href: '/admin/directors', label: 'แก้ไขข้อมูลผู้อำนวยการ', roles: ADMIN_ROLES },
   { href: '/admin/tickets', label: 'จัดการคำขอ', roles: ADMIN_ROLES },
   { href: '/admin/settings', label: 'ตั้งค่าระบบ', roles: ['super_admin'] },
 ];

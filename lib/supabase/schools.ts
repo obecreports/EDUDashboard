@@ -1,6 +1,18 @@
 import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
-import type { SchoolFull, PillarScores, ThreePillarScores } from '@/lib/types';
+import type {
+  SchoolFull,
+  PillarScores,
+  ThreePillarScores,
+  SchoolCompareYearScores,
+  CompareScoresByYear,
+} from '@/lib/types';
+
+export type {
+  SchoolCompareYearScores,
+  SchoolComparePrevScores,
+  CompareScoresByYear,
+} from '@/lib/types';
 import { createAnonClient } from '@/lib/supabase/anon';
 import {
   EMPTY_THREE_PILLAR,
@@ -16,6 +28,8 @@ import {
   SCORE_YEAR_CURRENT,
   SCORE_YEAR_PREVIOUS,
 } from '@/lib/scores/years';
+import { fetchDirectorsByIds } from '@/lib/supabase/directors';
+import type { SchoolDirector } from '@/lib/types';
 
 /**
  * Map DB rows using the legacy schema (select '*') — do not hardcode
@@ -48,12 +62,18 @@ function toSchoolFull(
         pillarScores.infrastructure) /
       5;
 
-  const director =
+  const legacyDirector =
     basic.director_name ||
     people.director_name ||
     people.teacher_director_name ||
     people.director ||
     '';
+  const directorId =
+    basic.director_id != null && String(basic.director_id).trim()
+      ? String(basic.director_id)
+      : null;
+  const joinedDirector =
+    (raw.director as SchoolDirector | null | undefined) ?? null;
 
   return {
     school_id: basic.school_id,
@@ -72,7 +92,12 @@ function toSchoolFull(
     area_special: basic.area_special ?? null,
     latitude: basic.lat ?? basic.latitude ?? null,
     longitude: basic.long ?? basic.lng ?? basic.longitude ?? null,
-    director_name: typeof director === 'string' ? director : String(director || ''),
+    director_id: directorId,
+    director: joinedDirector,
+    director_name:
+      typeof legacyDirector === 'string'
+        ? legacyDirector
+        : String(legacyDirector || ''),
     coverImageUrl:
       (typeof basic.cover_image_url === 'string' && basic.cover_image_url.trim()) ||
       (typeof basic.coverImageUrl === 'string' && basic.coverImageUrl.trim()) ||
@@ -202,12 +227,21 @@ async function loadAllSchools(): Promise<SchoolFull[]> {
     }
   });
 
+  const directorIds = basics
+    .map((b) => (b.director_id != null ? String(b.director_id) : ''))
+    .filter(Boolean);
+  const directorMap = await fetchDirectorsByIds(directorIds).catch(
+    () => new Map<string, SchoolDirector>()
+  );
+
   return basics.map((basic) => {
     const id = String(basic.school_id);
     const pillarRow = pillarMap.get(id) as SchoolPillarScoreRow | undefined;
+    const did = basic.director_id != null ? String(basic.director_id) : '';
     const full = toSchoolFull(
       {
         ...basic,
+        director: did ? directorMap.get(did) ?? null : null,
         School_Score: scoreMap.get(id) ?? {},
         School_People: peopleMap.get(id) ?? {},
         Gov_Domain: basic.area_id != null ? govMap.get(String(basic.area_id)) ?? {} : {},
@@ -251,9 +285,18 @@ async function loadSchoolById(schoolId: string): Promise<SchoolFull | null> {
   const scoreRow = pickScoreRowForYear(scoreRows, SCORE_YEAR_CURRENT) ?? {};
   const scorePrevRow = pickScoreRowExactYear(scoreRows, SCORE_YEAR_PREVIOUS);
 
+  const did =
+    basicRes.data.director_id != null
+      ? String(basicRes.data.director_id)
+      : '';
+  const directorMap = did
+    ? await fetchDirectorsByIds([did]).catch(() => new Map<string, SchoolDirector>())
+    : new Map<string, SchoolDirector>();
+
   const full = toSchoolFull(
     {
       ...basicRes.data,
+      director: did ? directorMap.get(did) ?? null : null,
       School_Score: scoreRow,
       School_People: peopleRes.data ?? {},
       Gov_Domain: gov ?? {},
@@ -272,7 +315,7 @@ const SCHOOLS_REVALIDATE = 120;
 
 /** Deduped per-request + ISR cache across navigations */
 export const fetchSchools = cache(async (): Promise<SchoolFull[]> => {
-  return unstable_cache(loadAllSchools, ['schools-legacy-star-v6-year', SCORE_YEAR_CURRENT], {
+  return unstable_cache(loadAllSchools, ['schools-legacy-star-v7-directors', SCORE_YEAR_CURRENT], {
     revalidate: SCHOOLS_REVALIDATE,
     tags: ['schools', 'school-pillars'],
   })();
@@ -291,18 +334,6 @@ export const fetchSchoolById = cache(async (schoolId: string | number): Promise<
 });
 
 export const fetchGovDomains = cache(async () => loadGovDomainsRaw());
-
-export type SchoolCompareYearScores = {
-  three: ThreePillarScores;
-  sms: PillarScores;
-  overall: number;
-};
-
-/** @deprecated use SchoolCompareYearScores */
-export type SchoolComparePrevScores = SchoolCompareYearScores;
-
-/** Year → school_id → scores (exact year rows only; no fallback). */
-export type CompareScoresByYear = Record<string, Record<string, SchoolCompareYearScores>>;
 
 /** CE year + Buddhist Era string variants for DB filters. */
 function yearFilterValues(ce: string): string[] {

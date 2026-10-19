@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { getSessionProfile } from '@/lib/auth/session';
 import { isAdminRole } from '@/lib/auth/scope';
-import { normalizeRole } from '@/lib/types';
+import { directorDisplayLabel, normalizeRole } from '@/lib/types';
 import { fetchGovDomains, fetchSchoolById } from '@/lib/supabase/schools';
 import { fetchSchoolSwot } from '@/lib/supabase/school-swot';
 import { PageSkeleton } from '@/components/ui/PageSkeleton';
@@ -42,6 +42,8 @@ async function Body({ id }: { id: string }) {
         initial={{
           school_id: String(school.school_id),
           school_name: school.school_name_th || '',
+          director_id: school.director_id ?? null,
+          director_label: directorDisplayLabel(school),
           director_name: school.director_name || '',
           phone_number: school.phone || '',
           moo: school.moo != null ? String(school.moo) : '',
