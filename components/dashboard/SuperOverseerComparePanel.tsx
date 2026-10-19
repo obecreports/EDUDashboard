@@ -61,9 +61,12 @@ const SCHOOL_COLORS = [
   '#15803d',
   '#db2777',
   '#0369a1',
+  '#4d7c0f',
+  '#9f1239',
+  '#1d4ed8',
 ];
 
-const MAX_COMPARE_SCHOOLS = 10;
+const MAX_COMPARE_SCHOOLS = 15;
 
 function areaOf(s: SchoolFull) {
   return s.area_name || s.Gov_Domain?.area_name || s.district || 'ไม่ระบุเขต';
@@ -87,54 +90,74 @@ function emptySms(): PillarScores {
   };
 }
 
-function shortSchoolCode(index: number) {
-  return `รร.${index + 1}`;
+/** Truncate Thai school names for axis / in-chart labels. */
+function schoolAxisLabel(name: string, maxChars = 16) {
+  const t = (name || '').trim() || 'โรงเรียน';
+  if (t.length <= maxChars) return t;
+  return `${t.slice(0, Math.max(1, maxChars - 1))}…`;
 }
 
-function interactiveBarOptions(max?: number): ChartOptions<'bar'> {
+function interactiveBarOptions(
+  max?: number,
+  opts?: { showLegend?: boolean; rotateSchoolLabels?: boolean }
+): ChartOptions<'bar'> {
+  const showLegend = opts?.showLegend ?? true;
+  const rotateSchoolLabels = opts?.rotateSchoolLabels ?? false;
   return {
     responsive: true,
     maintainAspectRatio: false,
+    layout: rotateSchoolLabels ? { padding: { bottom: 8 } } : undefined,
     plugins: {
-      legend: {
-        position: 'bottom',
-        labels: {
-          usePointStyle: true,
-          pointStyle: 'rectRounded',
-          boxWidth: 12,
-          boxHeight: 12,
-          padding: 12,
-          font: { size: 11, weight: 700 },
-          generateLabels(chart) {
-            const datasets = chart.data.datasets;
-            return datasets.map((ds, i) => {
-              const meta = chart.getDatasetMeta(i);
-              const short =
-                (ds as { shortLabel?: string }).shortLabel ||
-                String(ds.label ?? `ชุด ${i + 1}`);
-              return {
-                text: short,
-                fillStyle: String(ds.backgroundColor ?? '#94a3b8'),
-                strokeStyle: String(ds.borderColor ?? ds.backgroundColor ?? '#94a3b8'),
-                lineWidth: 0,
-                hidden: meta.hidden === true,
-                datasetIndex: i,
-                fontColor: '#334155',
-              };
-            });
-          },
-        },
-        onClick(_e, legendItem, legend) {
-          const index = legendItem.datasetIndex;
-          if (index == null) return;
-          const chart = legend.chart;
-          const visible = chart.isDatasetVisible(index);
-          chart.setDatasetVisibility(index, !visible);
-          chart.update();
-        },
-      },
+      legend: showLegend
+        ? {
+            position: 'bottom',
+            labels: {
+              usePointStyle: true,
+              pointStyle: 'rectRounded',
+              boxWidth: 12,
+              boxHeight: 12,
+              padding: 12,
+              font: { size: 10, weight: 700 },
+              generateLabels(chart) {
+                const datasets = chart.data.datasets;
+                return datasets.map((ds, i) => {
+                  const meta = chart.getDatasetMeta(i);
+                  const short =
+                    (ds as { shortLabel?: string }).shortLabel ||
+                    String(ds.label ?? `ชุด ${i + 1}`);
+                  return {
+                    text: short,
+                    fillStyle: String(ds.backgroundColor ?? '#94a3b8'),
+                    strokeStyle: String(
+                      ds.borderColor ?? ds.backgroundColor ?? '#94a3b8'
+                    ),
+                    lineWidth: 0,
+                    hidden: meta.hidden === true,
+                    datasetIndex: i,
+                    fontColor: '#334155',
+                  };
+                });
+              },
+            },
+            onClick(_e, legendItem, legend) {
+              const index = legendItem.datasetIndex;
+              if (index == null) return;
+              const chart = legend.chart;
+              const visible = chart.isDatasetVisible(index);
+              chart.setDatasetVisibility(index, !visible);
+              chart.update();
+            },
+          }
+        : { display: false },
       tooltip: {
         callbacks: {
+          title(items) {
+            const idx = items[0]?.dataIndex;
+            const labels = items[0]?.chart.data.labels;
+            if (idx == null || !labels) return '';
+            const raw = labels[idx];
+            return typeof raw === 'string' ? raw : String(raw ?? '');
+          },
           label(ctx) {
             const full =
               (ctx.dataset as { fullLabel?: string }).fullLabel ||
@@ -149,9 +172,10 @@ function interactiveBarOptions(max?: number): ChartOptions<'bar'> {
     scales: {
       x: {
         ticks: {
-          maxRotation: 0,
-          autoSkip: true,
-          font: { size: 11, weight: 600 },
+          maxRotation: rotateSchoolLabels ? 55 : 0,
+          minRotation: rotateSchoolLabels ? 35 : 0,
+          autoSkip: !rotateSchoolLabels,
+          font: { size: rotateSchoolLabels ? 9 : 11, weight: 600 },
         },
       },
       y: {
@@ -252,7 +276,7 @@ export function SuperOverseerComparePanel({
       .slice(0, MAX_COMPARE_SCHOOLS)
       .map((s, i) => ({
         school: s,
-        code: shortSchoolCode(i),
+        axisLabel: schoolAxisLabel(s.school_name_th, 14),
         color: SCHOOL_COLORS[i % SCHOOL_COLORS.length]!,
       }));
   }, [filtered, selectedPlaces]);
@@ -261,7 +285,7 @@ export function SuperOverseerComparePanel({
   const angleKeysActive = ANGLE_KEYS.filter((k) => selectedAngles.has(k));
 
   const studentChart = useMemo(() => {
-    const labels = compareSchools.map((c) => c.code);
+    const labels = compareSchools.map((c) => c.axisLabel);
     return {
       labels,
       datasets: [
@@ -278,7 +302,7 @@ export function SuperOverseerComparePanel({
   }, [compareSchools]);
 
   const staffChart = useMemo(() => {
-    const labels = compareSchools.map((c) => c.code);
+    const labels = compareSchools.map((c) => c.axisLabel);
     return {
       labels,
       datasets: [
@@ -294,7 +318,7 @@ export function SuperOverseerComparePanel({
     };
   }, [compareSchools]);
 
-  /** X = pillars; series = each school × selected year (color by school, year in short label). */
+  /** X = pillars; series = each school × selected year (school name on series). */
   const pillarChart = useMemo(() => {
     const labels = pillarKeysActive.map((k) => PILLAR_SHORT[k]);
     const datasets = compareSchools.flatMap((c) =>
@@ -302,9 +326,10 @@ export function SuperOverseerComparePanel({
         const row = scoresByYear[ce]?.[String(c.school.school_id)];
         const three = row?.three ?? emptyThree();
         const yearLabel = scoreYearToBeLabel(ce);
+        const name = schoolAxisLabel(c.school.school_name_th, 12);
         return {
-          label: `${c.code} · ${yearLabel}`,
-          shortLabel: `${c.code}·${yearLabel}`,
+          label: `${name} · ${yearLabel}`,
+          shortLabel: `${name}·${yearLabel}`,
           fullLabel: `${c.school.school_name_th} · ปี ${yearLabel}`,
           data: pillarKeysActive.map((k) => three[k] ?? 0),
           backgroundColor: yi === 0 ? c.color : `${c.color}99`,
@@ -317,7 +342,7 @@ export function SuperOverseerComparePanel({
     return { labels, datasets };
   }, [compareSchools, activeYears, pillarKeysActive, scoresByYear]);
 
-  /** X = angles; series = each school × year. */
+  /** X = angles; series = each school × year (school name on series). */
   const angleChart = useMemo(() => {
     const labels = angleKeysActive.map(
       (k) => STRATEGY_LABELS.find((s) => s.key === k)?.short ?? k
@@ -327,9 +352,10 @@ export function SuperOverseerComparePanel({
         const row = scoresByYear[ce]?.[String(c.school.school_id)];
         const sms = row?.sms ?? emptySms();
         const yearLabel = scoreYearToBeLabel(ce);
+        const name = schoolAxisLabel(c.school.school_name_th, 12);
         return {
-          label: `${c.code} · ${yearLabel}`,
-          shortLabel: `${c.code}·${yearLabel}`,
+          label: `${name} · ${yearLabel}`,
+          shortLabel: `${name}·${yearLabel}`,
           fullLabel: `${c.school.school_name_th} · ปี ${yearLabel}`,
           data: angleKeysActive.map((k) => sms[k] ?? 0),
           backgroundColor: yi === 0 ? c.color : `${c.color}99`,
@@ -371,17 +397,10 @@ export function SuperOverseerComparePanel({
     });
   };
 
-  const schoolKeyList = (
-    <ul className="so-compare__legend-key" aria-label="รหัสโรงเรียนในกราฟ">
-      {compareSchools.map((c) => (
-        <li key={String(c.school.school_id)} title={c.school.school_name_th}>
-          <span className="so-compare__legend-swatch" style={{ background: c.color }} />
-          <span className="so-compare__legend-code">{c.code}</span>
-          <span className="so-compare__legend-name">{c.school.school_name_th}</span>
-        </li>
-      ))}
-    </ul>
-  );
+  const schoolAxisOpts = {
+    showLegend: false,
+    rotateSchoolLabels: true,
+  } as const;
 
   return (
     <section className="so-compare ed-card p-4 space-y-4">
@@ -464,35 +483,33 @@ export function SuperOverseerComparePanel({
         </div>
       </div>
 
-      {schoolKeyList}
-
       <div className="so-compare__charts">
         <div className="so-compare__chart-card">
           <h3 className="so-compare__chart-title">เปรียบเทียบจำนวนนักเรียน</h3>
           <p className="so-compare__chart-hint">
-            แยกตามโรงเรียน · คลิกสีในตำนานเพื่อแสดง/ซ่อน
+            สูงสุด {MAX_COMPARE_SCHOOLS} รร.
           </p>
-          <div className="so-compare__chart-body">
-            <Bar data={studentChart} options={interactiveBarOptions()} />
+          <div className="so-compare__chart-body so-compare__chart-body--tall">
+            <Bar data={studentChart} options={interactiveBarOptions(undefined, schoolAxisOpts)} />
           </div>
         </div>
 
         <div className="so-compare__chart-card">
           <h3 className="so-compare__chart-title">เปรียบเทียบจำนวนบุคลากร (ครู)</h3>
           <p className="so-compare__chart-hint">
-            แยกตามโรงเรียน · คลิกสีในตำนานเพื่อแสดง/ซ่อน
+            สูงสุด {MAX_COMPARE_SCHOOLS} รร.
           </p>
-          <div className="so-compare__chart-body">
-            <Bar data={staffChart} options={interactiveBarOptions()} />
+          <div className="so-compare__chart-body so-compare__chart-body--tall">
+            <Bar data={staffChart} options={interactiveBarOptions(undefined, schoolAxisOpts)} />
           </div>
         </div>
 
         <div className="so-compare__chart-card so-compare__chart-card--pillars">
           <h3 className="so-compare__chart-title">เปรียบเทียบคะแนน 3 เสาหลัก</h3>
           <p className="so-compare__chart-hint">
-            แยกตามโรงเรียน × ปี · / 100 · คลิกสีในตำนานเพื่อแสดง/ซ่อน
+           
           </p>
-          <div className="so-compare__chart-body">
+          <div className="so-compare__chart-body so-compare__chart-body--tall">
             <Bar data={pillarChart} options={interactiveBarOptions(100)} />
           </div>
         </div>
@@ -500,9 +517,9 @@ export function SuperOverseerComparePanel({
         <div className="so-compare__chart-card so-compare__chart-card--sms">
           <h3 className="so-compare__chart-title">เปรียบเทียบคะแนน SMS 5 ด้าน</h3>
           <p className="so-compare__chart-hint">
-            แยกตามโรงเรียน × ปี · / 5 · คลิกสีในตำนานเพื่อแสดง/ซ่อน
+          
           </p>
-          <div className="so-compare__chart-body">
+          <div className="so-compare__chart-body so-compare__chart-body--tall">
             <Bar data={angleChart} options={interactiveBarOptions(5)} />
           </div>
         </div>

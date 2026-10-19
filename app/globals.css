@@ -5083,6 +5083,9 @@ body.nav-drawer-open {
 .so-compare__chart-body {
   height: 320px;
 }
+.so-compare__chart-body--tall {
+  height: 380px;
+}
 .so-compare__legend-key {
   display: flex;
   flex-wrap: wrap;
