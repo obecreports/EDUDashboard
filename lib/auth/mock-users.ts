@@ -42,6 +42,9 @@ export interface MockUserSeed {
 /** Shared UAT / mock first-login password */
 export const MOCK_LOGIN_PASSWORD = 'login1234';
 
+/** Admin-only password (not shown on login tips) */
+export const ADMIN_LOGIN_PASSWORD = 'Admin123456';
+
 export const UAT_USER_IDS = {
   staff: 'a1111111-1111-4111-8111-111111111101',
   staff2: 'a1111111-1111-4111-8111-111111111102',
@@ -160,7 +163,7 @@ export const MOCK_USER_SEEDS: MockUserSeed[] = [
     assigned_provinces: [],
     assigned_districts: [],
     reports_to: null,
-    password: MOCK_LOGIN_PASSWORD,
+    password: ADMIN_LOGIN_PASSWORD,
     tempPassword: null,
     mustChangePassword: false,
   },
