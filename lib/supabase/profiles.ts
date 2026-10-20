@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import {
+  MOCK_LOGIN_PASSWORD,
   normalizeStoredUser,
   type StoredUserProfile,
 } from '@/lib/auth/mock-users';
@@ -138,7 +139,8 @@ export async function createUserInDb(input: {
   const full_name = input.full_name.trim();
   const position = input.position.trim();
   const role = normalizeRole(input.role);
-  const password = (input.password ?? 'login1234').trim() || 'login1234';
+  const password =
+    (input.password ?? MOCK_LOGIN_PASSWORD).trim() || MOCK_LOGIN_PASSWORD;
 
   if (!loginId) return { ok: false, error: 'กรุณาระบุรหัสผู้ใช้' };
   if (loginId.includes('@')) {

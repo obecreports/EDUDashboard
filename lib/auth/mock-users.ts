@@ -39,11 +39,11 @@ export interface MockUserSeed {
  * Stable UAT UUIDs — must match supabase/migrations/007_uat_seed_users.sql
  * (auth.users + user_profiles). Schedule / report FKs use these ids.
  */
-/** Shared UAT / mock first-login password */
-export const MOCK_LOGIN_PASSWORD = 'login1234';
+/** Shared UAT / mock / demo password (all accounts) */
+export const MOCK_LOGIN_PASSWORD = 'password12345';
 
-/** Admin-only password (not shown on login tips) */
-export const ADMIN_LOGIN_PASSWORD = 'Admin123456';
+/** Same as mock — admin uses the shared demo password */
+export const ADMIN_LOGIN_PASSWORD = MOCK_LOGIN_PASSWORD;
 
 export const UAT_USER_IDS = {
   staff: 'a1111111-1111-4111-8111-111111111101',

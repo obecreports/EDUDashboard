@@ -37,6 +37,7 @@ next-env.d.ts
 
 # Legacy Vite (archived during Next migration)
 _legacy_vite_src
+_legacy_docs
 src
 dist
 dist-ssr

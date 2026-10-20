@@ -175,8 +175,7 @@ export async function loginWithPassword(email: string, password: string): Promis
   );
   const creds = await readCredentials();
   const fromCookie = creds[user.id];
-  // Cookie overrides → mock seed → default UAT password for DB-only accounts
-  // (e.g. OS10T01–OS10T13 from migration 020 are in user_profiles but not MOCK_USER_SEEDS)
+  // Cookie overrides (profile change-password / OTP) → seed → shared demo password
   let resolvedPassword =
     fromCookie?.password !== undefined
       ? fromCookie.password
@@ -193,6 +192,9 @@ export async function loginWithPassword(email: string, password: string): Promis
   }
 
   const input = password.trim();
+  if (!input) {
+    return { ok: false, error: 'รหัสผ่านไม่ถูกต้อง' };
+  }
   const matchedPassword = resolvedPassword != null && resolvedPassword === input;
   const matchedTemp = resolvedTemp != null && resolvedTemp === input;
 
@@ -597,7 +599,7 @@ export async function registerUserCredentials(userId: string, tempPassword: stri
   await writeCredentials(creds);
 }
 
-/** First password for admin-created users (same UX as seed login1234). */
+/** First password for admin-created users (same UX as shared demo password). */
 export async function registerInitialPassword(userId: string, password: string) {
   const creds = await readCredentials();
   creds[userId] = {

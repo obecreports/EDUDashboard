@@ -6,7 +6,7 @@ import { ROLE_LABELS, normalizeRole } from '@/lib/types';
 /** Other demo accounts (OS10 chain shown separately below) */
 const TIP_ORDER = ['OS01', 'sirdawpong', 'sirthanu'];
 
-/** Sample Type 2 under OS10 (migration 020; password = MOCK_LOGIN_PASSWORD) */
+/** Sample Type 2 under OS10 (migration 020) */
 const OS10_TYPE2_SAMPLES = [
   { id: 'OS10T01', name: 'นางสาวสุนันทา แสงทอง' },
   { id: 'OS10T02', name: 'นางวรรณดี นาคสุขปาน' },
@@ -36,7 +36,7 @@ export default function LoginPage() {
     <div className="page-shell" style={{ maxWidth: 480 }}>
       <h1 className="section-heading">เข้าใช้งานระบบ</h1>
       <p className="text-slate-500 mt-[-0.5rem] mb-4">
-        ใช้รหัสผู้ใช้ด้านล่าง · รหัสผ่านเริ่มต้น {MOCK_LOGIN_PASSWORD}
+        ใช้รหัสผู้ใช้และรหัสผ่านด้านล่าง
       </p>
 
       <LoginFormClient />
@@ -75,7 +75,7 @@ export default function LoginPage() {
                 ))}
               </ul>
               <p className="font-sans text-slate-400 m-0 mt-1">
-                (มีถึง <code>OS10T15</code> · รหัสเดียวกัน)
+                (มีถึง <code>OS10T15</code> · รหัสผ่านเดียวกัน)
               </p>
             </li>
             <li className="pl-9 border-l-2 border-slate-200">
@@ -113,14 +113,11 @@ export default function LoginPage() {
             return (
               <li key={u.id} className="rounded-lg bg-slate-50 p-2 border border-slate-100">
                 <strong>{title}</strong> — <code>{u.email}</code>
-                <br />
-                รหัส: {u.password ?? MOCK_LOGIN_PASSWORD}
-                {u.tempPassword ? ` · OTP ชั่วคราว: ${u.tempPassword}` : ''}
               </li>
             );
           })}
           <li className="rounded-lg bg-slate-50 p-2 border border-slate-100 text-slate-500">
-            องคมนตรีทั้ง 14 คน: <code>OS01</code>–<code>OS14</code> · รหัสเดียวกัน
+            องคมนตรีทั้ง 14 คน: <code>OS01</code>–<code>OS14</code> · รหัสผ่านเดียวกัน
           </li>
         </ul>
         <p className="text-xs text-slate-400 mt-3 mb-0">

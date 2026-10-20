@@ -58,6 +58,17 @@ Middleware still protects `/staff/*`, `/overseer/*`, `/admin/*`, `/manage-school
 | `/admin/settings` | Site settings + accounts |
 | `/manage-schools` | Zone / school scope |
 
+## Legacy archive (Vite → Next)
+
+The live app is **this Next.js tree** (`app/`, `components/`, `lib/`). Old Vite leftovers are kept off the main path and ignored by git:
+
+| Path | What it was |
+|------|-------------|
+| `_legacy_vite_src/` | Former Vite `src/` (if still on disk) |
+| `_legacy_docs/` | Former static/`docs` Vite build (SPA shell + hashed assets) |
+
+Do **not** serve `_legacy_docs` as GitHub Pages or as the product UI — use `npm run dev` / Vercel instead. Safe to delete those folders locally once you no longer need a reference.
+
 ## Fresh GitHub repository (no old Vite / branch mess)
 
 Run these from the project root after reviewing `.gitignore` (secrets stay out).
@@ -71,13 +82,13 @@ rm -rf .git
 git init
 git branch -M main
 
-# 3) Stage Next.js project (env files are ignored)
+# 3) Stage Next.js project (env files + legacy archives are ignored)
 git add .
-git status   # confirm .env.local is NOT listed
+git status   # confirm .env.local, _legacy_docs, _legacy_vite_src are NOT listed
 
 # 4) First commit
 git commit -m "$(cat <<'EOF'
-Initial commit: ConED Next.js 14 App Router with Supabase and MapLibre.
+Initial commit: ConED Next.js App Router with Supabase and MapLibre.
 
 EOF
 )"
