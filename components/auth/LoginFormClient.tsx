@@ -39,7 +39,7 @@ export function LoginFormClient() {
           required
           value={login}
           onChange={(e) => setLogin(e.target.value)}
-          placeholder="OS10 / OS10T01 / staff03"
+          placeholder=""
           autoComplete="username"
           autoCapitalize="off"
           spellCheck={false}
