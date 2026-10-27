@@ -14,7 +14,7 @@ import {
   writeHeroSettings,
 } from '@/lib/auth/user-store';
 import type { UserRole } from '@/lib/types';
-import { normalizeRole } from '@/lib/types';
+import { ROLE_LABELS, normalizeRole } from '@/lib/types';
 import { isAdminRole } from '@/lib/auth/scope';
 import {
   adminAssignGeo,
@@ -173,7 +173,12 @@ export async function createAccountAction(formData: FormData) {
 
   const full_name = String(formData.get('full_name') || '');
   const position = String(formData.get('position') || '');
-  const role = normalizeRole(String(formData.get('role') || 'staff')) as UserRole;
+  const name_prefix = String(formData.get('name_prefix') || '').trim() || null;
+  // Legacy form value overseer:type2 → volunteer
+  const roleRaw = String(formData.get('role') || 'staff').trim();
+  const role = normalizeRole(
+    roleRaw === 'overseer:type2' ? 'volunteer' : roleRaw
+  ) as UserRole;
   const email = String(formData.get('email') || '') || undefined;
 
   if (
@@ -183,7 +188,13 @@ export async function createAccountAction(formData: FormData) {
     return { ok: false as const, error: 'Admin ไม่สามารถสร้างบัญชี Admin / Super Admin ได้' };
   }
 
-  const created = await createMockUser({ full_name, position, role, email });
+  const created = await createMockUser({
+    full_name,
+    position: role === 'volunteer' ? ROLE_LABELS.volunteer : position,
+    role,
+    email,
+    name_prefix,
+  });
   if (!created.ok) return created;
 
   await registerInitialPassword(created.user.id, created.tempPassword);
@@ -302,6 +313,12 @@ export async function assignGeoAction(formData: FormData) {
     staffAreaProvinces = [...new Set([...fromSchools, ...fromGov])];
   }
 
+  const fieldRoleRaw = String(formData.get('fieldRole') || '').trim();
+  const fieldRole =
+    fieldRoleRaw === 'overseer' || fieldRoleRaw === 'volunteer'
+      ? fieldRoleRaw
+      : undefined;
+  // Legacy Domain form still posts overseerTier
   const tierRaw = String(formData.get('overseerTier') || '').trim();
   const overseerTier =
     tierRaw === 'type1' || tierRaw === 'type2' ? tierRaw : undefined;
@@ -310,6 +327,7 @@ export async function assignGeoAction(formData: FormData) {
     provinces,
     districts,
     staffAreaProvinces,
+    fieldRole,
     overseerTier,
   });
   if (!result.ok) return { ok: false as const, error: result.error };

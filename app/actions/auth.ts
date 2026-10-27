@@ -24,7 +24,7 @@ import {
 export async function loginAction(
   _prev: { error?: string } | null,
   formData: FormData
-): Promise<{ error?: string } | null> {
+): Promise<{ error?: string; redirectTo?: string } | null> {
   const login = String(formData.get('login') || formData.get('email') || '');
   const password = String(formData.get('password') || '');
   const next = String(formData.get('next') || '').trim();
@@ -32,13 +32,15 @@ export async function loginAction(
   if (!result.ok) return { error: result.error };
 
   revalidatePath('/', 'layout');
+  // Return URL for client navigation — avoid redirect() which throws and can
+  // leave client submit state stuck when invoked via await from the form.
   if (result.mustChangePassword) {
-    redirect('/change-password');
+    return { redirectTo: '/change-password' };
   }
   if (next.startsWith('/') && !next.startsWith('//')) {
-    redirect(next);
+    return { redirectTo: next };
   }
-  redirect(result.redirectTo);
+  return { redirectTo: result.redirectTo };
 }
 
 export async function changePasswordAction(
@@ -62,10 +64,11 @@ export async function logoutAction() {
   try {
     await logoutSession();
   } catch {
-    // Still redirect home even if cookie purge fails mid-clear
+    // Cookie purge may fail mid-clear; client still hard-navigates away
   }
   revalidatePath('/', 'layout');
-  redirect('/');
+  // No redirect() — AppNavbar does a full document load to /login so home
+  // (about-page) HTML cannot soft-hydrate against the login route.
 }
 
 export async function updateAssignedZonesAction(_formData: FormData) {

@@ -147,9 +147,9 @@ export function HomeLanding({ denied }: { denied?: boolean }) {
             <Link href="/about" className="ed-btn ed-btn--primary">
               อ่านเกี่ยวกับโครงการ <ArrowRight size={18} />
             </Link>
-            <Link href="/login" className="ed-btn ed-btn--outline">
+            <a href="/login" className="ed-btn ed-btn--outline">
               เข้าสู่ระบบ
-            </Link>
+            </a>
           </div>
         </div>
       </section>

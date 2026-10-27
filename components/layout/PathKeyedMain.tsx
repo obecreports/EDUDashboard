@@ -1,16 +1,10 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
-
 /**
- * Remount page content on route change so SSR HTML from a prior route
- * (e.g. home about-page) cannot hydrate against a different page (login).
+ * Page content wrapper. Do not remount via pathname key — that races soft
+ * navigations and hydrates prior-route HTML (e.g. about-page) against login.
+ * Auth entry (/login) uses full document loads from the navbar instead.
  */
 export function PathKeyedMain({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname() || '/';
-  return (
-    <main className="ed-main" key={pathname}>
-      {children}
-    </main>
-  );
+  return <main className="ed-main">{children}</main>;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState } from 'react';
 import { loginAction } from '@/app/actions/auth';
 import { PasswordField } from '@/components/auth/PasswordField';
 
@@ -10,24 +10,40 @@ export function LoginFormClient() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [pending, start] = useTransition();
+  const [submitting, setSubmitting] = useState(false);
 
   return (
     <form
       className="panel-card space-y-4"
+      data-no-pending="1"
       onSubmit={(e) => {
         e.preventDefault();
+        if (submitting) return;
         setError(null);
         const fd = new FormData();
         fd.set('login', login.trim());
         fd.set('password', password);
-        start(async () => {
-          const res = await loginAction(null, fd);
-          if (res?.error) {
+        setSubmitting(true);
+        void (async () => {
+          try {
+            const res = await loginAction(null, fd);
+            if (res?.error) {
+              setPassword('');
+              setError(INVALID_LOGIN_MSG);
+              setSubmitting(false);
+              return;
+            }
+            if (res?.redirectTo) {
+              window.location.assign(res.redirectTo);
+              return;
+            }
+            setSubmitting(false);
+          } catch {
             setPassword('');
             setError(INVALID_LOGIN_MSG);
+            setSubmitting(false);
           }
-        });
+        })();
       }}
     >
       <label className="block text-sm">
@@ -58,8 +74,12 @@ export function LoginFormClient() {
           {error}
         </p>
       )}
-      <button type="submit" className="navbar__login w-full justify-center" disabled={pending}>
-        {pending ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบ'}
+      <button
+        type="submit"
+        className="navbar__login w-full justify-center"
+        disabled={submitting}
+      >
+        {submitting ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบ'}
       </button>
     </form>
   );

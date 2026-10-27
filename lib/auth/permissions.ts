@@ -6,6 +6,7 @@ import {
   normalizeRole,
 } from '@/lib/types';
 import type { StoredUserProfile } from '@/lib/auth/mock-users';
+import { type2ViewProvinces } from '@/lib/auth/province-radar';
 
 /** Minimal user shape for geo scope (avoids circular import with scope.ts). */
 export type PermissionUser = Pick<
@@ -13,6 +14,11 @@ export type PermissionUser = Pick<
   'id' | 'role' | 'assigned_provinces' | 'assigned_districts' | 'reports_to'
 > & {
   overseer_tier?: OverseerTier | null;
+};
+
+export type ReadableScopeOpts = {
+  /** Type 2 multi-select of overlapping Type 1 ids (null = all overlapping). */
+  selectedType1Ids?: string[] | null;
 };
 
 export const ACTION_SCOPE_ERROR =
@@ -43,22 +49,19 @@ export function getActionableProvinces(
 
 /**
  * Provinces the user may view (dashboard / calendar / reports list).
- * Overseer Type 2 → parent Type 1 assigned_provinces when directory is provided.
+ * Volunteer (Type 2) → union of selected overlapping overseer provinces (not reports_to).
  */
 export function getReadableProvinces(
   user: PermissionUser | null | undefined,
-  directory: PermissionUser[] = []
+  directory: PermissionUser[] = [],
+  opts: ReadableScopeOpts = {}
 ): string[] {
   if (!user) return [];
   const role = normalizeRole(user.role);
   if (!isOverseerLike(role)) return [];
 
-  if (isOverseerType2(role, user.overseer_tier) && user.reports_to) {
-    const parent = directory.find((u) => u.id === user.reports_to);
-    if (parent && isOverseerLike(normalizeRole(parent.role))) {
-      const parentProvinces = uniqProvinces(parent.assigned_provinces);
-      if (parentProvinces.length) return parentProvinces;
-    }
+  if (isOverseerType2(role, user.overseer_tier)) {
+    return type2ViewProvinces(user, directory, opts.selectedType1Ids);
   }
 
   return getActionableProvinces(user);
@@ -77,11 +80,12 @@ function staffSchoolMatch(user: PermissionUser, school: SchoolFull): boolean {
   return Boolean(key) && assigned.includes(key!);
 }
 
-/** Read-only school visibility (Type 2 uses parent Type 1 provinces). */
+/** Read-only school visibility (Type 2 uses overlapping Type 1 view provinces). */
 export function isSchoolReadable(
   user: PermissionUser | null | undefined,
   school: SchoolFull,
-  directory: PermissionUser[] = []
+  directory: PermissionUser[] = [],
+  opts: ReadableScopeOpts = {}
 ): boolean {
   if (!user) return false;
   const role = normalizeRole(user.role);
@@ -90,7 +94,10 @@ export function isSchoolReadable(
 
   if (isOverseerLike(role)) {
     const province = school.province?.trim() ?? '';
-    return Boolean(province) && getReadableProvinces(user, directory).includes(province);
+    return (
+      Boolean(province) &&
+      getReadableProvinces(user, directory, opts).includes(province)
+    );
   }
 
   if (role === 'staff') return staffSchoolMatch(user, school);
@@ -119,11 +126,12 @@ export function isSchoolActionable(
 export function schoolsReadable(
   user: PermissionUser | null | undefined,
   schools: SchoolFull[],
-  directory: PermissionUser[] = []
+  directory: PermissionUser[] = [],
+  opts: ReadableScopeOpts = {}
 ): SchoolFull[] {
   if (!user) return [];
   if (normalizeRole(user.role) === 'super_overseer') return schools;
-  return schools.filter((s) => isSchoolReadable(user, s, directory));
+  return schools.filter((s) => isSchoolReadable(user, s, directory, opts));
 }
 
 export function schoolsActionable(
@@ -135,7 +143,7 @@ export function schoolsActionable(
   return schools.filter((s) => isSchoolActionable(user, s));
 }
 
-/** Map stored users → directory for parent province lookup. */
+/** Map stored users → directory for Type 2 view / geo nesting. */
 export function toScopeDirectory(
   users: Array<
     Pick<
@@ -146,7 +154,7 @@ export function toScopeDirectory(
       | 'assigned_districts'
       | 'reports_to'
       | 'overseer_tier'
-    >
+    > & { disabled?: boolean | null; full_name?: string | null; name_prefix?: string | null }
   >
 ): PermissionUser[] {
   return users.map((u) => ({
@@ -185,4 +193,28 @@ export async function assertSchoolInActionScope(
     return { ok: false, error: ACTION_SCOPE_ERROR };
   }
   return { ok: true, school };
+}
+
+/** Gate every school id (multi-school payloads must all be actionable). */
+export async function assertSchoolsInActionScope(
+  user: PermissionUser,
+  schoolIds: Array<string | number | null | undefined>
+): Promise<{ ok: true; schools: SchoolFull[] } | { ok: false; error: string }> {
+  const ids = [
+    ...new Set(
+      schoolIds
+        .map((x) => (x != null ? String(x).trim() : ''))
+        .filter(Boolean)
+    ),
+  ];
+  if (!ids.length) {
+    return { ok: false, error: 'กรุณาเลือกโรงเรียน' };
+  }
+  const schools: SchoolFull[] = [];
+  for (const id of ids) {
+    const gate = await assertSchoolInActionScope(user, id);
+    if (!gate.ok) return gate;
+    schools.push(gate.school);
+  }
+  return { ok: true, schools };
 }

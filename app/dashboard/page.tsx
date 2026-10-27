@@ -1,19 +1,29 @@
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { getSessionProfile } from '@/lib/auth/session';
 import { fetchCompareScoresByYear, fetchSchools } from '@/lib/supabase/schools';
 import {
-  addSubordinatesOf,
   calendarPeers,
   isFieldRole,
   schoolsActionable,
   schoolsInScope,
   toScopeDirectory,
+  type1GeoTeamIds,
 } from '@/lib/auth/scope';
+import {
+  actionProvinces,
+  controlProvinces,
+  overlappingType1s,
+  parseT2ViewType1Cookie,
+  T2_VIEW_TYPE1S_COOKIE,
+} from '@/lib/auth/province-radar';
 import { SCORE_YEAR_CURRENT, SCORE_YEAR_PREVIOUS } from '@/lib/scores/years';
 import {
   effectiveOverseerTier,
+  formatPersonLabel,
   isOverseerType1,
+  isOverseerType2,
   normalizeRole,
   roleDisplayLabel,
 } from '@/lib/types';
@@ -45,9 +55,16 @@ async function DashboardBody() {
 
   const isSO = r === 'super_overseer';
   const isT1 = isOverseerType1(r, profile.overseer_tier);
+  const isT2 = isOverseerType2(r, profile.overseer_tier);
   /** Type 1 uses SO-style dashboard; Type 2 + staff keep staff dashboard */
   const useSoDashboard = isSO || isT1;
   const isStaff = r === 'staff';
+
+  const jar = await cookies();
+  const t2ViewSelectedIds = isT2
+    ? parseT2ViewType1Cookie(jar.get(T2_VIEW_TYPE1S_COOKIE)?.value)
+    : null;
+  const readableOpts = isT2 ? { selectedType1Ids: t2ViewSelectedIds } : {};
 
   const [
     all,
@@ -60,7 +77,9 @@ async function DashboardBody() {
   ] = await Promise.all([
     fetchSchools().catch(() => []),
     isStaff ? listMyCalendarEvents().catch(() => []) : Promise.resolve([]),
-    useSoDashboard ? fetchAllUserProfiles().catch(() => []) : Promise.resolve([]),
+    useSoDashboard || isT2
+      ? fetchAllUserProfiles().catch(() => [])
+      : Promise.resolve([]),
     useSoDashboard ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
     isStaff ? fetchAllSchoolComments().catch(() => []) : Promise.resolve([]),
     useSoDashboard
@@ -72,37 +91,20 @@ async function DashboardBody() {
           };
         })
       : Promise.resolve({}),
-    // Type 2 readable scope needs parent Type 1 provinces; SO/T1 peers need full directory
     readStoredUsers().catch(() => []),
   ]);
 
-  const directory = toScopeDirectory(
-    useSoDashboard && profiles.length ? profiles : directoryUsers
-  );
-  const scoped = schoolsInScope(profile, all, directory);
+  const directorySource =
+    (useSoDashboard || isT2) && profiles.length ? profiles : directoryUsers;
+  const directory = toScopeDirectory(directorySource);
+  const scoped = schoolsInScope(profile, all, directory, readableOpts);
   const scopedIdSet = new Set(scoped.map((s) => String(s.school_id)));
   const myProvinces = new Set(
     (profile.assigned_provinces ?? []).map((p) => p.trim()).filter(Boolean)
   );
 
-  /**
-   * Staff in Type 1 provinces by geo (Gov district / schools), even if reports_to
-   * is missing or points outside the org tree — school view already uses geo;
-   * person view must match.
-   */
-  const geoStaffInScope = (() => {
-    if (!isT1) return [] as string[];
-    const source = profiles.length ? profiles : directoryUsers;
-    return source
-      .filter((u) => normalizeRole(u.role) === 'staff' && !u.disabled)
-      .filter((u) =>
-        schoolsActionable(u, all).some((s) => scopedIdSet.has(String(s.school_id)))
-      )
-      .map((u) => u.id);
-  })();
-
   const peerIds = [
-    ...new Set([...calendarPeers(profile, directory), ...geoStaffInScope]),
+    ...new Set(calendarPeers(profile, directory, all)),
   ];
   const calendarEvents = useSoDashboard
     ? await listCalendarEventsForStaffIds(peerIds).catch(() => [])
@@ -138,29 +140,24 @@ async function DashboardBody() {
     (u) => isFieldRole(normalizeRole(u.role)) && !u.disabled
   );
 
-  /** Type 1: reports_to subtree + geo-overlapping staff (not self) */
+  /** Type 1: geo-overlap team (Type 2 + Staff), not reports_to */
   const type1TeamIds = (() => {
     if (!isT1) return null as Set<string> | null;
-    const ids = new Set<string>([profile.id]);
-    addSubordinatesOf(profile.id, directory, ids);
-    for (const id of geoStaffInScope) ids.add(id);
-    return ids;
+    return type1GeoTeamIds(profile, directory, all);
   })();
 
   const activityPeople = useSoDashboard
     ? fieldProfiles
         .filter((u) => {
           if (isSO) return true;
-          // Type 1: team only — hide self; panel shows 2 top groups (Type 2 + staff)
           if (u.id === profile.id) return false;
           return type1TeamIds?.has(u.id) ?? false;
         })
         .map((u) => {
-          // Person-tracking school counts = action scope (Type 2: own provinces only),
-          // not view scope (Type 2 can see parent Type 1 provinces).
           const personSchools = schoolsActionable(u, all)
             .map((s) => String(s.school_id))
             .filter((id) => (isSO ? true : scopedIdSet.has(id)));
+          const provinces = controlProvinces(u, all);
           return {
             id: u.id,
             full_name: u.full_name,
@@ -169,6 +166,7 @@ async function DashboardBody() {
             overseer_tier: u.overseer_tier ?? null,
             reports_to: u.reports_to,
             schoolIds: personSchools,
+            controlProvinces: provinces,
           };
         })
     : [];
@@ -189,7 +187,6 @@ async function DashboardBody() {
           if (isSO) return true;
           const sid = c.school_id ? String(c.school_id) : '';
           if (sid && scopedIdSet.has(sid)) return true;
-          // Fallback: author on Type 1 team when school_id is missing
           if (!sid && c.staff_id && type1TeamIds?.has(c.staff_id)) return true;
           return false;
         })
@@ -218,6 +215,19 @@ async function DashboardBody() {
         })
     : [];
 
+  const type2ViewOptions = isT2
+    ? overlappingType1s(profile, directorySource).map((u) => ({
+        id: u.id,
+        label:
+          formatPersonLabel(
+            normalizeRole(u.role),
+            u.name_prefix,
+            u.full_name
+          ) || u.id,
+        provinces: actionProvinces(u),
+      }))
+    : [];
+
   return (
     <StaffDashboardClient
       schools={scoped}
@@ -234,6 +244,9 @@ async function DashboardBody() {
       activityReports={activityReports}
       compareScoresByYear={useSoDashboard ? compareScoresByYear : undefined}
       pendingReportVisits={pendingReportVisits}
+      type2ViewOptions={type2ViewOptions}
+      type2ViewSelectedIds={t2ViewSelectedIds}
+      activityClipProvinces={isT1 ? actionProvinces(profile) : null}
     />
   );
 }

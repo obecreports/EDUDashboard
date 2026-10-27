@@ -10,7 +10,13 @@ import {
 } from '@/app/actions/visits';
 import { VISIT_ACTIVITIES } from '@/lib/visits/labels';
 import { ThaiDateField } from '@/components/ui/ThaiDateField';
-import { ROLE_LABELS, type UserRole } from '@/lib/types';
+import {
+  ROLE_LABELS,
+  isOverseerType1,
+  isOverseerType2,
+  type OverseerTier,
+  type UserRole,
+} from '@/lib/types';
 
 export type ScheduleInitialEvent = {
   id: string;
@@ -35,6 +41,7 @@ type TeamOpt = {
   id: string;
   full_name: string;
   role: UserRole;
+  overseer_tier?: OverseerTier | null;
 };
 
 function todayYmd() {
@@ -86,12 +93,17 @@ export function NewScheduleClient({
   const isEdit = mode === 'edit' && Boolean(initialEvent?.id);
   const schoolSeedId = initialEvent?.school_id || initialSchoolId;
   const seed = schools.find((s) => s.id === schoolSeedId);
+  // Deep-link school outside actionable domain → do not preselect
+  const outOfScopeSeed =
+    Boolean(schoolSeedId) && !seed && !isEdit
+      ? 'โรงเรียนที่เลือกอยู่นอกพื้นที่ที่คุณควบคุม — กรุณาเลือกโรงเรียนในเขตของคุณ'
+      : null;
   const isSo = currentUserRole === 'super_overseer';
   const seeded = seedReasonsFromEvent(initialEvent);
   const [q, setQ] = useState(seed?.name ?? '');
   const [province, setProvince] = useState(seed?.province ?? '');
   const [district, setDistrict] = useState(seed?.district ?? '');
-  const [schoolId, setSchoolId] = useState(schoolSeedId || '');
+  const [schoolId, setSchoolId] = useState(seed ? schoolSeedId || '' : '');
   const [date, setDate] = useState(() => {
     const d = initialEvent?.date || initialDate;
     return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : todayYmd();
@@ -103,7 +115,7 @@ export function NewScheduleClient({
     return new Set(ids);
   });
   const [notes, setNotes] = useState(initialEvent?.notes ?? '');
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(outOfScopeSeed);
   const [pending, start] = useTransition();
 
   const selected = schools.find((s) => s.id === schoolId);
@@ -144,6 +156,27 @@ export function NewScheduleClient({
       }),
     [teammates, currentUserId, isSo]
   );
+
+  const teammateGroups = useMemo(() => {
+    const overseers: TeamOpt[] = [];
+    const volunteers: TeamOpt[] = [];
+    const staffList: TeamOpt[] = [];
+    const other: TeamOpt[] = [];
+    for (const t of selectableTeammates) {
+      if (isOverseerType1(t.role, t.overseer_tier)) overseers.push(t);
+      else if (isOverseerType2(t.role, t.overseer_tier)) volunteers.push(t);
+      else if (t.role === 'staff') staffList.push(t);
+      else other.push(t);
+    }
+    return [
+      { key: 'overseer', title: ROLE_LABELS.overseer, people: overseers },
+      { key: 'volunteer', title: ROLE_LABELS.volunteer, people: volunteers },
+      { key: 'staff', title: ROLE_LABELS.staff, people: staffList },
+      ...(other.length
+        ? [{ key: 'other', title: 'อื่นๆ', people: other }]
+        : []),
+    ].filter((g) => g.people.length > 0);
+  }, [selectableTeammates]);
 
   const pickSchool = (id: string) => {
     if (!id) {
@@ -354,101 +387,112 @@ export function NewScheduleClient({
         )}
       </div>
 
-      <div className="ed-card p-5 space-y-4">
-        <div>
-          <h2 className="ed-section-title text-base m-0">2 · วันที่ เหตุผล และทีม</h2>
-          <p className="text-sm text-slate-600 m-0 mt-1">
-            เลือกเหตุผลการลงพื้นที่ได้หลายรายการ · เพิ่มสมาชิกทีมเพื่อซิงก์ปฏิทิน
-          </p>
-        </div>
-
-        <label className="grid gap-1 text-sm font-semibold">
-          วันที่ทำกิจกรรม
-          <ThaiDateField value={date} onChange={setDate} required />
-        </label>
-
-        <fieldset className="grid gap-2 m-0 p-0 border-0">
-          <legend className="text-sm font-semibold mb-1">เหตุผลการลงพื้นที่ (เลือกได้หลายข้อ)</legend>
-          <div className="managed-filters__chip-row">
-            {VISIT_ACTIVITIES.map((a) => (
-              <label key={a} className="ed-check ed-check--inline">
-                <input
-                  type="checkbox"
-                  checked={reasons.has(a)}
-                  onChange={() => toggleReason(a)}
-                />
-                {a}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        {reasons.has('อื่นๆ') && (
-          <label className="grid gap-1 text-sm font-semibold">
-            ระบุเหตุผลอื่นๆ
-            <input
-              className="form-input"
-              value={activityOther}
-              onChange={(e) => setActivityOther(e.target.value)}
-              placeholder="เช่น ประชุมผู้ปกครอง"
-            />
-          </label>
-        )}
-
-        {selectableTeammates.length > 0 && (
-          <fieldset className="grid gap-2 m-0 p-0 border-0">
-            <legend className="text-sm font-semibold mb-1">เลือกผู้เข้าร่วม</legend>
-            <p className="text-xs text-slate-500 m-0">
-              เลือกสมาชิกเพิ่มเพื่อให้เห็นนัดในปฏิทินของตน
-              {!isSo ? '' : ''}
+      {schoolId ? (
+        <div className="ed-card p-5 space-y-4">
+          <div>
+            <h2 className="ed-section-title text-base m-0">2 · วันที่ เหตุผล และทีม</h2>
+            <p className="text-sm text-slate-600 m-0 mt-1">
+              เลือกเหตุผลการลงพื้นที่ได้หลายรายการ · เพิ่มสมาชิกทีมเพื่อซิงก์ปฏิทิน
             </p>
+          </div>
+
+          <label className="grid gap-1 text-sm font-semibold">
+            วันที่ทำกิจกรรม
+            <ThaiDateField value={date} onChange={setDate} required />
+          </label>
+
+          <fieldset className="grid gap-2 m-0 p-0 border-0">
+            <legend className="text-sm font-semibold mb-1">
+              เหตุผลการลงพื้นที่ (เลือกได้หลายข้อ)
+            </legend>
             <div className="managed-filters__chip-row">
-              {selectableTeammates.map((t) => (
-                <label key={t.id} className="ed-check ed-check--inline">
+              {VISIT_ACTIVITIES.map((a) => (
+                <label key={a} className="ed-check ed-check--inline">
                   <input
                     type="checkbox"
-                    checked={participantIds.has(t.id)}
-                    onChange={() => toggleParticipant(t.id)}
+                    checked={reasons.has(a)}
+                    onChange={() => toggleReason(a)}
                   />
-                  {t.full_name}
-                  <span className="text-slate-400"> ({ROLE_LABELS[t.role]})</span>
+                  {a}
                 </label>
               ))}
             </div>
           </fieldset>
-        )}
 
-        <label className="grid gap-1 text-sm font-semibold">
-          หมายเหตุ
-          <textarea
-            className="form-input"
-            rows={3}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
-          />
-        </label>
+          {reasons.has('อื่นๆ') && (
+            <label className="grid gap-1 text-sm font-semibold">
+              ระบุเหตุผลอื่นๆ
+              <input
+                className="form-input"
+                value={activityOther}
+                onChange={(e) => setActivityOther(e.target.value)}
+                placeholder="เช่น ประชุมผู้ปกครอง"
+              />
+            </label>
+          )}
 
-        {msg && (
-          <p className="text-sm font-medium m-0" style={{ color: '#b91c1c' }}>
-            {msg}
-          </p>
-        )}
+          {teammateGroups.length > 0 && (
+            <fieldset className="grid gap-3 m-0 p-0 border-0">
+              <legend className="text-sm font-semibold mb-1">เลือกผู้เข้าร่วม</legend>
+              <p className="text-xs text-slate-500 m-0">
+                เลือกสมาชิกเพิ่มเพื่อให้เห็นนัดในปฏิทินของตน
+              </p>
+              {teammateGroups.map((g) => (
+                <div key={g.key} className="space-y-1.5">
+                  <div className="text-xs font-bold text-tm-blue">{g.title}</div>
+                  <div className="managed-filters__chip-row">
+                    {g.people.map((t) => (
+                      <label key={t.id} className="ed-check ed-check--chip">
+                        <input
+                          type="checkbox"
+                          checked={participantIds.has(t.id)}
+                          onChange={() => toggleParticipant(t.id)}
+                        />
+                        {t.full_name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </fieldset>
+          )}
 
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="ed-btn ed-btn--primary"
-            disabled={pending || !schoolId}
-            onClick={submit}
-          >
-            {pending ? 'กำลังบันทึก…' : isEdit ? 'บันทึกการแก้ไข' : 'บันทึกนัดหมาย'}
-          </button>
-          <Link href="/calendar" className="ed-btn ed-btn--outline">
-            ยกเลิก
-          </Link>
+          <label className="grid gap-1 text-sm font-semibold">
+            หมายเหตุ
+            <textarea
+              className="form-input"
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
+            />
+          </label>
+
+          {msg && (
+            <p className="text-sm font-medium m-0" style={{ color: '#b91c1c' }}>
+              {msg}
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="ed-btn ed-btn--primary"
+              disabled={pending || !schoolId}
+              onClick={submit}
+            >
+              {pending ? 'กำลังบันทึก…' : isEdit ? 'บันทึกการแก้ไข' : 'บันทึกนัดหมาย'}
+            </button>
+            <Link href="/calendar" className="ed-btn ed-btn--outline">
+              ยกเลิก
+            </Link>
+          </div>
         </div>
-      </div>
+      ) : msg ? (
+        <p className="text-sm font-medium m-0" style={{ color: '#b91c1c' }}>
+          {msg}
+        </p>
+      ) : null}
     </div>
   );
 }

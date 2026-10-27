@@ -7,12 +7,10 @@ import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
 import type { OverseerTier, UserRole } from '@/lib/types';
 import {
   ROLE_LABELS,
-  effectiveOverseerTier,
   formatPersonLabel,
   isOverseerType1,
   isOverseerType2,
   normalizeRole,
-  overseerTierLabel,
   roleDisplayLabel,
 } from '@/lib/types';
 import type { ReportActivityLink } from '@/lib/activity/complete';
@@ -28,8 +26,11 @@ export type ActivityPerson = {
   name_prefix?: string | null;
   role: UserRole;
   overseer_tier?: OverseerTier | null;
+  /** Kept for display/legacy; nesting uses controlProvinces. */
   reports_to: string | null;
   schoolIds: string[];
+  /** Action/control provinces for geo nest + clip (Type1∩person). */
+  controlProvinces?: string[];
 };
 
 export type ActivitySchool = {
@@ -45,6 +46,11 @@ type Props = {
   people: ActivityPerson[];
   schools: ActivitySchool[];
   reports: ReportActivityLink[];
+  /**
+   * When set (Type 1 dashboard), clip all person metrics to viewer∩person
+   * even if Type 1 is not in the people tree.
+   */
+  viewerClipProvinces?: string[] | null;
 };
 
 /** Maps onto existing CSS: 0=red, 2=yellow, 4=green */
@@ -53,6 +59,19 @@ type PerfLevel = 0 | 2 | 4;
 function schoolsHref(params: Record<string, string>) {
   const q = new URLSearchParams(params);
   return `/schools?${q.toString()}`;
+}
+
+function calendarHref(personId?: string) {
+  const q = new URLSearchParams({ view: 'list' });
+  if (personId) q.set('person', personId);
+  return `/calendar?${q.toString()}`;
+}
+
+function reportsHref(personId?: string) {
+  const q = new URLSearchParams();
+  if (personId) q.set('person', personId);
+  const s = q.toString();
+  return s ? `/reports?${s}` : '/reports';
 }
 
 function monthKey(ymd: string) {
@@ -88,6 +107,16 @@ function latestDate(dates: string[]) {
   return dates.filter(Boolean).sort((a, b) => b.localeCompare(a))[0] || '';
 }
 
+function overlapProvinceList(a: string[] | undefined, b: string[] | undefined): string[] {
+  if (!a?.length || !b?.length) return [];
+  const setB = new Set(b.map((p) => p.trim()).filter(Boolean));
+  return [...new Set(a.map((p) => p.trim()).filter((p) => p && setB.has(p)))];
+}
+
+function provincesIntersect(a: string[] | undefined, b: string[] | undefined): boolean {
+  return overlapProvinceList(a, b).length > 0;
+}
+
 /** Newest lastDate first; empty dates sink to the bottom. */
 function compareLastDateDesc(a: string, b: string) {
   if (a && b) return b.localeCompare(a);
@@ -106,7 +135,7 @@ function MetricLink({
   label: string;
 }) {
   return (
-    <Link href={href} className="so-metric" title={`ไปโรงเรียนของฉัน · ${label}`}>
+    <Link href={href} className="so-metric" title={label}>
       <strong>{value}</strong>
       <span>{label}</span>
     </Link>
@@ -194,7 +223,13 @@ function MonthMultiDropdown({
   );
 }
 
-export function SuperOverseerActivityPanel({ events, people, schools, reports }: Props) {
+export function SuperOverseerActivityPanel({
+  events,
+  people,
+  schools,
+  reports,
+  viewerClipProvinces = null,
+}: Props) {
   const today = todayYmd();
   const [tab, setTab] = useState<'people' | 'schools'>('people');
   const [q, setQ] = useState('');
@@ -206,6 +241,10 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
   const [openProvinces, setOpenProvinces] = useState<Set<string>>(new Set());
   const [openAreas, setOpenAreas] = useState<Set<string>>(new Set());
   const [isExpanded, setIsExpanded] = useState(true);
+  const [metricSort, setMetricSort] = useState<
+    'lastDate' | 'schools' | 'bookings' | 'reports'
+  >('lastDate');
+  const [metricSortDir, setMetricSortDir] = useState<'desc' | 'asc'>('desc');
 
   const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const schoolById = useMemo(() => new Map(schools.map((s) => [s.id, s])), [schools]);
@@ -262,38 +301,83 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     return map;
   }, [filteredReports]);
 
+  type PersonMetric = {
+    schools: number;
+    bookings: number;
+    reports: number;
+    hasActivity: boolean;
+    lastDate: string;
+    level: PerfLevel;
+    schoolIds: string[];
+  };
+
+  const eventInClip = (e: StaffCalendarEvent, clip: string[] | null) => {
+    if (!clip) return true;
+    if (!clip.length) return false;
+    const prov = (e.province ?? '').trim();
+    if (prov && clip.includes(prov)) return true;
+    const ids = [e.school_id, ...(e.school_ids ?? [])].filter(Boolean).map(String);
+    return ids.some((id) => {
+      const s = schoolById.get(id);
+      return s && clip.includes((s.province || '').trim());
+    });
+  };
+
+  const reportInClip = (r: ReportActivityLink, clip: string[] | null) => {
+    if (!clip) return true;
+    if (!clip.length) return false;
+    const sid = r.school_id ? String(r.school_id) : '';
+    if (!sid) return false;
+    const s = schoolById.get(sid);
+    return Boolean(s && clip.includes((s.province || '').trim()));
+  };
+
+  /** Metrics optionally clipped to Type1∩person provinces. */
+  const metricsFor = (p: ActivityPerson, clipProvinces?: string[] | null): PersonMetric => {
+    const personProv = p.controlProvinces ?? [];
+    const clip =
+      clipProvinces == null
+        ? null
+        : overlapProvinceList(personProv, clipProvinces);
+
+    const schoolIds =
+      clip == null
+        ? p.schoolIds
+        : p.schoolIds.filter((id) => {
+            const s = schoolById.get(id);
+            return s && clip.includes((s.province || '').trim());
+          });
+
+    const mine = (eventsByStaff.get(p.id) ?? []).filter((e) => eventInClip(e, clip));
+    const myReports = (reportsByStaff.get(p.id) ?? []).filter((r) =>
+      reportInClip(r, clip)
+    );
+    const bookings = mine.length;
+    const reportCount = myReports.length;
+    const lastDate = latestDate([
+      ...mine.map((e) => e.date),
+      ...myReports.map((r) => r.report_date || ''),
+    ]);
+    return {
+      schools: schoolIds.length,
+      bookings,
+      reports: reportCount,
+      hasActivity: bookings > 0 || reportCount > 0,
+      lastDate,
+      level: recencyLevel(lastDate, today),
+      schoolIds,
+    };
+  };
+
   const personMetrics = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        schools: number;
-        bookings: number;
-        reports: number;
-        hasActivity: boolean;
-        lastDate: string;
-        level: PerfLevel;
-      }
-    >();
+    const map = new Map<string, PersonMetric>();
     for (const p of people) {
-      const mine = eventsByStaff.get(p.id) ?? [];
-      const myReports = reportsByStaff.get(p.id) ?? [];
-      const bookings = mine.length;
-      const reportCount = myReports.length;
-      const lastDate = latestDate([
-        ...mine.map((e) => e.date),
-        ...myReports.map((r) => r.report_date || ''),
-      ]);
-      map.set(p.id, {
-        schools: p.schoolIds.length,
-        bookings,
-        reports: reportCount,
-        hasActivity: bookings > 0 || reportCount > 0,
-        lastDate,
-        level: recencyLevel(lastDate, today),
-      });
+      map.set(p.id, metricsFor(p, null));
     }
     return map;
-  }, [people, eventsByStaff, reportsByStaff, today]);
+    // metricsFor closes over events/schools/today
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [people, eventsByStaff, reportsByStaff, schoolById, today]);
 
   const labelOf = (p: ActivityPerson) =>
     formatPersonLabel(p.role, p.name_prefix, p.full_name);
@@ -311,35 +395,42 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
   const type1Overseers = useMemo(
     () =>
-      overseers.filter(
-        (p) =>
-          normalizeRole(p.role) === 'volunteer' ||
-          isOverseerType1(p.role, p.overseer_tier)
-      ),
+      overseers.filter((p) => isOverseerType1(p.role, p.overseer_tier)),
     [overseers]
   );
 
+  /** Nest Type 2 under each Type 1 with non-empty province ∩ (not reports_to). */
   const type2Under = useMemo(() => {
     const map = new Map<string, ActivityPerson[]>();
-    for (const p of overseers) {
-      if (!isOverseerType2(p.role, p.overseer_tier) || !p.reports_to) continue;
-      const list = map.get(p.reports_to) ?? [];
-      list.push(p);
-      map.set(p.reports_to, list);
+    for (const t1 of type1Overseers) {
+      const t1p = t1.controlProvinces ?? [];
+      for (const p of overseers) {
+        if (!isOverseerType2(p.role, p.overseer_tier)) continue;
+        if (!provincesIntersect(t1p, p.controlProvinces)) continue;
+        const list = map.get(t1.id) ?? [];
+        list.push(p);
+        map.set(t1.id, list);
+      }
     }
     return map;
-  }, [overseers]);
+  }, [type1Overseers, overseers]);
 
+  /** Staff under Type 1 by district→province ∩ (not reports_to; not under Type 2). */
   const staffUnder = useMemo(() => {
     const map = new Map<string, ActivityPerson[]>();
-    for (const p of people) {
-      if (normalizeRole(p.role) !== 'staff' || !p.reports_to) continue;
-      const list = map.get(p.reports_to) ?? [];
-      list.push(p);
-      map.set(p.reports_to, list);
+    const staff = people.filter((p) => normalizeRole(p.role) === 'staff');
+
+    for (const t1 of type1Overseers) {
+      const t1p = t1.controlProvinces ?? [];
+      for (const st of staff) {
+        if (!provincesIntersect(t1p, st.controlProvinces)) continue;
+        const list = map.get(t1.id) ?? [];
+        list.push(st);
+        map.set(t1.id, list);
+      }
     }
     return map;
-  }, [people]);
+  }, [type1Overseers, people]);
 
   /** Overseer rollup lastDate includes Type 2 + staff under them (in filtered months) */
   const overseerLastDate = useMemo(() => {
@@ -363,10 +454,103 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
   const personLastActivity = (p: ActivityPerson) =>
     overseerLastDate.get(p.id) || personMetrics.get(p.id)?.lastDate || '';
 
+  const type1TeamMetric = (ov: ActivityPerson) => {
+    const t2s = type2Under.get(ov.id) ?? [];
+    const directStaff = staffUnder.get(ov.id) ?? [];
+    const underT2 = t2s.flatMap((t2) => staffUnder.get(t2.id) ?? []);
+    const all = [ov, ...t2s, ...directStaff, ...underT2];
+    let bookings = 0;
+    let reports = 0;
+    const schoolIds = new Set<string>();
+    const dates: string[] = [];
+    for (const p of all) {
+      const m = personMetrics.get(p.id);
+      if (!m) continue;
+      bookings += m.bookings;
+      reports += m.reports;
+      for (const sid of m.schoolIds) schoolIds.add(sid);
+      dates.push(m.lastDate);
+    }
+    return {
+      schools: schoolIds.size,
+      bookings,
+      reports,
+      lastDate: latestDate(dates) || overseerLastDate.get(ov.id) || '',
+    };
+  };
+
   const comparePeopleByActivity = (a: ActivityPerson, b: ActivityPerson) => {
-    const byDate = compareLastDateDesc(personLastActivity(a), personLastActivity(b));
-    if (byDate !== 0) return byDate;
+    if (metricSort === 'lastDate') {
+      const byDate = compareLastDateDesc(
+        personLastActivity(a),
+        personLastActivity(b)
+      );
+      const signed = metricSortDir === 'desc' ? byDate : -byDate;
+      if (signed !== 0) return signed;
+    } else {
+      const ma = personMetrics.get(a.id);
+      const mb = personMetrics.get(b.id);
+      const av =
+        metricSort === 'schools'
+          ? ma?.schools ?? 0
+          : metricSort === 'bookings'
+            ? ma?.bookings ?? 0
+            : ma?.reports ?? 0;
+      const bv =
+        metricSort === 'schools'
+          ? mb?.schools ?? 0
+          : metricSort === 'bookings'
+            ? mb?.bookings ?? 0
+            : mb?.reports ?? 0;
+      const cmp = metricSortDir === 'desc' ? bv - av : av - bv;
+      if (cmp !== 0) return cmp;
+    }
     return labelOf(a).localeCompare(labelOf(b), 'th');
+  };
+
+  const compareType1Sections = (
+    a: { person: ActivityPerson },
+    b: { person: ActivityPerson }
+  ) => {
+    if (metricSort === 'lastDate') {
+      return comparePeopleByActivity(a.person, b.person);
+    }
+    const ma = type1TeamMetric(a.person);
+    const mb = type1TeamMetric(b.person);
+    const av = ma[metricSort];
+    const bv = mb[metricSort];
+    const cmp = metricSortDir === 'desc' ? bv - av : av - bv;
+    if (cmp !== 0) return cmp;
+    return labelOf(a.person).localeCompare(labelOf(b.person), 'th');
+  };
+
+  const comparePlaceMetric = (
+    a: { lastDate: string; bookings: number; reports: number; schoolCount?: number; schools?: { length: number } },
+    b: { lastDate: string; bookings: number; reports: number; schoolCount?: number; schools?: { length: number } },
+    nameA: string,
+    nameB: string
+  ) => {
+    if (metricSort === 'lastDate') {
+      const byDate = compareLastDateDesc(a.lastDate, b.lastDate);
+      const signed = metricSortDir === 'desc' ? byDate : -byDate;
+      if (signed !== 0) return signed;
+    } else {
+      const av =
+        metricSort === 'schools'
+          ? a.schoolCount ?? a.schools?.length ?? 0
+          : metricSort === 'bookings'
+            ? a.bookings
+            : a.reports;
+      const bv =
+        metricSort === 'schools'
+          ? b.schoolCount ?? b.schools?.length ?? 0
+          : metricSort === 'bookings'
+            ? b.bookings
+            : b.reports;
+      const cmp = metricSortDir === 'desc' ? bv - av : av - bv;
+      if (cmp !== 0) return cmp;
+    }
+    return nameA.localeCompare(nameB, 'th');
   };
 
   /**
@@ -383,7 +567,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       return {
         id: t2.id,
         label: labelOf(t2),
-        hint: overseerTierLabel('type2'),
+        hint: ROLE_LABELS.volunteer,
         children: staffKids.length
           ? staffKids.map((st) => ({
               id: st.id,
@@ -446,10 +630,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
       nodes.push({
         id: ov.id,
         label: labelOf(ov),
-        hint:
-          normalizeRole(ov.role) === 'volunteer'
-            ? ROLE_LABELS.volunteer
-            : overseerTierLabel(effectiveOverseerTier(ov.role, ov.overseer_tier)),
+        hint: roleDisplayLabel(ov.role, ov.overseer_tier),
         children: children.length ? children : undefined,
       });
     }
@@ -466,14 +647,13 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     for (const p of people) {
       if (normalizeRole(p.role) !== 'staff') continue;
       if (nestedStaff.has(p.id)) continue;
-      if (p.reports_to && peopleById.has(p.reports_to)) continue;
       orphanStaff.push(p);
     }
     const gOrphanStaff = roleStaffGroup('g:staff', orphanStaff);
     if (gOrphanStaff) nodes.push(gOrphanStaff);
 
     return nodes;
-  }, [type1Overseers, type2Under, staffUnder, overseers, people, peopleById]);
+  }, [type1Overseers, type2Under, staffUnder, overseers, people]);
 
   const placeFilterTree = useMemo((): FilterTreeNode[] => {
     const byProv = new Map<string, Map<string, ActivitySchool[]>>();
@@ -795,7 +975,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
     sections.sort((a, b) => {
       if (a.kind !== 'type1' || b.kind !== 'type1') return 0;
-      return comparePeopleByActivity(a.person, b.person);
+      return compareType1Sections(a, b);
     });
 
     const orphanType2: ActivityPerson[] = [];
@@ -822,7 +1002,6 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     for (const p of people) {
       if (normalizeRole(p.role) !== 'staff') continue;
       if (nestedStaff.has(p.id)) continue;
-      if (p.reports_to && peopleById.has(p.reports_to)) continue;
       if (selectedPeople.size > 0 && !selectedPeople.has(p.id)) continue;
       if (needle && !personMatches(p)) continue;
       orphanStaff.push(p);
@@ -845,6 +1024,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
     selectedPeople,
     needle,
     personMetrics,
+    metricSort,
+    metricSortDir,
     overseerLastDate,
   ]);
 
@@ -892,11 +1073,24 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
             const lastDate = schoolLeaves.length
               ? latestDate(schoolLeaves.map((s) => s.lastDate))
               : area.lastDate;
-            const schoolsSorted = [...visible].sort((a, b) => {
-              const byDate = compareLastDateDesc(a.lastDate, b.lastDate);
-              if (byDate !== 0) return byDate;
-              return a.school.name.localeCompare(b.school.name, 'th');
-            });
+            const schoolsSorted = [...visible].sort((a, b) =>
+              comparePlaceMetric(
+                {
+                  lastDate: a.lastDate,
+                  bookings: a.bookings,
+                  reports: a.reports,
+                  schoolCount: 1,
+                },
+                {
+                  lastDate: b.lastDate,
+                  bookings: b.bookings,
+                  reports: b.reports,
+                  schoolCount: 1,
+                },
+                a.school.name,
+                b.school.name
+              )
+            );
             return {
               ...area,
               schools: schoolsSorted,
@@ -925,11 +1119,24 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
         if (useAreas.length === 0) return null;
 
-        const areasSorted = [...useAreas].sort((a, b) => {
-          const byDate = compareLastDateDesc(a.lastDate, b.lastDate);
-          if (byDate !== 0) return byDate;
-          return a.area.localeCompare(b.area, 'th');
-        });
+        const areasSorted = [...useAreas].sort((a, b) =>
+          comparePlaceMetric(
+            {
+              lastDate: a.lastDate,
+              bookings: a.bookings,
+              reports: a.reports,
+              schoolCount: a.schools.length,
+            },
+            {
+              lastDate: b.lastDate,
+              bookings: b.bookings,
+              reports: b.reports,
+              schoolCount: b.schools.length,
+            },
+            a.area,
+            b.area
+          )
+        );
         const bookings = areasSorted.reduce((n, a) => n + a.bookings, 0);
         const reports = areasSorted.reduce((n, a) => n + a.reports, 0);
         const lastDate = latestDate(areasSorted.map((a) => a.lastDate));
@@ -944,18 +1151,78 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
         };
       })
       .filter(Boolean)
-      .sort((a, b) => {
-        const byDate = compareLastDateDesc(a!.lastDate, b!.lastDate);
-        if (byDate !== 0) return byDate;
-        return a!.province.localeCompare(b!.province, 'th');
-      }) as typeof provinceTree;
-  }, [provinceTree, selectedPlaces, needle, today]);
+      .sort((a, b) =>
+        comparePlaceMetric(
+          {
+            lastDate: a!.lastDate,
+            bookings: a!.bookings,
+            reports: a!.reports,
+            schoolCount: a!.schoolCount,
+          },
+          {
+            lastDate: b!.lastDate,
+            bookings: b!.bookings,
+            reports: b!.reports,
+            schoolCount: b!.schoolCount,
+          },
+          a!.province,
+          b!.province
+        )
+      ) as typeof provinceTree;
+  }, [provinceTree, selectedPlaces, needle, today, metricSort, metricSortDir]);
 
   const toggle = (set: Set<string>, id: string, setter: (s: Set<string>) => void) => {
     const next = new Set(set);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setter(next);
+  };
+
+  const expandAllTree = () => {
+    if (tab === 'people') {
+      const overseerIds = new Set<string>();
+      const roleKeys = new Set<string>();
+      for (const section of filteredPersonSections) {
+        if (section.kind === 'type1') {
+          overseerIds.add(section.person.id);
+          for (const t2 of section.type2) overseerIds.add(t2.id);
+          if (section.type2.length) {
+            roleKeys.add(`role:type2:${section.person.id}`);
+          }
+          if (section.staff.length) {
+            roleKeys.add(`role:staff:${section.person.id}`);
+          }
+        } else if (section.kind === 'role-type2') {
+          roleKeys.add('role:type2');
+          for (const t2 of section.people) overseerIds.add(t2.id);
+        } else if (section.kind === 'role-staff') {
+          roleKeys.add('role:staff');
+        }
+      }
+      setOpenOverseers(overseerIds);
+      setOpenRoleGroups(roleKeys);
+      return;
+    }
+    const provinces = new Set<string>();
+    const areas = new Set<string>();
+    for (const prov of filteredProvinces) {
+      provinces.add(prov.province);
+      for (const area of prov.areas) {
+        areas.add(`${prov.province}||${area.area}`);
+      }
+    }
+    setOpenProvinces(provinces);
+    setOpenAreas(areas);
+  };
+
+  const collapseAllTree = () => {
+    if (tab === 'people') {
+      setOpenOverseers(new Set());
+      setOpenRoleGroups(new Set());
+      return;
+    }
+    setOpenProvinces(new Set());
+    setOpenAreas(new Set());
   };
 
   const totalBookings = filteredEvents.length;
@@ -985,12 +1252,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
             label="โรงเรียนทั้งหมด"
           />
           <MetricLink
-            href={schoolsHref({ visit: 'planned' })}
+            href={calendarHref()}
             value={totalBookings}
             label="นัดหมาย"
           />
           <MetricLink
-            href={schoolsHref({ visit: 'visited' })}
+            href={reportsHref()}
             value={totalReports}
             label="รายงาน"
           />
@@ -1050,17 +1317,74 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
         />
       </div>
 
-      <div className="so-perf-legend" aria-label="ระดับสีกิจกรรมล่าสุด">
-        <span>กิจกรรมล่าสุด:</span>
-        {[
-          [0, 'เกิน 30 วัน'],
-          [2, 'ใน 30 วัน'],
-          [4, 'ใน 2 สัปดาห์'],
-        ].map(([lv, text]) => (
-          <span key={String(lv)} className={`so-perf-chip so-perf--${lv}`}>
-            {text}
-          </span>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="so-perf-legend m-0" aria-label="ระดับสีกิจกรรมล่าสุด">
+          <span>กิจกรรมล่าสุด:</span>
+          {[
+            [0, 'เกิน 30 วัน'],
+            [2, 'ใน 30 วัน'],
+            [4, 'ใน 2 สัปดาห์'],
+          ].map(([lv, text]) => (
+            <span key={String(lv)} className={`so-perf-chip so-perf--${lv}`}>
+              {text}
+            </span>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="ed-btn ed-btn--outline ed-btn--sm"
+            onClick={expandAllTree}
+          >
+            ขยายทั้งหมด
+          </button>
+          <button
+            type="button"
+            className="ed-btn ed-btn--outline ed-btn--sm"
+            onClick={collapseAllTree}
+          >
+            ยุบทั้งหมด
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <strong className="text-sm">เรียงตาม</strong>
+        <div className="score-mode-switch" role="group" aria-label="เรียงตามตัวชี้วัด">
+          {(
+            [
+              ['lastDate', 'ล่าสุด'],
+              ['schools', 'รร.'],
+              ['bookings', 'นัด'],
+              ['reports', 'รายงาน'],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              className={metricSort === key ? 'is-active' : ''}
+              onClick={() => setMetricSort(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="score-mode-switch" role="group" aria-label="ทิศทางการเรียง">
+          <button
+            type="button"
+            className={metricSortDir === 'desc' ? 'is-active' : ''}
+            onClick={() => setMetricSortDir('desc')}
+          >
+            มาก→น้อย
+          </button>
+          <button
+            type="button"
+            className={metricSortDir === 'asc' ? 'is-active' : ''}
+            onClick={() => setMetricSortDir('asc')}
+          >
+            น้อย→มาก
+          </button>
+        </div>
       </div>
 
       {tab === 'people' ? (
@@ -1069,12 +1393,16 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
             <p className="text-sm text-slate-500 m-0">ไม่พบผู้กำกับดูแลตามตัวกรอง</p>
           ) : (
             (() => {
-              /** Unique school count across people (no double-count when scopes overlap) */
-              const distinctSchoolsOf = (...groups: ActivityPerson[][]) => {
+              /** Unique school count; optional Type1 province clip */
+              const distinctSchoolsOf = (
+                groups: ActivityPerson[][],
+                clip: string[] | null = null
+              ) => {
                 const ids = new Set<string>();
                 for (const list of groups) {
                   for (const p of list) {
-                    for (const sid of p.schoolIds) ids.add(sid);
+                    const m = metricsFor(p, clip);
+                    for (const sid of m.schoolIds) ids.add(sid);
                   }
                 }
                 return ids.size;
@@ -1082,25 +1410,20 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
               const rollupPeople = (
                 list: ActivityPerson[],
-                /** Extra people whose schools count toward the group (e.g. staff under Type 2) */
-                schoolScopeExtra: ActivityPerson[] = []
+                schoolScopeExtra: ActivityPerson[] = [],
+                clip: string[] | null = null
               ) => {
                 const bookings = list.reduce(
-                  (n, p) => n + (personMetrics.get(p.id)?.bookings ?? 0),
+                  (n, p) => n + metricsFor(p, clip).bookings,
                   0
                 );
                 const reports = list.reduce(
-                  (n, p) => n + (personMetrics.get(p.id)?.reports ?? 0),
+                  (n, p) => n + metricsFor(p, clip).reports,
                   0
                 );
-                const schools = distinctSchoolsOf(list, schoolScopeExtra);
+                const schools = distinctSchoolsOf([list, schoolScopeExtra], clip);
                 const last = latestDate(
-                  list.map(
-                    (p) =>
-                      overseerLastDate.get(p.id) ||
-                      personMetrics.get(p.id)?.lastDate ||
-                      ''
-                  )
+                  list.map((p) => metricsFor(p, clip).lastDate)
                 );
                 return {
                   level: recencyLevel(last, today),
@@ -1113,11 +1436,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
 
               const renderPersonLeaf = (
                 person: ActivityPerson,
-                indent: '' | 'indent' | 'indent2'
+                indent: '' | 'indent' | 'indent2',
+                clip: string[] | null = null
               ) => {
-                const sm = personMetrics.get(person.id);
-                const active = Boolean(sm?.hasActivity);
-                const sl = sm?.level ?? 0;
+                const sm = metricsFor(person, clip);
+                const active = Boolean(sm.hasActivity);
+                const sl = sm.level;
                 const indentClass =
                   indent === 'indent2'
                     ? 'so-tree__row--indent2'
@@ -1137,7 +1461,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                       <strong>
                         {labelOf(person)}
                         <span className="so-tree__last">
-                          ล่าสุด {formatThaiDate(sm?.lastDate || '')}
+                          ล่าสุด {formatThaiDate(sm.lastDate || '')}
                         </span>
                       </strong>
                       <span className="so-tree__meta">
@@ -1148,17 +1472,17 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                     <div className="so-tree__metrics">
                       <MetricLink
                         href={schoolsHref({ person: person.id })}
-                        value={sm?.schools ?? 0}
+                        value={sm.schools}
                         label="รร."
                       />
                       <MetricLink
-                        href={schoolsHref({ person: person.id, visit: 'planned' })}
-                        value={sm?.bookings ?? 0}
+                        href={calendarHref(person.id)}
+                        value={sm.bookings}
                         label="นัด"
                       />
                       <MetricLink
-                        href={schoolsHref({ person: person.id, visit: 'visited' })}
-                        value={sm?.reports ?? 0}
+                        href={reportsHref(person.id)}
+                        value={sm.reports}
                         label="รายงาน"
                       />
                     </div>
@@ -1170,25 +1494,30 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
               const renderType2Node = (
                 t2: ActivityPerson,
                 parentSelected: boolean,
-                indent: '' | 'indent'
+                indent: '' | 'indent',
+                clip: string[] | null = null
               ) => {
                 const staffKids = visibleStaffOf(
                   t2.id,
                   parentSelected || selectedPeople.has(t2.id)
                 );
-                const m = personMetrics.get(t2.id);
-                const last = overseerLastDate.get(t2.id) || m?.lastDate || '';
+                const m = metricsFor(t2, clip);
+                const last = m.lastDate;
                 const roleLabel = roleDisplayLabel(t2.role, t2.overseer_tier);
                 const indentClass = indent === 'indent' ? 'so-tree__row--indent' : '';
                 const staffIndent = indent === 'indent' ? 'indent2' : 'indent';
 
                 if (staffKids.length === 0) {
-                  return renderPersonLeaf(t2, indent === 'indent' ? 'indent' : '');
+                  return renderPersonLeaf(
+                    t2,
+                    indent === 'indent' ? 'indent' : '',
+                    clip
+                  );
                 }
 
                 const open = openOverseers.has(t2.id);
-                const schoolCount = distinctSchoolsOf([t2], staffKids);
-                const teamAgg = rollupPeople([t2, ...staffKids]);
+                const schoolCount = distinctSchoolsOf([[t2], staffKids], clip);
+                const teamAgg = rollupPeople([t2, ...staffKids], [], clip);
                 return (
                   <div key={t2.id} className="so-tree__node">
                     <button
@@ -1220,12 +1549,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                           label="รร."
                         />
                         <MetricLink
-                          href={schoolsHref({ person: t2.id, visit: 'planned' })}
+                          href={calendarHref(t2.id)}
                           value={teamAgg.bookings}
                           label="นัด"
                         />
                         <MetricLink
-                          href={schoolsHref({ person: t2.id, visit: 'visited' })}
+                          href={reportsHref(t2.id)}
                           value={teamAgg.reports}
                           label="รายงาน"
                         />
@@ -1233,7 +1562,9 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                     </button>
                     {open && (
                       <div className="so-tree__children">
-                        {staffKids.map((st) => renderPersonLeaf(st, staffIndent))}
+                        {staffKids.map((st) =>
+                          renderPersonLeaf(st, staffIndent, clip)
+                        )}
                       </div>
                     )}
                   </div>
@@ -1248,7 +1579,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                 members: ActivityPerson[],
                 mode: 'type2' | 'staff',
                 nested: boolean,
-                parentSelected: boolean
+                parentSelected: boolean,
+                clip: string[] | null = null
               ) => {
                 if (members.length === 0) return null;
                 const open = openRoleGroups.has(groupKey);
@@ -1258,7 +1590,7 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                         visibleStaffOf(t2.id, parentSelected || selectedPeople.has(t2.id))
                       )
                     : [];
-                const agg = rollupPeople(members, staffUnderMembers);
+                const agg = rollupPeople(members, staffUnderMembers, clip);
                 const indentClass = nested ? 'so-tree__row--indent' : '';
                 const childIndent = nested ? ('indent' as const) : ('' as const);
 
@@ -1305,12 +1637,13 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                       <div className="so-tree__children">
                         {mode === 'type2'
                           ? members.map((t2) =>
-                              renderType2Node(t2, parentSelected, childIndent)
+                              renderType2Node(t2, parentSelected, childIndent, clip)
                             )
                           : members.map((st) =>
                               renderPersonLeaf(
                                 st,
-                                nested ? 'indent2' : 'indent'
+                                nested ? 'indent2' : 'indent',
+                                clip
                               )
                             )}
                       </div>
@@ -1328,7 +1661,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                     section.people,
                     'type2',
                     false,
-                    false
+                    false,
+                    viewerClipProvinces
                   );
                 }
                 if (section.kind === 'role-staff') {
@@ -1339,28 +1673,30 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                     section.people,
                     'staff',
                     false,
-                    false
+                    false,
+                    viewerClipProvinces
                   );
                 }
 
                 const ov = section.person;
                 const open = openOverseers.has(ov.id);
-                const m = personMetrics.get(ov.id);
+                const clip = ov.controlProvinces ?? null;
+                const m = metricsFor(ov, null);
                 const teamCount = section.type2.length + section.staff.length;
-                const last = overseerLastDate.get(ov.id) || m?.lastDate || '';
+                const last = overseerLastDate.get(ov.id) || m.lastDate || '';
                 const roleLabel = roleDisplayLabel(ov.role, ov.overseer_tier);
                 const parentSelected = selectedPeople.has(ov.id);
                 const staffUnderType2 = section.type2.flatMap((t2) =>
                   visibleStaffOf(t2.id, parentSelected || selectedPeople.has(t2.id))
                 );
                 const schoolCount = distinctSchoolsOf(
-                  [ov],
-                  section.type2,
-                  section.staff,
-                  staffUnderType2
+                  [[ov], section.type2, section.staff, staffUnderType2],
+                  clip
                 );
                 const teamAgg = rollupPeople(
-                  [ov, ...section.type2, ...section.staff, ...staffUnderType2]
+                  [ov, ...section.type2, ...section.staff, ...staffUnderType2],
+                  [],
+                  clip
                 );
 
                 return (
@@ -1394,12 +1730,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                           label="รร."
                         />
                         <MetricLink
-                          href={schoolsHref({ person: ov.id, visit: 'planned' })}
+                          href={calendarHref(ov.id)}
                           value={teamAgg.bookings}
                           label="นัด"
                         />
                         <MetricLink
-                          href={schoolsHref({ person: ov.id, visit: 'visited' })}
+                          href={reportsHref(ov.id)}
                           value={teamAgg.reports}
                           label="รายงาน"
                         />
@@ -1420,7 +1756,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                               section.type2,
                               'type2',
                               true,
-                              parentSelected
+                              parentSelected,
+                              clip
                             )}
                             {renderRoleGroup(
                               `role:staff:${ov.id}`,
@@ -1429,7 +1766,8 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                               section.staff,
                               'staff',
                               true,
-                              parentSelected
+                              parentSelected,
+                              clip
                             )}
                           </>
                         )}
@@ -1479,12 +1817,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                         label="รร."
                       />
                       <MetricLink
-                        href={schoolsHref({ province: prov.province, visit: 'planned' })}
+                        href={calendarHref()}
                         value={prov.bookings}
                         label="นัด"
                       />
                       <MetricLink
-                        href={schoolsHref({ province: prov.province, visit: 'visited' })}
+                        href={reportsHref()}
                         value={prov.reports}
                         label="รายงาน"
                       />
@@ -1534,20 +1872,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                                   label="รร."
                                 />
                                 <MetricLink
-                                  href={schoolsHref({
-                                    province: prov.province,
-                                    area: area.area,
-                                    visit: 'planned',
-                                  })}
+                                  href={calendarHref()}
                                   value={area.bookings}
                                   label="นัด"
                                 />
                                 <MetricLink
-                                  href={schoolsHref({
-                                    province: prov.province,
-                                    area: area.area,
-                                    visit: 'visited',
-                                  })}
+                                  href={reportsHref()}
                                   value={area.reports}
                                   label="รายงาน"
                                 />
@@ -1588,15 +1918,12 @@ export function SuperOverseerActivityPanel({ events, people, schools, reports }:
                                         label="รร."
                                       />
                                       <MetricLink
-                                        href={schoolsHref({ q: leaf.school.name })}
+                                        href={calendarHref()}
                                         value={leaf.bookings}
                                         label="นัด"
                                       />
                                       <MetricLink
-                                        href={schoolsHref({
-                                          q: leaf.school.name,
-                                          visit: 'visited',
-                                        })}
+                                        href={reportsHref()}
                                         value={leaf.reports}
                                         label="รายงาน"
                                       />

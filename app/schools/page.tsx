@@ -1,20 +1,31 @@
+import { cookies } from 'next/headers';
 import { Suspense } from 'react';
 import { fetchSchools } from '@/lib/supabase/schools';
 import { ManagedSchoolsClient } from '@/components/schools/ManagedSchoolsClient';
 import { ManagedSchoolsSkeleton } from '@/components/ui/PageSkeleton';
 import { getSessionProfile } from '@/lib/auth/session';
 import {
-  addSubordinatesOf,
   calendarPeers,
   isFieldRole,
   schoolsInScope,
   toScopeDirectory,
+  type1GeoTeamIds,
 } from '@/lib/auth/scope';
-import { formatPersonLabel, normalizeRole, type UserRole } from '@/lib/types';
+import {
+  formatPersonLabel,
+  isOverseerType1,
+  isOverseerType2,
+  normalizeRole,
+  type UserRole,
+} from '@/lib/types';
 import { listCalendarEventsForStaffIds } from '@/app/actions/visits';
 import { enrichSchoolsWithVisits } from '@/lib/schools/visit-enrich';
 import { fetchAllUserProfiles } from '@/lib/supabase/profiles';
 import { fetchAllSchoolComments } from '@/lib/supabase/school-swot';
+import {
+  parseT2ViewType1Cookie,
+  T2_VIEW_TYPE1S_COOKIE,
+} from '@/lib/auth/province-radar';
 
 export const revalidate = 120;
 
@@ -49,6 +60,15 @@ async function SchoolsBody({
 
   const r = normalizeRole(role);
   const staffMode = isAuthenticated && isFieldRole(r);
+  const isT2 = Boolean(profile && isOverseerType2(r, profile.overseer_tier));
+  const isT1 = Boolean(profile && isOverseerType1(r, profile.overseer_tier));
+
+  const jar = await cookies();
+  const t2ViewSelectedIds = isT2
+    ? parseT2ViewType1Cookie(jar.get(T2_VIEW_TYPE1S_COOKIE)?.value)
+    : null;
+  const readableOpts = isT2 ? { selectedType1Ids: t2ViewSelectedIds } : {};
+
   const profilesForScope =
     staffMode && profile
       ? await fetchAllUserProfiles().catch(() => [])
@@ -57,9 +77,9 @@ async function SchoolsBody({
 
   const [calendarEvents, comments] = isAuthenticated && profile
     ? await Promise.all([
-        listCalendarEventsForStaffIds(calendarPeers(profile, directory)).catch(
-          () => []
-        ),
+        listCalendarEventsForStaffIds(
+          calendarPeers(profile, directory, schoolsRaw)
+        ).catch(() => []),
         fetchAllSchoolComments().catch(() => []),
       ])
     : [[], []];
@@ -72,7 +92,9 @@ async function SchoolsBody({
   }));
   const schools = enrichSchoolsWithVisits(schoolsRaw, calendarEvents, reportLinks);
 
-  const scoped = staffMode ? schoolsInScope(profile, schools, directory) : schools;
+  const scoped = staffMode
+    ? schoolsInScope(profile, schools, directory, readableOpts)
+    : schools;
   const inScopeIds = staffMode ? scoped.map((s) => String(s.school_id)) : [];
 
   let domainPeople: DomainPersonOption[] = [];
@@ -103,10 +125,10 @@ async function SchoolsBody({
           ),
           reports_to: u.reports_to ?? null,
         }));
-    } else {
-      domainPeopleLabel = 'เจ้าหน้าที่ในสายบังคับบัญชา';
-      const teamIds = new Set<string>();
-      addSubordinatesOf(profile.id, directory, teamIds);
+    } else if (isT1) {
+      domainPeopleLabel = 'แยกรายบุคคล';
+      const teamIds = type1GeoTeamIds(profile, directory, schools);
+      teamIds.delete(profile.id);
       domainPeople = profiles
         .filter((u) => !u.disabled && teamIds.has(u.id))
         .map((u) => ({

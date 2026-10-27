@@ -14,7 +14,21 @@ import {
   type SchoolAchievements,
 } from '@/lib/auth/user-store';
 import { assertSchoolInActionScope, isFieldRole } from '@/lib/auth/scope';
-import { normalizeRole } from '@/lib/types';
+import { formatPersonLabel, normalizeRole } from '@/lib/types';
+
+function authorDisplayName(profile: {
+  role: string;
+  name_prefix?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+}) {
+  return (
+    formatPersonLabel(profile.role, profile.name_prefix, profile.full_name) ||
+    profile.full_name ||
+    profile.email ||
+    'Staff'
+  );
+}
 import {
   insertSchoolStaffComment,
   updateSchoolStaffComment,
@@ -81,7 +95,7 @@ export async function postSchoolCommentAction(formData: FormData) {
   const schoolGate = await assertSchoolInActionScope(gate.profile, schoolId);
   if (!schoolGate.ok) return { ok: false as const, error: schoolGate.error };
 
-  const staffName = gate.profile.full_name || gate.profile.email || 'Staff';
+  const staffName = authorDisplayName(gate.profile);
   const created_at = reportDate
     ? `${reportDate}T${new Date().toISOString().slice(11)}`
     : undefined;
@@ -210,7 +224,7 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
       ? cleaned
       : [{ text: '', tags: [] as string[] }];
 
-  const staffName = gate.profile.full_name || gate.profile.email || 'Staff';
+  const staffName = authorDisplayName(gate.profile);
   const baseMs = Date.now();
   const inputs = bodyBoxes.map((b, i) => {
     const created_at = reportDate
@@ -396,7 +410,7 @@ export async function saveSchoolUpdateBundleAction(formData: FormData) {
   let commentWarning: string | undefined;
 
   if (commentText) {
-    const staffName = gate.profile.full_name || gate.profile.email || 'Staff';
+    const staffName = authorDisplayName(gate.profile);
     comment = await addSchoolComment(schoolId, {
       staff_id: gate.profile.id,
       staff_name: staffName,

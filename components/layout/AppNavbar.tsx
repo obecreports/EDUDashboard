@@ -310,14 +310,15 @@ export function AppNavbar({
         className="role-menu__item"
         onClick={() => {
           startTransition(async () => {
+            setAccountOpen(false);
+            closeDrawer();
             try {
               await logoutAction();
             } catch {
-              // redirect() throws; full navigation recovers from bloated cookies
+              // ignore — always hard-navigate below
             }
-            setAccountOpen(false);
-            closeDrawer();
-            window.location.assign('/');
+            // Full load avoids soft-nav hydration mismatch (about-page vs login)
+            window.location.assign('/login');
           });
         }}
       >
@@ -590,10 +591,10 @@ export function AppNavbar({
                 )}
               </>
             ) : (
-              <Link href="/login" prefetch className="navbar__login">
+              <a href="/login" className="navbar__login">
                 <LogIn size={16} />
                 <span className="navbar__login-label">เข้าใช้งานระบบ</span>
-              </Link>
+              </a>
             )}
           </div>
         </div>
@@ -645,10 +646,10 @@ export function AppNavbar({
               <div className="ed-nav-drawer__account-links">{accountMenuLinks}</div>
             </div>
           ) : (
-            <Link href="/login" prefetch className="navbar__login ed-nav-drawer__login" onClick={closeDrawer}>
+            <a href="/login" className="navbar__login ed-nav-drawer__login" onClick={closeDrawer}>
               <LogIn size={16} />
               เข้าใช้งานระบบ
-            </Link>
+            </a>
           )}
         </div>
       </aside>

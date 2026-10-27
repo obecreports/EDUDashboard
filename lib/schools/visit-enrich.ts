@@ -6,14 +6,14 @@ import {
 } from '@/lib/activity/complete';
 
 /** Merge calendar bookings into school visitStatus + lastActivityAt.
- *  "visited" prefers schedule+report mapping when reports are provided.
+ *  "visited" = มีรายงานแล้ว (school has ≥1 report, or a booking mapped to a report).
  */
 export function enrichSchoolsWithVisits(
   schools: SchoolFull[],
   events: StaffCalendarEvent[],
   reports: ReportActivityLink[] = []
 ): SchoolFull[] {
-  if (!events.length) return schools;
+  if (!events.length && !reports.length) return schools;
 
   const bySchool = new Map<string, StaffCalendarEvent[]>();
   for (const e of events) {
@@ -29,12 +29,16 @@ export function enrichSchoolsWithVisits(
     }
   }
 
-  return schools.map((s) => {
-    const evs = bySchool.get(String(s.school_id));
-    if (!evs?.length) return s;
+  const reportSchoolIds = new Set(reports.map((r) => String(r.school_id)));
 
-    const mappedComplete =
-      reports.length > 0 && evs.some((e) => eventHasMappedReport(e, reports));
+  return schools.map((s) => {
+    const sid = String(s.school_id);
+    const evs = bySchool.get(sid) ?? [];
+    const hasReport =
+      reportSchoolIds.has(sid) ||
+      (reports.length > 0 &&
+        evs.length > 0 &&
+        evs.some((e) => eventHasMappedReport(e, reports)));
     const statusComplete = evs.some(
       (e) => e.status === 'completed' || e.status_th === 'เยี่ยมชมเสร็จสิ้น'
     );
@@ -46,8 +50,9 @@ export function enrichSchoolsWithVisits(
     );
 
     let visitStatus: SchoolFull['visitStatus'] = s.visitStatus ?? 'never';
-    if (mappedComplete || statusComplete) visitStatus = 'visited';
-    else if (planned) visitStatus = 'planned';
+    if (hasReport) visitStatus = 'visited';
+    else if (planned || statusComplete) visitStatus = 'planned';
+    else if (!evs.length && !hasReport) return s;
 
     const latest = evs
       .map((e) => e.date)

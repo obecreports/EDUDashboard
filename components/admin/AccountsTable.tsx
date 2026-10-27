@@ -58,7 +58,9 @@ export function AccountsTable({ rows }: { rows: Row[] }) {
                     defaultValue={r.role}
                     disabled={pending}
                   >
-                    {(Object.keys(ROLE_LABELS) as UserRole[]).map((role) => (
+                    {(Object.keys(ROLE_LABELS) as UserRole[])
+                      .filter((role) => role !== 'guest')
+                      .map((role) => (
                       <option key={role} value={role}>
                         {ROLE_LABELS[role]}
                       </option>

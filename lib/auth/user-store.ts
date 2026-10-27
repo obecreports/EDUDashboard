@@ -152,6 +152,7 @@ export async function createMockUser(input: {
   position: string;
   role: UserRole;
   email?: string;
+  name_prefix?: string | null;
 }): Promise<
   { ok: true; user: StoredUserProfile; tempPassword: string } | { ok: false; error: string }
 > {
@@ -164,6 +165,7 @@ export async function createMockUser(input: {
   }
   const full_name = input.full_name.trim();
   const position = input.position.trim();
+  const name_prefix = (input.name_prefix ?? '').trim() || null;
   if (!full_name || !position) return { ok: false, error: 'กรุณากรอกชื่อและตำแหน่ง' };
 
   const manualLogin = input.email?.trim();
@@ -183,6 +185,7 @@ export async function createMockUser(input: {
       position,
       role,
       password: tempPassword,
+      name_prefix,
     });
     if (!created.ok) return created;
     return { ok: true, user: created.user, tempPassword };
@@ -193,10 +196,10 @@ export async function createMockUser(input: {
     id,
     email: loginId,
     full_name,
-    name_prefix: null,
+    name_prefix,
     position,
     role,
-    overseer_tier: role === 'overseer' ? 'type1' : null,
+    overseer_tier: null,
     assigned_zone: null,
     assigned_provinces: [],
     assigned_districts: [],

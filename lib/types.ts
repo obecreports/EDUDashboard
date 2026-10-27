@@ -137,8 +137,8 @@ export interface UserProfile {
   position: string | null;
   role: UserRole;
   /**
-   * type1 = top องคมนตรี; type2 = under a Type 1 via reports_to.
-   * Null/undefined for non-overseer. Missing on legacy overseer → treat as type1.
+   * @deprecated Identity is role only (overseer | volunteer).
+   * Kept for legacy rows until migration 028; ignore for new logic.
    */
   overseer_tier?: OverseerTier | null;
   /** @deprecated legacy educational area ids */
@@ -214,7 +214,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   staff: 'ศึกษานิเทศก์',
   overseer: 'องคมนตรี',
   volunteer: 'อาสาสมัคร',
-  super_overseer: 'ผู้กำกับดูแลสูงสุด',
+  super_overseer: 'ท่านประธาน',
   admin: 'ผู้ดูแลระบบ (Admin)',
   super_admin: 'ผู้ดูแลระบบสูงสุด (Super Admin)',
 };
@@ -239,54 +239,59 @@ export function normalizeOverseerTier(
 }
 
 /**
- * Effective tier for an overseer profile.
- * Legacy overseer rows without a tier are treated as Type 1.
+ * @deprecated Prefer role identity. Maps volunteer → type2; unmigrated
+ * overseer+type2 → type2; plain overseer → type1. Returns null for other roles.
  */
 export function effectiveOverseerTier(
   role: string | null | undefined,
   tier: OverseerTier | null | undefined
 ): OverseerTier | null {
-  if (normalizeRole(role) !== 'overseer') return null;
-  return normalizeOverseerTier(tier) ?? 'type1';
+  const r = normalizeRole(role);
+  if (r === 'volunteer') return 'type2';
+  if (r !== 'overseer') return null;
+  // Back-compat until migration 028: overseer+type2 still counts as Type 2
+  if (normalizeOverseerTier(tier) === 'type2') return 'type2';
+  return 'type1';
 }
 
+/** องคมนตรี — role=overseer (excludes unmigrated overseer+type2). */
 export function isOverseerType1(
   role: string | null | undefined,
   tier?: OverseerTier | null
 ): boolean {
-  return effectiveOverseerTier(role, tier) === 'type1';
+  const r = normalizeRole(role);
+  if (r === 'overseer' && normalizeOverseerTier(tier) === 'type2') return false;
+  return r === 'overseer';
 }
 
+/** อาสาสมัคร — role=volunteer, or unmigrated overseer+type2. */
 export function isOverseerType2(
   role: string | null | undefined,
   tier?: OverseerTier | null
 ): boolean {
-  return effectiveOverseerTier(role, tier) === 'type2';
+  const r = normalizeRole(role);
+  if (r === 'volunteer') return true;
+  return r === 'overseer' && normalizeOverseerTier(tier) === 'type2';
 }
 
-/**
- * Hierarchy labels:
- * - Type 1 underboss → องคมนตรี
- * - Type 2 underboss assist → อาสาสมัคร (sees like boss, own territory)
- */
+/** @deprecated Use ROLE_LABELS / roleDisplayLabel(role). */
 export function overseerTierLabel(tier: OverseerTier | null | undefined): string {
   if (tier === 'type2') return ROLE_LABELS.volunteer;
   if (tier === 'type1') return ROLE_LABELS.overseer;
   return ROLE_LABELS.overseer;
 }
 
-/** User-facing บทบาท: SO boss · Type1 underboss · Type2 assist · staff. */
+/** User-facing บทบาท: SO · overseer · volunteer · staff. */
 export function roleDisplayLabel(
   role: string | null | undefined,
   tier?: OverseerTier | null
 ): string {
-  const r = normalizeRole(role);
-  if (isOverseerType2(r, tier)) return ROLE_LABELS.volunteer;
-  if (isOverseerType1(r, tier)) return ROLE_LABELS.overseer;
-  return ROLE_LABELS[r];
+  if (isOverseerType2(role, tier)) return ROLE_LABELS.volunteer;
+  if (isOverseerType1(role, tier)) return ROLE_LABELS.overseer;
+  return ROLE_LABELS[normalizeRole(role)];
 }
 
-/** User-facing ตำแหน่ง (Type 2 overseer → อาสาสมัคร). */
+/** User-facing ตำแหน่ง (volunteer → อาสาสมัคร). */
 export function positionDisplayLabel(
   role: string | null | undefined,
   tier: OverseerTier | null | undefined,

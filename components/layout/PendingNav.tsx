@@ -53,7 +53,14 @@ export function PendingNav() {
     const onSubmit = (e: Event) => {
       const form = e.target as HTMLFormElement | null;
       if (!form || form.tagName !== 'FORM') return;
-      if (form.dataset.noPending === '1') return;
+      // data-no-pending → dataset.noPending; also accept legacy/lowercase variants
+      if (
+        form.dataset.noPending === '1' ||
+        form.getAttribute('data-no-pending') === '1' ||
+        form.getAttribute('data-nopending') === '1'
+      ) {
+        return;
+      }
       startTransition(armPending);
     };
 

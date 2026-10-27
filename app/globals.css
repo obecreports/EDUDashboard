@@ -970,6 +970,58 @@ a {
   border-color: var(--tm-blue-100);
 }
 
+/* Admin org-map hierarchy overview */
+.org-map-tree__so {
+  padding: 0.5rem 0.75rem;
+  background: var(--tm-blue-50);
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.org-map-tree__overseers {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 1rem;
+  border-left: 2px solid var(--tm-blue-100);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.org-map-tree__ov {
+  padding: 0.5rem 0 0.5rem 0.75rem;
+}
+
+.org-map-tree__ov-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.org-map-tree__branches {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  padding-left: 0.5rem;
+}
+
+.org-map-tree__branch-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--tm-blue);
+  margin-bottom: 0.25rem;
+}
+
+.org-map-tree__names {
+  list-style: disc;
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.875rem;
+  display: grid;
+  gap: 0.15rem;
+}
+
 /* Skeletons */
 .skeleton {
   background: linear-gradient(90deg, #e8eef5 25%, #f5f8fb 50%, #e8eef5 75%);
@@ -2976,6 +3028,31 @@ a {
   font-size: 0.72rem !important;
   padding: 0.15rem 0.45rem !important;
 }
+.t2-view-filter {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f0f7f4 0%, #e8f0ec 100%);
+  border: 1px solid #c5d9ce;
+}
+.t2-view-filter__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.5rem;
+}
+.t2-view-filter__title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1a3d2e;
+}
+.t2-view-filter__hint {
+  font-size: 0.75rem;
+  color: #5a7266;
+}
+.t2-view-filter__dd {
+  max-width: 28rem;
+}
 .so-filter-dd {
   position: relative;
   min-width: 8.5rem;
@@ -3242,6 +3319,26 @@ a {
 .ed-check--inline {
   margin-bottom: 0;
   white-space: nowrap;
+}
+.ed-check--chip {
+  margin-bottom: 0;
+  white-space: nowrap;
+  border: 1px solid var(--tm-gold, #c5a572);
+  background: var(--tm-gold-50, #fbf7ef);
+  color: var(--tm-blue);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.ed-check--chip:hover {
+  background: #f3ead8;
+}
+.ed-check--chip:has(input:checked) {
+  border-color: var(--tm-blue);
+  background: #eff6ff;
 }
 .ed-school-grid {
   display: grid;

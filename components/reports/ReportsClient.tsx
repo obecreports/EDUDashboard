@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { ChevronDown, FilePlus2, MessageSquare, Pencil } from 'lucide-react';
 import { updateSchoolCommentAction } from '@/app/actions/school-extras';
 import type { SchoolSize } from '@/lib/types';
@@ -9,6 +10,12 @@ import type { ReportDraft } from '@/lib/auth/mock-users';
 import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
 import { formatThaiDate, formatThaiDateTime } from '@/lib/format/date';
 import { ThaiDateField } from '@/components/ui/ThaiDateField';
+import {
+  parsePersonIdsParam,
+  personIdsToParam,
+  PersonMultiFilter,
+  type PersonFilterOpt,
+} from '@/components/ui/PersonMultiFilter';
 import {
   parseReportComment,
   type ReportSubjectDetails,
@@ -143,11 +150,17 @@ export function ReportsClient({
   rows: initialRows,
   currentUserId,
   drafts = [],
+  people = [],
+  initialPersonIds = [],
 }: {
   rows: ReportRow[];
   currentUserId: string;
   drafts?: ReportDraft[];
+  people?: PersonFilterOpt[];
+  initialPersonIds?: string[];
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const initial = rangeForPreset('this-month');
   const [rows, setRows] = useState(initialRows);
   const [ownerFilter, setOwnerFilter] = useState<'mine' | 'all'>('all');
@@ -158,11 +171,26 @@ export function ReportsClient({
   const [district, setDistrict] = useState('');
   const [schoolName, setSchoolName] = useState('');
   const [schoolSize, setSchoolSize] = useState('');
+  const [personIds, setPersonIds] = useState<string[]>(() =>
+    parsePersonIdsParam(initialPersonIds.join(','))
+  );
   const [page, setPage] = useState(1);
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [pending, start] = useTransition();
+
+  useEffect(() => {
+    const q = new URLSearchParams();
+    if (personIds.length) q.set('person', personIdsToParam(personIds));
+    const next = q.toString();
+    const href = next ? `${pathname}?${next}` : pathname;
+    if (typeof window !== 'undefined') {
+      const current = `${window.location.pathname}${window.location.search}`;
+      if (current === href) return;
+    }
+    router.replace(href, { scroll: false });
+  }, [personIds, pathname, router]);
 
   const provinces = useMemo(
     () => [...new Set(rows.map((r) => r.province).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th')),
@@ -190,6 +218,16 @@ export function ReportsClient({
     if (ownerFilter === 'mine') {
       list = list.filter((r) => canEditReport(r, currentUserId));
     }
+    if (personIds.length > 0) {
+      const set = new Set(personIds);
+      list = list.filter(
+        (r) =>
+          set.has(r.staff_id) ||
+          (r.participants ?? []).some((p) => set.has(p.id)) ||
+          (r.visitor_reason_map &&
+            Object.keys(r.visitor_reason_map).some((id) => set.has(id)))
+      );
+    }
     if (dateFrom) list = list.filter((r) => r.created_at.slice(0, 10) >= dateFrom);
     if (dateTo) list = list.filter((r) => r.created_at.slice(0, 10) <= dateTo);
     if (province) list = list.filter((r) => r.province === province);
@@ -204,6 +242,7 @@ export function ReportsClient({
     rows,
     ownerFilter,
     currentUserId,
+    personIds,
     dateFrom,
     dateTo,
     province,
@@ -215,6 +254,7 @@ export function ReportsClient({
   const dayGroups = useMemo(() => groupByDate(filtered), [filtered]);
   const totalPages = Math.max(1, Math.ceil(dayGroups.length / DAYS_PER_PAGE));
   const pageGroups = dayGroups.slice((page - 1) * DAYS_PER_PAGE, page * DAYS_PER_PAGE);
+  const pageDayKeys = pageGroups.map(([day]) => day);
 
   const startEdit = (r: ReportRow) => {
     setEditingId(r.id);
@@ -319,6 +359,19 @@ export function ReportsClient({
             </button>
           </div>
         </div>
+        {people.length > 0 ? (
+          <div className="max-w-md">
+            <PersonMultiFilter
+              people={people}
+              selectedIds={personIds}
+              onChange={(ids) => {
+                setPersonIds(ids);
+                setPage(1);
+              }}
+              label="บุคคล"
+            />
+          </div>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="text-sm font-semibold grid gap-1">
             จังหวัด
@@ -425,9 +478,29 @@ export function ReportsClient({
       </section>
 
       <section className="panel-card space-y-3 school-activity">
-        <div className="flex items-center gap-2">
-          <MessageSquare size={18} className="text-tm-blue" />
-          <h2 className="section-heading text-base m-0">รายงานทั้งหมด</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <MessageSquare size={18} className="text-tm-blue" />
+            <h2 className="section-heading text-base m-0">รายงานทั้งหมด</h2>
+          </div>
+          {pageGroups.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="ed-btn ed-btn--outline ed-btn--sm"
+                onClick={() => setExpandedDays(new Set(pageDayKeys))}
+              >
+                ขยายทั้งหมด
+              </button>
+              <button
+                type="button"
+                className="ed-btn ed-btn--outline ed-btn--sm"
+                onClick={() => setExpandedDays(new Set())}
+              >
+                ยุบทั้งหมด
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {pageGroups.length === 0 ? (

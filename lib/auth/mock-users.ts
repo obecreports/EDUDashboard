@@ -1,5 +1,5 @@
 import type { OverseerTier, UserRole } from '@/lib/types';
-import { normalizeOverseerTier, normalizeRole } from '@/lib/types';
+import { normalizeRole } from '@/lib/types';
 
 export const AUTH_SESSION_COOKIE = 'coned-auth-session';
 export const AUTH_CREDENTIALS_COOKIE = 'coned-auth-credentials';
@@ -21,7 +21,7 @@ export interface MockUserSeed {
   name_prefix?: string | null;
   position: string;
   role: UserRole;
-  /** type1 for OS*; type2 for sub-overseer; omit for non-overseer */
+  /** @deprecated identity is role (overseer|volunteer); kept for legacy reads */
   overseer_tier?: OverseerTier | null;
   assigned_zone: string | null;
   assigned_provinces: string[];
@@ -73,14 +73,14 @@ export const UAT_USER_IDS = {
   os12: 'a1111111-1111-4111-8111-111111111212',
   os13: 'a1111111-1111-4111-8111-111111111213',
   os14: 'a1111111-1111-4111-8111-111111111214',
-  /** OS10T01 · Type 2 underboss assist under OS10 (migration 020) */
+  /** OS10T01 · volunteer (อาสาสมัคร) under OS10 provinces (migration 020/028) */
   os10t01: 'a1111111-1111-4111-8111-111111111301',
 } as const;
 
 /**
  * Demo / UAT accounts — `email` stores short login ID (not a mailbox).
- * Hierarchy: SO (boss) → OS Type1 (underboss) ← staff via Gov district/province;
- * Type 2 (assist) also under Type 1 — staff does not reports_to Type 2.
+ * Hierarchy: SO → overseer (องคมนตรี) ← staff via Gov district/province;
+ * volunteer (อาสาสมัคร) nests by province ∩ — staff does not reports_to volunteer.
  * Password: MOCK_LOGIN_PASSWORD. Profiles also live in Supabase (014/020).
  */
 export const MOCK_USER_SEEDS: MockUserSeed[] = [
@@ -482,10 +482,6 @@ export function normalizeStoredUser(
         ? null
         : String(raw.name_prefix).trim() || null;
   const role = normalizeRole(raw.role);
-  const tier =
-    role === 'overseer'
-      ? normalizeOverseerTier(raw.overseer_tier) ?? 'type1'
-      : null;
   return {
     id: raw.id,
     email: raw.email,
@@ -493,7 +489,7 @@ export function normalizeStoredUser(
     name_prefix: prefix,
     position: raw.position ?? '',
     role,
-    overseer_tier: tier,
+    overseer_tier: null,
     assigned_zone: raw.assigned_zone ?? null,
     assigned_provinces: Array.isArray(raw.assigned_provinces) ? raw.assigned_provinces : [],
     assigned_districts: Array.isArray(raw.assigned_districts) ? raw.assigned_districts : [],

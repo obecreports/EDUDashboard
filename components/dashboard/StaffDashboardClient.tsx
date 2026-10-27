@@ -22,7 +22,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import type { OverseerTier, SchoolFull, UserRole } from '@/lib/types';
-import { isOverseerType1 } from '@/lib/types';
+import { isOverseerType1, isOverseerType2 } from '@/lib/types';
 import type { StaffCalendarEvent } from '@/lib/auth/mock-users';
 import { DualRadarChart } from '@/components/schools/SchoolRadarChart';
 import { DashboardWelcome } from '@/components/dashboard/DashboardWelcome';
@@ -40,6 +40,10 @@ import {
   type ActivitySchool,
 } from '@/components/dashboard/SuperOverseerActivityPanel';
 import { SuperOverseerComparePanel } from '@/components/dashboard/SuperOverseerComparePanel';
+import {
+  Type2ViewFilter,
+  type Type2ViewType1Option,
+} from '@/components/dashboard/Type2ViewFilter';
 import type { CompareScoresByYear } from '@/lib/types';
 import type { ReportActivityLink } from '@/lib/activity/complete';
 import {
@@ -81,6 +85,9 @@ export function StaffDashboardClient({
   activityReports = [],
   compareScoresByYear,
   pendingReportVisits = [],
+  type2ViewOptions = [],
+  type2ViewSelectedIds = null,
+  activityClipProvinces = null,
 }: {
   schools: SchoolFull[];
   /** All-project schools for national average shadow on charts */
@@ -100,10 +107,16 @@ export function StaffDashboardClient({
   compareScoresByYear?: CompareScoresByYear;
   /** Staff-only: past visits still missing a report */
   pendingReportVisits?: PendingReportVisit[];
+  /** Type 2: overlapping Type 1 options for view multi-select */
+  type2ViewOptions?: Type2ViewType1Option[];
+  type2ViewSelectedIds?: string[] | null;
+  /** Type 1 dashboard: clip activity metrics to viewer provinces */
+  activityClipProvinces?: string[] | null;
 }) {
   /** SO + Type 1 share activity / compare / YoY radars; Type 2 & staff keep national compare */
   const showSoDashboard =
     role === 'super_overseer' || isOverseerType1(role, overseerTier);
+  const isType2 = isOverseerType2(role, overseerTier);
   const isStaff = role === 'staff';
   const showReportReminder = isStaff && pendingReportVisits.length > 0;
   const firstPending = pendingReportVisits[0];
@@ -337,12 +350,20 @@ export function StaffDashboardClient({
         </p>
       </div>
 
+      {isType2 && type2ViewOptions.length > 0 ? (
+        <Type2ViewFilter
+          options={type2ViewOptions}
+          initialSelectedIds={type2ViewSelectedIds}
+        />
+      ) : null}
+
       {showSoDashboard ? (
         <SuperOverseerActivityPanel
           events={calendarEvents}
           people={activityPeople}
           schools={activitySchools}
           reports={activityReports}
+          viewerClipProvinces={activityClipProvinces}
         />
       ) : null}
 

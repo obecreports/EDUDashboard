@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { fetchSchoolById } from '@/lib/supabase/schools';
@@ -13,10 +14,19 @@ import { SchoolDetailClient } from '@/components/schools/SchoolDetailClient';
 import { SchoolDetailSkeleton } from '@/components/ui/PageSkeleton';
 import { canAccessSchoolDetail, canComment } from '@/lib/auth/scope';
 import {
+  parseT2ViewType1Cookie,
+  T2_VIEW_TYPE1S_COOKIE,
+} from '@/lib/auth/province-radar';
+import {
   fetchPillarScoreBySchoolId,
   indicatorScoresFromRow,
 } from '@/lib/supabase/school-pillars';
 import { fetchSiteVisitsForSchool } from '@/lib/supabase/site-visits';
+import {
+  formatPersonLabel,
+  isOverseerType2,
+  normalizeRole,
+} from '@/lib/types';
 
 export const revalidate = 60;
 
@@ -37,13 +47,31 @@ async function SchoolDetailBody({ id }: { id: string }) {
     assigned_districts: u.assigned_districts,
     reports_to: u.reports_to,
   }));
+  const jar = await cookies();
+  const isT2 =
+    Boolean(profile) &&
+    isOverseerType2(normalizeRole(profile!.role), profile!.overseer_tier);
+  const readableOpts = isT2
+    ? {
+        selectedType1Ids: parseT2ViewType1Cookie(
+          jar.get(T2_VIEW_TYPE1S_COOKIE)?.value
+        ),
+      }
+    : {};
   const fullAccess = canAccessSchoolDetail(
     profile,
     school,
     isAuthenticated,
-    directory
+    directory,
+    readableOpts
   );
-  const commentsAllowed = canComment(profile, school, isAuthenticated, directory);
+  const commentsAllowed = canComment(
+    profile,
+    school,
+    isAuthenticated,
+    directory,
+    readableOpts
+  );
   const canEdit = false;
 
   const cookieExtras = await readSchoolExtras(school.school_id);
@@ -61,7 +89,15 @@ async function SchoolDetailBody({ id }: { id: string }) {
     ? dbSwot
     : normalizeSchoolSwot(cookieExtras.swot);
 
-  const userName = new Map(users.map((u) => [u.id, u.full_name || u.email || u.id]));
+  const userName = new Map(
+    users.map((u) => [
+      u.id,
+      formatPersonLabel(u.role, u.name_prefix, u.full_name) ||
+        u.full_name ||
+        u.email ||
+        u.id,
+    ])
+  );
 
   const cookieForSchool = cookieVisits
     .filter((e) => String(e.school_id) === String(school.school_id))

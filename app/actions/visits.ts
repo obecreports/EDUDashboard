@@ -26,7 +26,11 @@ import {
   type VisitStatusThai,
 } from '@/lib/visits/labels';
 import { normalizeRole } from '@/lib/types';
-import { assertSchoolInActionScope, isFieldRole } from '@/lib/auth/scope';
+import {
+  assertSchoolInActionScope,
+  assertSchoolsInActionScope,
+  isFieldRole,
+} from '@/lib/auth/scope';
 
 export async function createVisitLog(formData: FormData) {
   const schoolId = Number(formData.get('school_id'));
@@ -141,7 +145,7 @@ export async function createCalendarEventAction(formData: FormData) {
     };
   }
 
-  const schoolGate = await assertSchoolInActionScope(profile, schoolIds[0]);
+  const schoolGate = await assertSchoolsInActionScope(profile, schoolIdsRaw);
   if (!schoolGate.ok) return { ok: false as const, error: schoolGate.error };
 
   // Non-SO cannot invite SO users as participants
@@ -270,7 +274,7 @@ export async function updateCalendarEventAction(formData: FormData) {
     return { ok: false as const, error: 'กรุณาเลือกเหตุผลการลงพื้นที่อย่างน้อย 1 รายการ' };
   }
 
-  const schoolGate = await assertSchoolInActionScope(profile, schoolIds[0]);
+  const schoolGate = await assertSchoolsInActionScope(profile, schoolIdsRaw);
   if (!schoolGate.ok) return { ok: false as const, error: schoolGate.error };
 
   const creatorRole = normalizeRole(role);

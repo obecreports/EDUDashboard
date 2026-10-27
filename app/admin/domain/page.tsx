@@ -28,6 +28,9 @@ export default async function AdminDomainPage() {
     .map((g) => ({
       id: String(g.area_id),
       name: String(g.area_name || g.area_id),
+      province: String(
+        (g as { province_name?: string | null }).province_name || ''
+      ).trim(),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'th'));
 
@@ -39,8 +42,9 @@ export default async function AdminDomainPage() {
     <div className="page-shell py-6">
       <h1 className="ed-section-title mb-2">มอบหมายพื้นที่จัดการ</h1>
       <p className="text-slate-600 mb-4 text-sm">
-        มอบหมายจังหวัดให้องคมนตรี Type 1 / Type 2 (Type 2 เลือกได้เฉพาะจังหวัดของหัวหน้า Type 1)
-        หรือเขตพื้นที่การศึกษา (Gov_Domain) ให้ Staff — สายบังคับบัญชาละเอียดที่{' '}
+        มอบหมายจังหวัดให้องคมนตรี / อาสาสมัคร (อาสาสมัครเลือกจังหวัดได้อิสระ
+        — แดชบอร์ดองคมนตรีแสดงเฉพาะจังหวัดที่ซ้อนทับ) หรือเขตพื้นที่การศึกษา
+        (Gov_Domain) ให้ศึกษานิเทศก์ — สายบังคับบัญชาละเอียดที่{' '}
         <a href="/admin/org-map" className="text-tm-blue underline">
           แผนผังสายบังคับบัญชา
         </a>

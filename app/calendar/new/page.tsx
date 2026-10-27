@@ -3,9 +3,9 @@ import { getSessionProfile } from '@/lib/auth/session';
 import { readStoredUsers } from '@/lib/auth/user-store';
 import { fetchSchools } from '@/lib/supabase/schools';
 import {
-  calendarPeers,
   isFieldRole,
   isSchoolActionable,
+  scheduleInvitePeers,
 } from '@/lib/auth/scope';
 import {
   formatPersonLabel,
@@ -45,19 +45,16 @@ export default async function NewSchedulePage({
       area_name: s.area_name || '',
     }));
 
-  const peerIds = new Set(
-    calendarPeers(
-      profile,
-      users.map((u) => ({
-        id: u.id,
-        role: u.role,
-        overseer_tier: u.overseer_tier ?? null,
-        assigned_provinces: u.assigned_provinces,
-        assigned_districts: u.assigned_districts,
-        reports_to: u.reports_to,
-      }))
-    )
-  );
+  const scopeUsers = users.map((u) => ({
+    id: u.id,
+    role: u.role,
+    overseer_tier: u.overseer_tier ?? null,
+    assigned_provinces: u.assigned_provinces,
+    assigned_districts: u.assigned_districts,
+    reports_to: u.reports_to,
+    disabled: u.disabled,
+  }));
+  const peerIds = new Set(scheduleInvitePeers(profile, scopeUsers, schools));
 
   const isSo = r === 'super_overseer';
   const teammates = users
@@ -65,8 +62,7 @@ export default async function NewSchedulePage({
       if (u.disabled) return false;
       const ur = normalizeRole(u.role);
       if (!isFieldRole(ur)) return false;
-      if (!(peerIds.has(u.id) || u.id === profile.id)) return false;
-      // Overseer/Staff/Volunteer cannot invite SO onto their team
+      if (!peerIds.has(u.id)) return false;
       if (!isSo && ur === 'super_overseer') return false;
       return true;
     })
@@ -77,6 +73,7 @@ export default async function NewSchedulePage({
         u.full_name ||
         u.email,
       role: normalizeRole(u.role),
+      overseer_tier: u.overseer_tier ?? null,
     }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name, 'th'));
 

@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import {
+  parsePersonIdsParam,
+  personIdsToParam,
+  PersonMultiFilter,
+} from '@/components/ui/PersonMultiFilter';
 import {
   Building2,
   CalendarDays,
@@ -117,6 +122,8 @@ const PRESETS: { key: RangePreset; label: string }[] = [
 
 const SCHEDULE_PAGE_SIZE = 10;
 
+type CalViewMode = 'month' | 'list';
+
 export function StaffVisitHubClient({
   events: initial,
   schools,
@@ -124,6 +131,8 @@ export function StaffVisitHubClient({
   currentUserId,
   people = [],
   focusDate = '',
+  initialView = 'month',
+  initialPersonIds = [],
 }: {
   events: StaffCalendarEvent[];
   schools: SchoolOpt[];
@@ -132,12 +141,21 @@ export function StaffVisitHubClient({
   people?: PersonOpt[];
   /** Optional YYYY-MM-DD to focus after creating a schedule */
   focusDate?: string;
+  initialView?: CalViewMode;
+  initialPersonIds?: string[];
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [pending, start] = useTransition();
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const today = ymd(new Date());
   const [events, setEvents] = useState(initial);
+  const [viewMode, setViewMode] = useState<CalViewMode>(
+    initialView === 'list' ? 'list' : 'month'
+  );
+  const [personIds, setPersonIds] = useState<string[]>(() =>
+    parsePersonIdsParam(initialPersonIds.join(','))
+  );
   const [cursor, setCursor] = useState(() => {
     if (focusDate && /^\d{4}-\d{2}-\d{2}$/.test(focusDate)) {
       const d = new Date(focusDate + 'T12:00:00');
@@ -171,17 +189,50 @@ export function StaffVisitHubClient({
     }
   }, [focusDate]);
 
+  useEffect(() => {
+    const q = new URLSearchParams();
+    if (viewMode === 'list') q.set('view', 'list');
+    if (personIds.length) q.set('person', personIdsToParam(personIds));
+    if (focusDate && /^\d{4}-\d{2}-\d{2}$/.test(focusDate)) {
+      q.set('date', focusDate);
+    }
+    const next = q.toString();
+    const href = next ? `${pathname}?${next}` : pathname;
+    if (typeof window !== 'undefined') {
+      const current = `${window.location.pathname}${window.location.search}`;
+      if (current === href) return;
+    }
+    router.replace(href, { scroll: false });
+  }, [viewMode, personIds, focusDate, pathname, router]);
+
   const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+  const personFilterOpts = useMemo(
+    () =>
+      people.map((p) => ({
+        id: p.id,
+        full_name: p.full_name,
+        role_label: p.role_label,
+      })),
+    [people]
+  );
 
   const activeEvents = useMemo(() => events.filter(isActiveEvent), [events]);
 
-  const scopedEvents = useMemo(
-    () =>
+  const scopedEvents = useMemo(() => {
+    let list =
       scopeView === 'mine'
         ? activeEvents.filter((e) => isInvolved(e, currentUserId))
-        : activeEvents,
-    [activeEvents, scopeView, currentUserId]
-  );
+        : activeEvents;
+    if (personIds.length > 0) {
+      const set = new Set(personIds);
+      list = list.filter(
+        (e) =>
+          set.has(e.staff_id) ||
+          (e.participant_ids ?? []).some((id) => set.has(id))
+      );
+    }
+    return list;
+  }, [activeEvents, scopeView, currentUserId, personIds]);
 
   const waiting = scopedEvents.filter((e) => normalizeStatus(e.status_th ?? e.status) === 'นัดหมายแล้ว').length;
   const done = scopedEvents.filter((e) => normalizeStatus(e.status_th ?? e.status) === 'เยี่ยมชมเสร็จสิ้น').length;
@@ -237,7 +288,7 @@ export function StaffVisitHubClient({
 
   useEffect(() => {
     setListPage(1);
-  }, [range.from, range.to, scopeView, preset]);
+  }, [range.from, range.to, scopeView, preset, personIds, viewMode]);
 
   useEffect(() => {
     if (listPage > totalListPages) setListPage(totalListPages);
@@ -264,6 +315,14 @@ export function StaffVisitHubClient({
       else next.add(id);
       return next;
     });
+  };
+
+  const expandAllListed = () => {
+    setExpandedIds(new Set(pagedEvents.map((e) => e.id)));
+  };
+
+  const collapseAllListed = () => {
+    setExpandedIds(new Set());
   };
 
   const runCancel = (id: string) => {
@@ -407,6 +466,16 @@ export function StaffVisitHubClient({
               </button>
             </div>
           </div>
+          {people.length > 0 ? (
+            <div className="max-w-md">
+              <PersonMultiFilter
+                people={personFilterOpts}
+                selectedIds={personIds}
+                onChange={setPersonIds}
+                label="บุคคล"
+              />
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <strong className="text-sm">ช่วงวันที่</strong>
             {PRESETS.map((p) => (
@@ -458,9 +527,28 @@ export function StaffVisitHubClient({
               <CalendarDays size={14} /> เพิ่มนัดหมาย
             </Link>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <strong className="text-sm">รูปแบบ</strong>
+            <div className="score-mode-switch" role="group" aria-label="รูปแบบปฏิทิน">
+              <button
+                type="button"
+                className={viewMode === 'month' ? 'is-active' : ''}
+                onClick={() => setViewMode('month')}
+              >
+                ปฏิทิน (เดือน)
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'list' ? 'is-active' : ''}
+                onClick={() => setViewMode('list')}
+              >
+                รายการนัด
+              </button>
+            </div>
+          </div>
         </div>
 
-        {upcomingStrip}
+        {viewMode === 'month' ? upcomingStrip : null}
 
         {actionMsg ? (
           <p className="text-sm font-medium m-0" style={{ color: '#b91c1c' }}>
@@ -468,6 +556,7 @@ export function StaffVisitHubClient({
           </p>
         ) : null}
 
+        {viewMode === 'month' ? (
         <div className="ed-visit-layout ed-visit-layout--split">
           <div className="ed-visit-layout__cal space-y-3">
             <section className="ed-card p-4 ed-month-cal-wrap">
@@ -817,6 +906,272 @@ export function StaffVisitHubClient({
             )}
           </aside>
         </div>
+        ) : (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="ed-section-title text-base m-0">
+                รายการนัดหมาย ({rangedEvents.length})
+              </h2>
+              <p className="text-sm text-slate-500 m-0 mt-1">
+                {formatThaiDate(range.from)} – {formatThaiDate(range.to)}
+              </p>
+            </div>
+            {rangedEvents.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="ed-btn ed-btn--outline ed-btn--sm"
+                  onClick={expandAllListed}
+                >
+                  ขยายทั้งหมด
+                </button>
+                <button
+                  type="button"
+                  className="ed-btn ed-btn--outline ed-btn--sm"
+                  onClick={collapseAllListed}
+                >
+                  ยุบทั้งหมด
+                </button>
+              </div>
+            ) : null}
+          </div>
+          {rangedEvents.length === 0 ? (
+            <div className="ed-card p-4 text-slate-500 text-sm">ไม่มีนัดหมายในช่วงวันที่นี้</div>
+          ) : (
+            <div className="visit-detail-panel__list">
+              {pagedEvents.map((e) => {
+                const open = expandedIds.has(e.id);
+                const st = normalizeStatus(e.status_th ?? e.status);
+                const school = schools.find((s) => s.id === e.school_id);
+                const schoolStatus = statusFromScore(school?.overallScore);
+                const booker = personLabel(e.staff_id);
+                const isOwner = e.staff_id === currentUserId;
+                const isParticipant =
+                  !isOwner && (e.participant_ids ?? []).includes(currentUserId);
+                const teamIds = [
+                  ...new Set(
+                    [e.staff_id, ...(e.participant_ids ?? [])].filter(Boolean)
+                  ),
+                ].filter((id) => id !== e.staff_id);
+                const schoolName = e.school_name || school?.name || 'โรงเรียน';
+                const activity = normalizeActivity(String(e.activity));
+                const reasons =
+                  e.visit_reasons?.length ? e.visit_reasons : [activity];
+                const location =
+                  [school?.district, school?.province || e.province]
+                    .filter(Boolean)
+                    .join(' · ') || '—';
+                return (
+                  <article
+                    key={e.id}
+                    className={`ed-card visit-booking-card visit-booking-card--panel ${
+                      open ? 'is-open' : ''
+                    } ${isInvolved(e, currentUserId) ? 'visit-booking-card--mine' : 'visit-booking-card--other'}`}
+                  >
+                    <button
+                      type="button"
+                      className="visit-booking-card__head visit-booking-card__head--panel"
+                      aria-expanded={open}
+                      onClick={() => toggleExpand(e.id)}
+                    >
+                      <div className="visit-booking-card__meta">
+                        <span className="visit-booking-card__date">
+                          {formatThaiDate(e.date)}
+                        </span>
+                        <span
+                          className={`cal-badge ${
+                            st === 'เยี่ยมชมเสร็จสิ้น'
+                              ? 'cal-badge--done'
+                              : 'cal-badge--sched'
+                          }`}
+                        >
+                          {st}
+                        </span>
+                        <ChevronDown
+                          size={16}
+                          className={`visit-booking-card__chevron ${open ? 'is-open' : ''}`}
+                        />
+                      </div>
+                      <div className="visit-booking-card__title">{schoolName}</div>
+                      <div className="visit-booking-card__sub">{activity}</div>
+                    </button>
+                    {open && (
+                      <div className="visit-booking-card__body visit-booking-card__body--panel">
+                        <dl className="visit-booking-card__facts">
+                          <div className="visit-booking-card__fact">
+                            <dt>
+                              <UserRound size={14} aria-hidden /> เจ้าของนัด
+                            </dt>
+                            <dd>
+                              <span
+                                className={
+                                  booker.isMe ? 'owner-name--mine' : 'owner-name--other'
+                                }
+                              >
+                                {booker.name}
+                              </span>
+                              {booker.role ? (
+                                <span className="visit-booking-card__role">
+                                  {booker.role}
+                                </span>
+                              ) : null}
+                            </dd>
+                          </div>
+                          <div className="visit-booking-card__fact">
+                            <dt>
+                              <Users size={14} aria-hidden /> สมาชิกทีม
+                            </dt>
+                            <dd>
+                              {teamIds.length === 0 ? (
+                                <span className="text-slate-500">ไม่มีสมาชิกเพิ่ม</span>
+                              ) : (
+                                <ul className="m-0 p-0 list-none space-y-1">
+                                  {teamIds.map((pid) => {
+                                    const p = personLabel(pid);
+                                    return (
+                                      <li key={pid}>
+                                        <span
+                                          className={
+                                            p.isMe
+                                              ? 'owner-name--mine'
+                                              : 'owner-name--other'
+                                          }
+                                        >
+                                          {p.name}
+                                        </span>
+                                        {p.role ? (
+                                          <span className="visit-booking-card__role">
+                                            {p.role}
+                                          </span>
+                                        ) : null}
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              )}
+                            </dd>
+                          </div>
+                          <div className="visit-booking-card__fact">
+                            <dt>
+                              <MapPin size={14} aria-hidden /> ที่ตั้ง
+                            </dt>
+                            <dd>{location}</dd>
+                          </div>
+                          <div className="visit-booking-card__fact">
+                            <dt>
+                              <Phone size={14} aria-hidden /> โทรศัพท์
+                            </dt>
+                            <dd>{school?.phone || '—'}</dd>
+                          </div>
+                        </dl>
+                        {reasons.length > 1 ? (
+                          <p className="text-xs text-slate-600 m-0">
+                            เหตุผล: {reasons.join(' · ')}
+                          </p>
+                        ) : null}
+                        <div className="visit-booking-card__score">
+                          <div className="visit-booking-card__score-value">
+                            {(school?.overallScore ?? 0).toFixed(2)}
+                            <span> / 5</span>
+                          </div>
+                          <span
+                            className="ed-badge"
+                            style={{
+                              background: schoolStatus.bg,
+                              color: schoolStatus.color,
+                            }}
+                          >
+                            {schoolStatus.label}
+                          </span>
+                        </div>
+                        {e.notes ? (
+                          <p className="visit-booking-card__notes">{e.notes}</p>
+                        ) : null}
+                        <div className="visit-booking-card__actions">
+                          <Link
+                            href={`/reports/new?event_id=${encodeURIComponent(e.id)}${
+                              e.school_id
+                                ? `&school_id=${encodeURIComponent(e.school_id)}`
+                                : ''
+                            }&date=${encodeURIComponent(e.date)}`}
+                            className="ed-btn ed-btn--primary ed-btn--sm"
+                          >
+                            <MessageSquarePlus size={14} /> เขียนสรุปรายงาน
+                          </Link>
+                          <Link
+                            href={e.school_id ? `/schools/${e.school_id}` : '/schools'}
+                            className="ed-btn ed-btn--outline ed-btn--sm"
+                          >
+                            ดูรายละเอียดโรงเรียน
+                          </Link>
+                          {isOwner ? (
+                            <Link
+                              href={`/calendar/edit?id=${encodeURIComponent(e.id)}`}
+                              className="ed-btn ed-btn--outline ed-btn--sm"
+                            >
+                              <Pencil size={14} /> แก้ไขนัดหมาย
+                            </Link>
+                          ) : null}
+                          {isOwner ? (
+                            <button
+                              type="button"
+                              className="ed-btn ed-btn--danger ed-btn--sm"
+                              disabled={pending}
+                              onClick={() => runCancel(e.id)}
+                            >
+                              <XCircle size={14} /> ยกเลิกนัด
+                            </button>
+                          ) : null}
+                          {isParticipant ? (
+                            <button
+                              type="button"
+                              className="ed-btn ed-btn--outline ed-btn--sm"
+                              disabled={pending}
+                              onClick={() => runLeave(e.id)}
+                            >
+                              <LogOut size={14} /> ออกจากนัด
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+              {rangedEvents.length > SCHEDULE_PAGE_SIZE ? (
+                <div className="visit-detail-panel__pager">
+                  <span className="text-xs text-slate-500">
+                    แสดง {(listPage - 1) * SCHEDULE_PAGE_SIZE + 1}–
+                    {Math.min(listPage * SCHEDULE_PAGE_SIZE, rangedEvents.length)} จาก{' '}
+                    {rangedEvents.length}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      className="ed-btn ed-btn--outline ed-btn--sm"
+                      disabled={listPage <= 1}
+                      onClick={() => setListPage((p) => Math.max(1, p - 1))}
+                    >
+                      ก่อนหน้า
+                    </button>
+                    <button
+                      type="button"
+                      className="ed-btn ed-btn--outline ed-btn--sm"
+                      disabled={listPage >= totalListPages}
+                      onClick={() =>
+                        setListPage((p) => Math.min(totalListPages, p + 1))
+                      }
+                    >
+                      ถัดไป
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </section>
+        )}
       </div>
 
     </div>

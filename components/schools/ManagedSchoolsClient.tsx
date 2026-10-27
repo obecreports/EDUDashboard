@@ -614,7 +614,7 @@ export function ManagedSchoolsClient({
                   className="domain-person-dd"
                 />
                 <p className="text-[11px] text-slate-500 m-0">
-                  ขยาย/ยุบตามสายบังคับบัญชา · กรองทันทีเมื่อเลือก
+                  
                 </p>
               </div>
             )}
@@ -627,7 +627,7 @@ export function ManagedSchoolsClient({
                     ['all', 'ทั้งหมด'],
                     ['never', 'ยังไม่เคยลงพื้นที่'],
                     ['planned', 'นัดหมายแล้ว'],
-                    ['visited', 'ลงพื้นที่แล้ว'],
+                    ['visited', 'มีรายงานแล้ว'],
                   ] as const
                 ).map(([key, label]) => (
                   <label key={key} className="ed-check ed-check--inline">
@@ -641,7 +641,7 @@ export function ManagedSchoolsClient({
                 ))}
               </div>
               <p className="text-[11px] text-slate-500 m-0">
-                อิงจากนัดหมายในปฏิทิน / กิจกรรมล่าสุดของโรงเรียน
+                อิงจากนัดหมายในปฏิทินและรายงาน
               </p>
             </div>
 
@@ -792,7 +792,7 @@ export function ManagedSchoolsClient({
                           {showScores
                             ? ` · ${
                                 s.visitStatus === 'visited'
-                                  ? 'ลงพื้นที่แล้ว'
+                                  ? 'มีรายงานแล้ว'
                                   : s.visitStatus === 'planned'
                                     ? 'นัดหมายแล้ว'
                                     : 'ยังไม่เคย'
@@ -937,7 +937,7 @@ export function ManagedSchoolsClient({
                           <span>
                             ลงพื้นที่:{' '}
                             {s.visitStatus === 'visited'
-                              ? 'ลงพื้นที่แล้ว'
+                              ? 'มีรายงานแล้ว'
                               : s.visitStatus === 'planned'
                                 ? 'นัดหมายแล้ว'
                                 : 'ยังไม่เคย'}

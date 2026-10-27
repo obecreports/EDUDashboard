@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { flowerForUser } from '@/lib/theme/weekday';
+import { formatDisplayName } from '@/lib/types';
 
 export function DashboardWelcome({
   fullName,
@@ -13,8 +14,9 @@ export function DashboardWelcome({
   namePrefix?: string | null;
 }) {
   const { src, isBirthday, weekday } = flowerForUser(birthday);
-  const name = fullName?.trim() || 'อาสาสมัคร';
-  const prefix = (namePrefix?.trim() || 'คุณ').replace(/\s+$/, '');
+  const displayName =
+    formatDisplayName(namePrefix?.trim() || 'คุณ', fullName?.trim() || 'อาสาสมัคร') ||
+    'อาสาสมัคร';
 
   return (
     <section className="dash-welcome">
@@ -39,8 +41,7 @@ export function DashboardWelcome({
           สวัสดีวัน{weekday.th}
         </p>
         <h1 className="dash-welcome__title m-0">
-          {isBirthday ? 'สุขสันต์วันเกิด' : 'ยินดีต้อนรับ'} {prefix}
-          {name}
+          {isBirthday ? 'สุขสันต์วันเกิด' : 'ยินดีต้อนรับ'} {displayName}
         </h1>
         <p className="dash-welcome__sub m-0">
           {isBirthday

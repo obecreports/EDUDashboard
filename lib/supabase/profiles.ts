@@ -191,9 +191,10 @@ export async function createUserInDb(input: {
         error: 'สร้างใน auth แล้ว แต่ยังไม่พบโปรไฟล์ — ตรวจ user_profiles',
       };
     }
-    if (role === 'overseer') {
-      await updateUserProfileInDb(id, { overseer_tier: 'type1' });
-      return { ok: true, user: { ...row, overseer_tier: 'type1' } };
+    // Clear deprecated tier — identity is role only (overseer | volunteer)
+    if (row.overseer_tier != null) {
+      await updateUserProfileInDb(id, { overseer_tier: null });
+      return { ok: true, user: { ...row, overseer_tier: null } };
     }
     return { ok: true, user: row };
   } catch (e) {
