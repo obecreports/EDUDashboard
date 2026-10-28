@@ -1440,6 +1440,15 @@ a {
   .school-profile-card__photo { min-height: 160px; }
 }
 
+.school-building-iframe {
+  display: block;
+  width: 100%;
+  min-height: 70vh;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  background: #fff;
+}
+
 .school-detail__tabs {
   display: flex;
   flex-wrap: wrap;

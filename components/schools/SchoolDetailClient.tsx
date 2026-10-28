@@ -70,7 +70,8 @@ type TabId =
   | 'swot'
   | 'visits'
   | 'scores'
-  | 'pillars';
+  | 'pillars'
+  | 'buildings';
 
 function num(v: unknown): number {
   if (v == null || v === '') return 0;
@@ -561,12 +562,14 @@ export function SchoolDetailClient({
     ? [
         { id: 'overview', label: 'ภาพรวม', icon: Home },
         { id: 'basic', label: 'ข้อมูลพื้นฐาน', icon: Info },
+        { id: 'buildings', label: 'ข้อมูลสิ่งปลูกสร้าง', icon: Building2 },
         { id: 'location', label: 'ที่ตั้งและแผนที่', icon: MapIcon },
         { id: 'swot', label: 'SWOT โรงเรียน', icon: ClipboardPen },
       ]
     : [
         { id: 'overview', label: 'ภาพรวม', icon: Home },
         { id: 'basic', label: 'ข้อมูลพื้นฐาน', icon: Info },
+        { id: 'buildings', label: 'ข้อมูลสิ่งปลูกสร้าง', icon: Building2 },
         { id: 'swot', label: 'SWOT โรงเรียน', icon: ClipboardPen },
         { id: 'visits', label: 'การลงพื้นที่', icon: CalendarDays },
         ...(showScores
@@ -577,6 +580,8 @@ export function SchoolDetailClient({
           : []),
         { id: 'people', label: 'นักเรียน / บุคลากร', icon: Users },
       ];
+
+  const buildingInfoUrl = `https://asset.bopp-obec.info/Home/BuildingBySchoolID?SchoolID=${encodeURIComponent(String(school.school_id))}`;
 
   const mapsUrl =
     hasCoords
@@ -1046,6 +1051,32 @@ export function SchoolDetailClient({
       )}
 
       {tab === 'location' && <div className="space-y-4">{renderLocationPanel()}</div>}
+
+      {tab === 'buildings' && (
+        <section className="panel-card space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="section-heading text-base m-0">ข้อมูลสิ่งปลูกสร้าง</h2>
+            <a
+              href={buildingInfoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ed-btn ed-btn--outline ed-btn--sm"
+            >
+              เปิดในแท็บใหม่
+            </a>
+          </div>
+          <p className="text-xs text-slate-500 m-0">
+            ข้อมูลจากระบบทรัพย์สิน สพฐ. (รหัสสถานศึกษา {school.school_id})
+          </p>
+          <iframe
+            className="school-building-iframe"
+            src={buildingInfoUrl}
+            title={`ข้อมูลสิ่งปลูกสร้าง — ${school.school_name_th}`}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        </section>
+      )}
 
       {tab === 'swot' && (
         <section className="panel-card space-y-4">
