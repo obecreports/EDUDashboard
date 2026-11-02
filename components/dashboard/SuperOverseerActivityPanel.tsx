@@ -432,19 +432,23 @@ export function SuperOverseerActivityPanel({
     return map;
   }, [type1Overseers, people]);
 
-  /** Overseer rollup lastDate includes Type 2 + staff under them (in filtered months) */
+  /**
+   * Type1 rollup lastDate: only activity in Type1∩person provinces
+   * (VL under multiple OS must not leak activity across parents).
+   */
   const overseerLastDate = useMemo(() => {
     const map = new Map<string, string>();
     for (const ov of overseers) {
-      const dates = [(personMetrics.get(ov.id)?.lastDate || '')];
+      const clip = ov.controlProvinces ?? [];
+      const dates = [metricsFor(ov, null).lastDate];
       for (const t2 of type2Under.get(ov.id) ?? []) {
-        dates.push(personMetrics.get(t2.id)?.lastDate || '');
+        dates.push(metricsFor(t2, clip).lastDate);
         for (const st of staffUnder.get(t2.id) ?? []) {
-          dates.push(personMetrics.get(st.id)?.lastDate || '');
+          dates.push(metricsFor(st, clip).lastDate);
         }
       }
       for (const st of staffUnder.get(ov.id) ?? []) {
-        dates.push(personMetrics.get(st.id)?.lastDate || '');
+        dates.push(metricsFor(st, clip).lastDate);
       }
       map.set(ov.id, latestDate(dates));
     }
@@ -455,6 +459,7 @@ export function SuperOverseerActivityPanel({
     overseerLastDate.get(p.id) || personMetrics.get(p.id)?.lastDate || '';
 
   const type1TeamMetric = (ov: ActivityPerson) => {
+    const clip = ov.controlProvinces ?? [];
     const t2s = type2Under.get(ov.id) ?? [];
     const directStaff = staffUnder.get(ov.id) ?? [];
     const underT2 = t2s.flatMap((t2) => staffUnder.get(t2.id) ?? []);
@@ -464,8 +469,7 @@ export function SuperOverseerActivityPanel({
     const schoolIds = new Set<string>();
     const dates: string[] = [];
     for (const p of all) {
-      const m = personMetrics.get(p.id);
-      if (!m) continue;
+      const m = p.id === ov.id ? metricsFor(p, null) : metricsFor(p, clip);
       bookings += m.bookings;
       reports += m.reports;
       for (const sid of m.schoolIds) schoolIds.add(sid);
@@ -1681,9 +1685,7 @@ export function SuperOverseerActivityPanel({
                 const ov = section.person;
                 const open = openOverseers.has(ov.id);
                 const clip = ov.controlProvinces ?? null;
-                const m = metricsFor(ov, null);
                 const teamCount = section.type2.length + section.staff.length;
-                const last = overseerLastDate.get(ov.id) || m.lastDate || '';
                 const roleLabel = roleDisplayLabel(ov.role, ov.overseer_tier);
                 const parentSelected = selectedPeople.has(ov.id);
                 const staffUnderType2 = section.type2.flatMap((t2) =>
@@ -1698,6 +1700,8 @@ export function SuperOverseerActivityPanel({
                   [],
                   clip
                 );
+                /** Display + sort lastDate must match clipped color (Type1∩team). */
+                const last = teamAgg.last || overseerLastDate.get(ov.id) || '';
 
                 return (
                   <div key={ov.id} className="so-tree__node">
