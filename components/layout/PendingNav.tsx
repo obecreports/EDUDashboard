@@ -81,7 +81,7 @@ export function PendingNav() {
         <span className="nav-pending__spinner" aria-hidden />
         <div>
           <strong>กำลังโหลด…</strong>
-          <p className="m-0 text-sm opacity-90">รับคำสั่งแล้ว กรุณารอสักครู่</p>
+          <p className="m-0 text-sm opacity-90">กรุณารอสักครู่</p>
         </div>
       </div>
     </div>

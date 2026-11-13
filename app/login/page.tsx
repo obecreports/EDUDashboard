@@ -12,7 +12,7 @@ export default function LoginPage() {
       <LoginFormClient />
 
       <p className="text-xs text-slate-400 mt-4 mb-0">
-        ผู้เยี่ยมชม (Guest) ใช้งานสาธารณะได้โดยไม่ต้องเข้าสู่ระบบ ·{' '}
+        ไม่มี login สำหรับเข้าสู่ระบบ ·{' '}
         <Link href="/" className="text-tm-blue">
           ← กลับหน้าหลัก
         </Link>

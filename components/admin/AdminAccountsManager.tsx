@@ -8,6 +8,7 @@ import {
   updateAdminUserAction,
 } from '@/app/actions/admin';
 import {
+  ADMIN_ROLE_LABELS,
   ROLE_LABELS,
   formatDisplayName,
   formatPersonLabel,
@@ -33,11 +34,15 @@ type AccountRow = {
 const PAGE_SIZE = 10;
 
 const CREATE_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
-  { value: 'staff', label: ROLE_LABELS.staff },
-  { value: 'overseer', label: ROLE_LABELS.overseer },
-  { value: 'volunteer', label: ROLE_LABELS.volunteer },
-  { value: 'super_overseer', label: ROLE_LABELS.super_overseer },
-  { value: 'admin', label: ROLE_LABELS.admin },
+  { value: 'staff', label: ADMIN_ROLE_LABELS.staff },
+  { value: 'overseer', label: ADMIN_ROLE_LABELS.overseer },
+  { value: 'covert_overseer', label: ADMIN_ROLE_LABELS.covert_overseer },
+  { value: 'volunteer_center', label: ADMIN_ROLE_LABELS.volunteer_center },
+  { value: 'volunteer_border', label: ADMIN_ROLE_LABELS.volunteer_border },
+  { value: 'special_volunteer', label: ADMIN_ROLE_LABELS.special_volunteer },
+  { value: 'director', label: ADMIN_ROLE_LABELS.director },
+  { value: 'super_overseer', label: ADMIN_ROLE_LABELS.super_overseer },
+  { value: 'admin', label: ADMIN_ROLE_LABELS.admin },
 ];
 
 function canManageTarget(
@@ -55,17 +60,20 @@ function canManageTarget(
 }
 
 function rolesAssignableBy(actorRole: UserRole): UserRole[] {
+  const field = [
+    'staff',
+    'overseer',
+    'covert_overseer',
+    'volunteer_center',
+    'volunteer_border',
+    'special_volunteer',
+    'director',
+    'super_overseer',
+  ] as UserRole[];
   if (actorRole === 'super_admin') {
-    return [
-      'staff',
-      'overseer',
-      'volunteer',
-      'super_overseer',
-      'admin',
-      'super_admin',
-    ];
+    return [...field, 'admin', 'super_admin'];
   }
-  return ['staff', 'overseer', 'volunteer', 'super_overseer'];
+  return field;
 }
 
 function roleFilterOptions(actorRole: UserRole): UserRole[] {
@@ -208,7 +216,7 @@ export function AdminAccountsManager({
             >
               {assignableRoles.map((r) => (
                 <option key={r} value={r}>
-                  {ROLE_LABELS[r]}
+                  {ADMIN_ROLE_LABELS[r]}
                 </option>
               ))}
             </select>
@@ -336,7 +344,7 @@ export function AdminAccountsManager({
             <option value="all">ทั้งหมด</option>
             {roleFilterOptions(actorRole).map((r) => (
               <option key={r} value={r}>
-                {ROLE_LABELS[r]}
+                {ADMIN_ROLE_LABELS[r]}
               </option>
             ))}
           </select>
@@ -395,12 +403,12 @@ export function AdminAccountsManager({
               name="email"
               type="text"
               className="form-input"
-              placeholder="ว่าง = staff0001 / OS0015 / AS0001 (อาสาสมัคร)"
+              placeholder="staff0001 / OS0015 / ASB0001 · ผอ. = รหัสโรงเรียน"
               autoCapitalize="off"
               spellCheck={false}
             />
             <span className="text-xs text-slate-500 font-normal">
-              ตามบทบาท + เลข 4 หลัก · หรือใส่เองถ้าต้องการ
+              ตามบทบาท + เลข 4 หลัก · ผู้อำนวยการต้องใส่รหัสโรงเรียน (school ID)
             </span>
           </label>
           <label className="block text-sm">
@@ -458,7 +466,7 @@ export function AdminAccountsManager({
                     </code>
                   </td>
                   <td className="p-3">{a.position || '—'}</td>
-                  <td className="p-3">{ROLE_LABELS[targetRole] ?? a.role}</td>
+                  <td className="p-3">{ADMIN_ROLE_LABELS[targetRole] ?? a.role}</td>
                   <td className="p-3">
                     <span
                       className="text-xs font-semibold px-2 py-1 rounded-full"

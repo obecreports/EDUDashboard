@@ -2,16 +2,24 @@
 
 import { useMemo } from 'react';
 import {
+  ADMIN_ROLE_LABELS,
   ROLE_LABELS,
   formatPersonLabel,
   isOverseerType1,
   isOverseerType2,
+  roleDisplayLabel,
   type OverseerTier,
   type SchoolFull,
   type UserRole,
 } from '@/lib/types';
 import { staffUnderType1, type2UnderType1 } from '@/lib/auth/province-radar';
+import { domainScopeLabel } from '@/lib/auth/domain-scope';
 import type { ScopeUser } from '@/lib/auth/scope';
+
+function provinceScopeText(list: string[]) {
+  if (!list.length) return '';
+  return ` · ${domainScopeLabel(list, 'province')}`;
+}
 
 type Account = {
   id: string;
@@ -80,6 +88,22 @@ export function OrgMapClient({
     [accounts]
   );
 
+  const covertOverseers = useMemo(
+    () =>
+      accounts
+        .filter((a) => a.role === 'covert_overseer')
+        .sort((a, b) => labelOf(a).localeCompare(labelOf(b), 'th')),
+    [accounts]
+  );
+
+  const specialVolunteers = useMemo(
+    () =>
+      accounts
+        .filter((a) => a.role === 'special_volunteer')
+        .sort((a, b) => labelOf(a).localeCompare(labelOf(b), 'th')),
+    [accounts]
+  );
+
   const overseerBlocks = useMemo(() => {
     return type1.map((ov) => {
       const scopeOv = toScope(ov);
@@ -128,8 +152,9 @@ export function OrgMapClient({
           </h2>
           <p className="text-sm text-slate-600 m-0 mt-1">
             {ROLE_LABELS.super_overseer} → {ROLE_LABELS.overseer} (
-            {type1.length} คน) → สาขา{ROLE_LABELS.volunteer} / {ROLE_LABELS.staff}{' '}
-            ตามจังหวัดที่ซ้อนทับ (ดูอย่างเดียว)
+            {type1.length} คน) → สาขา{ROLE_LABELS.volunteer_center} /{' '}
+            {ROLE_LABELS.volunteer_border} / {ROLE_LABELS.staff} ตามจังหวัดที่ซ้อนทับ
+            (ดูอย่างเดียว)
           </p>
         </div>
 
@@ -155,14 +180,14 @@ export function OrgMapClient({
                       <span className="text-xs text-slate-500">
                         {ROLE_LABELS.overseer}
                         {overseer.assigned_provinces.length
-                          ? ` · ${overseer.assigned_provinces.join(', ')}`
+                          ? provinceScopeText(overseer.assigned_provinces)
                           : ' · ยังไม่มอบหมายจังหวัด'}
                       </span>
                     </div>
                     <div className="org-map-tree__branches">
                       <div className="org-map-tree__branch">
                         <div className="org-map-tree__branch-title">
-                          {ROLE_LABELS.volunteer} ({volunteers.length})
+                          อาสาสมัคร ({volunteers.length})
                         </div>
                         {volunteers.length === 0 ? (
                           <p className="text-xs text-slate-400 m-0">—</p>
@@ -171,12 +196,13 @@ export function OrgMapClient({
                             {volunteers.map((v) => (
                               <li key={v.id}>
                                 {labelOf(v)}
-                                {v.assigned_provinces.length ? (
-                                  <span className="text-slate-400">
-                                    {' '}
-                                    · {v.assigned_provinces.join(', ')}
-                                  </span>
-                                ) : null}
+                                <span className="text-slate-400">
+                                  {' '}
+                                  · {roleDisplayLabel(v.role, v.overseer_tier)}
+                                  {v.assigned_provinces.length
+                                    ? provinceScopeText(v.assigned_provinces)
+                                    : ''}
+                                </span>
                               </li>
                             ))}
                           </ul>
@@ -209,6 +235,49 @@ export function OrgMapClient({
             มี{ROLE_LABELS.super_overseer} {supers.length} คน — รายการองคมนตรีด้านบนเป็นชุดเดียวกันภายใต้ทุกรายชื่อ
           </p>
         )}
+
+        {(covertOverseers.length > 0 || specialVolunteers.length > 0) && (
+          <div className="space-y-3 border-t border-slate-100 pt-3">
+            <p className="text-sm text-slate-600 m-0">
+              บทบาทเฉพาะกิจภายใต้{ROLE_LABELS.super_overseer} (ไม่แสดงในแดชบอร์ดกิจกรรม
+              SO/OS)
+            </p>
+            {covertOverseers.length > 0 && (
+              <div>
+                <div className="text-sm font-semibold mb-1">
+                  {ADMIN_ROLE_LABELS.covert_overseer} ({covertOverseers.length})
+                </div>
+                <ul className="text-sm m-0 pl-5 space-y-0.5">
+                  {covertOverseers.map((u) => (
+                    <li key={u.id}>
+                      {labelOf(u)}
+                      {u.assigned_provinces.length
+                        ? provinceScopeText(u.assigned_provinces)
+                        : ' · ยังไม่มอบหมายจังหวัด'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {specialVolunteers.length > 0 && (
+              <div>
+                <div className="text-sm font-semibold mb-1">
+                  {ADMIN_ROLE_LABELS.special_volunteer} ({specialVolunteers.length})
+                </div>
+                <ul className="text-sm m-0 pl-5 space-y-0.5">
+                  {specialVolunteers.map((u) => (
+                    <li key={u.id}>
+                      {labelOf(u)}
+                      {u.assigned_provinces.length
+                        ? provinceScopeText(u.assigned_provinces)
+                        : ' · ยังไม่มอบหมายจังหวัด'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {(orphanVolunteers.length > 0 || orphanStaff.length > 0) && (
@@ -222,14 +291,14 @@ export function OrgMapClient({
           {orphanVolunteers.length > 0 && (
             <div>
               <div className="text-sm font-semibold mb-1">
-                {ROLE_LABELS.volunteer} ({orphanVolunteers.length})
+                อาสาสมัคร ({orphanVolunteers.length})
               </div>
               <ul className="text-sm m-0 pl-5 space-y-0.5">
                 {orphanVolunteers.map((v) => (
                   <li key={v.id}>
                     {labelOf(v)}
                     {v.assigned_provinces.length
-                      ? ` · ${v.assigned_provinces.join(', ')}`
+                      ? provinceScopeText(v.assigned_provinces)
                       : ' · ยังไม่มอบหมายจังหวัด'}
                   </li>
                 ))}

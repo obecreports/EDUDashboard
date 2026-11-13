@@ -22,6 +22,7 @@ import {
   ClipboardPen,
   Expand,
   FilePlus2,
+  GraduationCap,
   Home,
   Info,
   Map as MapIcon,
@@ -59,6 +60,11 @@ import {
   scoreYearToBeLabel,
 } from '@/lib/scores/years';
 import { statusFromScore } from '@/lib/theme/status';
+import {
+  canAccessSection,
+  schoolTabResource,
+  type ContentAccessMap,
+} from '@/lib/auth/content-access';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
@@ -71,7 +77,9 @@ type TabId =
   | 'visits'
   | 'scores'
   | 'pillars'
-  | 'buildings';
+  | 'buildings'
+  | 'scholarship'
+  | 'contract_teachers';
 
 function num(v: unknown): number {
   if (v == null || v === '') return 0;
@@ -302,6 +310,22 @@ export type PillarIndicatorScore = {
   score: number;
 };
 
+export type SchoolScholarshipRow = {
+  id: string;
+  name: string;
+  grade_level: string;
+  scholarship_type: string;
+  status: string;
+};
+
+export type SchoolContractTeacherRow = {
+  id: string;
+  name: string;
+  subject?: string;
+  contract_type: string;
+  status: string;
+};
+
 export function SchoolDetailClient({
   school,
   canEdit,
@@ -309,11 +333,15 @@ export function SchoolDetailClient({
   canComment,
   showScores = true,
   guestView = false,
+  viewerRole = 'guest',
+  contentAccess,
   initialComments,
   initialSwot,
   initialAchievements,
   visitHistory = [],
   pillarIndicators,
+  scholarshipStudents = [],
+  contractTeachers = [],
 }: {
   school: SchoolFull;
   canEdit: boolean;
@@ -321,6 +349,8 @@ export function SchoolDetailClient({
   canComment: boolean;
   showScores?: boolean;
   guestView?: boolean;
+  viewerRole?: string | null;
+  contentAccess?: ContentAccessMap;
   initialComments: SchoolComment[];
   initialSwot: SchoolSwot;
   initialAchievements: SchoolAchievements;
@@ -331,6 +361,8 @@ export function SchoolDetailClient({
     'qualitySchool' | 'qualityGraduation' | 'disciplineMorality',
     PillarIndicatorScore[]
   >;
+  scholarshipStudents?: SchoolScholarshipRow[];
+  contractTeachers?: SchoolContractTeacherRow[];
 }) {
   const [tab, setTab] = useState<TabId>('overview');
   const [mapFullscreen, setMapFullscreen] = useState(false);
@@ -558,28 +590,58 @@ export function SchoolDetailClient({
     [totalBoys, totalGirls]
   );
 
-  const tabs: { id: TabId; label: string; icon: typeof Home }[] = guestView
-    ? [
-        { id: 'overview', label: 'ภาพรวม', icon: Home },
-        { id: 'basic', label: 'ข้อมูลพื้นฐาน', icon: Info },
-        { id: 'buildings', label: 'ข้อมูลสิ่งปลูกสร้าง', icon: Building2 },
-        { id: 'location', label: 'ที่ตั้งและแผนที่', icon: MapIcon },
-        { id: 'swot', label: 'SWOT โรงเรียน', icon: ClipboardPen },
-      ]
-    : [
-        { id: 'overview', label: 'ภาพรวม', icon: Home },
-        { id: 'basic', label: 'ข้อมูลพื้นฐาน', icon: Info },
-        { id: 'buildings', label: 'ข้อมูลสิ่งปลูกสร้าง', icon: Building2 },
-        { id: 'swot', label: 'SWOT โรงเรียน', icon: ClipboardPen },
-        { id: 'visits', label: 'การลงพื้นที่', icon: CalendarDays },
-        ...(showScores
-          ? [
-              { id: 'pillars' as const, label: '3 เสาหลัก', icon: Sparkles },
-              { id: 'scores' as const, label: 'ผลการประเมินตามระบบ SMS', icon: Award },
-            ]
-          : []),
-        { id: 'people', label: 'นักเรียน / บุคลากร', icon: Users },
-      ];
+  const tabAllowed = (id: TabId) => {
+    if (!contentAccess) {
+      // Legacy fallback when ACL not passed
+      if (guestView) {
+        return (
+          id === 'overview' ||
+          id === 'basic' ||
+          id === 'buildings' ||
+          id === 'location' ||
+          id === 'swot'
+        );
+      }
+      return true;
+    }
+    const section = schoolTabResource(id);
+    if (!section) return true;
+    return canAccessSection(
+      viewerRole,
+      'school_detail',
+      section,
+      'view',
+      contentAccess
+    );
+  };
+
+  const allTabs: { id: TabId; label: string; icon: typeof Home }[] = [
+    { id: 'overview', label: 'ภาพรวม', icon: Home },
+    { id: 'basic', label: 'ข้อมูลพื้นฐาน', icon: Info },
+    { id: 'buildings', label: 'ข้อมูลสิ่งปลูกสร้าง', icon: Building2 },
+    { id: 'location', label: 'ที่ตั้งและแผนที่', icon: MapIcon },
+    { id: 'swot', label: 'SWOT โรงเรียน', icon: ClipboardPen },
+    { id: 'visits', label: 'การลงพื้นที่', icon: CalendarDays },
+    { id: 'pillars', label: '3 เสาหลัก', icon: Sparkles },
+    { id: 'scores', label: 'ผลการประเมินตามระบบ SMS', icon: Award },
+    { id: 'people', label: 'นักเรียน / บุคลากร', icon: Users },
+    { id: 'scholarship', label: 'นักเรียนทุน', icon: GraduationCap },
+    { id: 'contract_teachers', label: 'ครูอัตรจ้าง', icon: UserCheck },
+  ];
+
+  const tabs = allTabs.filter((t) => {
+    if (!tabAllowed(t.id)) return false;
+    if ((t.id === 'pillars' || t.id === 'scores') && !showScores) return false;
+    if (t.id === 'scholarship' && !scholarshipStudents.length) return false;
+    if (t.id === 'contract_teachers' && !contractTeachers.length) return false;
+    return true;
+  });
+
+  useEffect(() => {
+    if (tabs.length && !tabs.some((t) => t.id === tab)) {
+      setTab(tabs[0].id);
+    }
+  }, [tabs, tab]);
 
   const buildingInfoUrl = `https://asset.bopp-obec.info/Home/BuildingBySchoolID?SchoolID=${encodeURIComponent(String(school.school_id))}`;
 
@@ -1332,6 +1394,80 @@ export function SchoolDetailClient({
             ))}
           </section>
         </div>
+      )}
+
+      {tab === 'scholarship' && (
+        <section className="panel-card space-y-3">
+          <h2 className="section-heading text-base m-0">นักเรียนทุนในโรงเรียนนี้</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-left">
+                  <th className="p-3">ชื่อ</th>
+                  <th className="p-3">ชั้น</th>
+                  <th className="p-3">ประเภททุน</th>
+                  <th className="p-3">สถานะ</th>
+                  <th className="p-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {scholarshipStudents.map((s) => (
+                  <tr key={s.id} className="border-t border-slate-100">
+                    <td className="p-3 font-medium">{s.name}</td>
+                    <td className="p-3">{s.grade_level}</td>
+                    <td className="p-3">{s.scholarship_type}</td>
+                    <td className="p-3">{s.status}</td>
+                    <td className="p-3 text-right">
+                      <Link
+                        href={`/scholarship-students/${s.id}`}
+                        className="text-tm-blue font-semibold underline"
+                      >
+                        ดูรายละเอียด
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {tab === 'contract_teachers' && (
+        <section className="panel-card space-y-3">
+          <h2 className="section-heading text-base m-0">ครูอัตรจ้างในโรงเรียนนี้</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-left">
+                  <th className="p-3">ชื่อ</th>
+                  <th className="p-3">วิชา</th>
+                  <th className="p-3">สัญญา</th>
+                  <th className="p-3">สถานะ</th>
+                  <th className="p-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {contractTeachers.map((t) => (
+                  <tr key={t.id} className="border-t border-slate-100">
+                    <td className="p-3 font-medium">{t.name}</td>
+                    <td className="p-3">{t.subject || '—'}</td>
+                    <td className="p-3">{t.contract_type}</td>
+                    <td className="p-3">{t.status}</td>
+                    <td className="p-3 text-right">
+                      <Link
+                        href={`/contract-teachers/${t.id}`}
+                        className="text-tm-blue font-semibold underline"
+                      >
+                        ดูรายละเอียด
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       {tab === 'scores' && (

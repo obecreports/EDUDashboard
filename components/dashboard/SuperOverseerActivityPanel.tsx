@@ -8,11 +8,13 @@ import type { OverseerTier, UserRole } from '@/lib/types';
 import {
   ROLE_LABELS,
   formatPersonLabel,
+  isCovertFieldRole,
   isOverseerType1,
   isOverseerType2,
   normalizeRole,
   roleDisplayLabel,
 } from '@/lib/types';
+import { isGlobalDomainScope } from '@/lib/auth/domain-scope';
 import type { ReportActivityLink } from '@/lib/activity/complete';
 import {
   HierarchicalFilterDropdown,
@@ -109,12 +111,41 @@ function latestDate(dates: string[]) {
 
 function overlapProvinceList(a: string[] | undefined, b: string[] | undefined): string[] {
   if (!a?.length || !b?.length) return [];
+  if (isGlobalDomainScope(a) || isGlobalDomainScope(b)) {
+    if (isGlobalDomainScope(a) && isGlobalDomainScope(b)) return ['*'];
+    const other = isGlobalDomainScope(a) ? b : a;
+    return [...new Set(other.map((p) => p.trim()).filter((p) => p && p !== '*'))];
+  }
   const setB = new Set(b.map((p) => p.trim()).filter(Boolean));
   return [...new Set(a.map((p) => p.trim()).filter((p) => p && setB.has(p)))];
 }
 
 function provincesIntersect(a: string[] | undefined, b: string[] | undefined): boolean {
+  if (isGlobalDomainScope(a) || isGlobalDomainScope(b)) return true;
   return overlapProvinceList(a, b).length > 0;
+}
+
+/** Metric box tone from filtered count (รร. always neutral). */
+function metricToneClass(
+  kind: 'schools' | 'bookings' | 'reports',
+  value: number
+): string {
+  if (kind === 'schools') return 'so-metric-tone--schools';
+  if (value <= 0) return 'so-metric-tone--0';
+  if (value <= 5) return 'so-metric-tone--1';
+  if (value <= 10) return 'so-metric-tone--2';
+  if (value <= 15) return 'so-metric-tone--3';
+  return 'so-metric-tone--4';
+}
+
+function roleRowClass(role: UserRole | string): string {
+  const r = normalizeRole(role);
+  if (r === 'overseer') return 'so-role-row so-role-row--overseer';
+  if (r === 'volunteer_center') return 'so-role-row so-role-row--center';
+  if (r === 'volunteer_border') return 'so-role-row so-role-row--border';
+  if (r === 'staff') return 'so-role-row so-role-row--staff';
+  if (r === 'director') return 'so-role-row so-role-row--director';
+  return 'so-role-row';
 }
 
 /** Newest lastDate first; empty dates sink to the bottom. */
@@ -129,16 +160,36 @@ function MetricLink({
   href,
   value,
   label,
+  tone,
 }: {
   href: string;
   value: number;
   label: string;
+  tone?: 'schools' | 'bookings' | 'reports';
 }) {
+  const toneClass = tone ? metricToneClass(tone, value) : '';
   return (
-    <Link href={href} className="so-metric" title={label}>
+    <Link href={href} className={`so-metric ${toneClass}`.trim()} title={label}>
       <strong>{value}</strong>
       <span>{label}</span>
     </Link>
+  );
+}
+
+function MetricStatic({
+  value,
+  label,
+  tone,
+}: {
+  value: number;
+  label: string;
+  tone: 'schools' | 'bookings' | 'reports';
+}) {
+  return (
+    <span className={`so-metric so-metric--static ${metricToneClass(tone, value)}`}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </span>
   );
 }
 
@@ -314,6 +365,7 @@ export function SuperOverseerActivityPanel({
   const eventInClip = (e: StaffCalendarEvent, clip: string[] | null) => {
     if (!clip) return true;
     if (!clip.length) return false;
+    if (isGlobalDomainScope(clip)) return true;
     const prov = (e.province ?? '').trim();
     if (prov && clip.includes(prov)) return true;
     const ids = [e.school_id, ...(e.school_ids ?? [])].filter(Boolean).map(String);
@@ -326,6 +378,7 @@ export function SuperOverseerActivityPanel({
   const reportInClip = (r: ReportActivityLink, clip: string[] | null) => {
     if (!clip) return true;
     if (!clip.length) return false;
+    if (isGlobalDomainScope(clip)) return true;
     const sid = r.school_id ? String(r.school_id) : '';
     if (!sid) return false;
     const s = schoolById.get(sid);
@@ -335,10 +388,17 @@ export function SuperOverseerActivityPanel({
   /** Metrics optionally clipped to Type1∩person provinces. */
   const metricsFor = (p: ActivityPerson, clipProvinces?: string[] | null): PersonMetric => {
     const personProv = p.controlProvinces ?? [];
-    const clip =
+    const rawClip =
       clipProvinces == null
         ? null
         : overlapProvinceList(personProv, clipProvinces);
+    /** `*` intersection means unrestricted for this person under the parent clip */
+    const clip =
+      rawClip == null
+        ? null
+        : isGlobalDomainScope(rawClip)
+          ? null
+          : rawClip;
 
     const schoolIds =
       clip == null
@@ -386,8 +446,13 @@ export function SuperOverseerActivityPanel({
     () =>
       people
         .filter((p) => {
+          if (isCovertFieldRole(p.role)) return false;
           const r = normalizeRole(p.role);
-          return r === 'overseer' || r === 'volunteer';
+          return (
+            r === 'overseer' ||
+            r === 'volunteer_center' ||
+            r === 'volunteer_border'
+          );
         })
         .sort((a, b) => labelOf(a).localeCompare(labelOf(b), 'th')),
     [people]
@@ -432,6 +497,25 @@ export function SuperOverseerActivityPanel({
     return map;
   }, [type1Overseers, people]);
 
+  /** Directors under Type 1 by school-province ∩ overseer provinces. */
+  const directorsUnder = useMemo(() => {
+    const map = new Map<string, ActivityPerson[]>();
+    const directors = people.filter(
+      (p) => normalizeRole(p.role) === 'director'
+    );
+
+    for (const t1 of type1Overseers) {
+      const t1p = t1.controlProvinces ?? [];
+      for (const d of directors) {
+        if (!provincesIntersect(t1p, d.controlProvinces)) continue;
+        const list = map.get(t1.id) ?? [];
+        list.push(d);
+        map.set(t1.id, list);
+      }
+    }
+    return map;
+  }, [type1Overseers, people]);
+
   /**
    * Type1 rollup lastDate: only activity in Type1∩person provinces
    * (VL under multiple OS must not leak activity across parents).
@@ -450,10 +534,13 @@ export function SuperOverseerActivityPanel({
       for (const st of staffUnder.get(ov.id) ?? []) {
         dates.push(metricsFor(st, clip).lastDate);
       }
+      for (const d of directorsUnder.get(ov.id) ?? []) {
+        dates.push(metricsFor(d, clip).lastDate);
+      }
       map.set(ov.id, latestDate(dates));
     }
     return map;
-  }, [overseers, type2Under, staffUnder, personMetrics]);
+  }, [overseers, type2Under, staffUnder, directorsUnder, personMetrics]);
 
   const personLastActivity = (p: ActivityPerson) =>
     overseerLastDate.get(p.id) || personMetrics.get(p.id)?.lastDate || '';
@@ -463,7 +550,8 @@ export function SuperOverseerActivityPanel({
     const t2s = type2Under.get(ov.id) ?? [];
     const directStaff = staffUnder.get(ov.id) ?? [];
     const underT2 = t2s.flatMap((t2) => staffUnder.get(t2.id) ?? []);
-    const all = [ov, ...t2s, ...directStaff, ...underT2];
+    const dirs = directorsUnder.get(ov.id) ?? [];
+    const all = [ov, ...t2s, ...directStaff, ...underT2, ...dirs];
     let bookings = 0;
     let reports = 0;
     const schoolIds = new Set<string>();
@@ -571,7 +659,7 @@ export function SuperOverseerActivityPanel({
       return {
         id: t2.id,
         label: labelOf(t2),
-        hint: ROLE_LABELS.volunteer,
+        hint: roleDisplayLabel(t2.role, t2.overseer_tier),
         children: staffKids.length
           ? staffKids.map((st) => ({
               id: st.id,
@@ -584,52 +672,89 @@ export function SuperOverseerActivityPanel({
 
     const roleType2Group = (
       key: string,
+      label: string,
       members: ActivityPerson[]
     ): FilterTreeNode | null => {
       if (!members.length) return null;
       return {
         id: key,
-        label: ROLE_LABELS.volunteer,
+        label,
         hint: 'กลุ่มอาสาสมัคร',
         groupOnly: true,
         children: members.map(type2Node),
       };
     };
 
-    const roleStaffGroup = (
+    const rolePeopleGroup = (
       key: string,
+      label: string,
+      hint: string,
       members: ActivityPerson[]
     ): FilterTreeNode | null => {
       if (!members.length) return null;
       return {
         id: key,
-        label: ROLE_LABELS.staff,
-        hint: 'กลุ่มเจ้าหน้าที่',
+        label,
+        hint,
         groupOnly: true,
         children: members.map((st) => ({
           id: st.id,
           label: labelOf(st),
-          hint: ROLE_LABELS.staff,
+          hint: roleDisplayLabel(st.role, st.overseer_tier),
         })),
       };
     };
 
     const nodes: FilterTreeNode[] = [];
+    const nestedDirectors = new Set<string>();
 
     for (const ov of type1Overseers) {
-      const t2s = type2Under.get(ov.id) ?? [];
+      const t2s = (type2Under.get(ov.id) ?? []).filter(
+        (p) => !isCovertFieldRole(p.role)
+      );
       const directStaff = staffUnder.get(ov.id) ?? [];
+      const dirs = directorsUnder.get(ov.id) ?? [];
       for (const t2 of t2s) {
         nestedType2.add(t2.id);
         for (const st of staffUnder.get(t2.id) ?? []) nestedStaff.add(st.id);
       }
       for (const st of directStaff) nestedStaff.add(st.id);
+      for (const d of dirs) nestedDirectors.add(d.id);
 
       const children: FilterTreeNode[] = [];
-      const g2 = roleType2Group(`g:type2:${ov.id}`, t2s);
-      const gs = roleStaffGroup(`g:staff:${ov.id}`, directStaff);
-      if (g2) children.push(g2);
+      const center = t2s.filter((p) => normalizeRole(p.role) === 'volunteer_center');
+      const border = t2s.filter(
+        (p) =>
+          normalizeRole(p.role) === 'volunteer_border' ||
+          (isOverseerType2(p.role, p.overseer_tier) &&
+            normalizeRole(p.role) !== 'volunteer_center')
+      );
+      const gCenter = roleType2Group(
+        `g:vc:${ov.id}`,
+        ROLE_LABELS.volunteer_center,
+        center
+      );
+      const gBorder = roleType2Group(
+        `g:vb:${ov.id}`,
+        ROLE_LABELS.volunteer_border,
+        border
+      );
+      const gs = rolePeopleGroup(
+        `g:staff:${ov.id}`,
+        ROLE_LABELS.staff,
+        'กลุ่มเจ้าหน้าที่',
+        directStaff
+      );
+      const gd = rolePeopleGroup(
+        `g:dir:${ov.id}`,
+        ROLE_LABELS.director,
+        'กลุ่มผู้อำนวยการ',
+        dirs
+      );
+      if (gCenter) children.push(gCenter);
+      if (gBorder) children.push(gBorder);
       if (gs) children.push(gs);
+      if (gd) children.push(gd);
 
       nodes.push({
         id: ov.id,
@@ -642,10 +767,27 @@ export function SuperOverseerActivityPanel({
     const orphanType2: ActivityPerson[] = [];
     for (const p of overseers) {
       if (!isOverseerType2(p.role, p.overseer_tier) || nestedType2.has(p.id)) continue;
+      if (isCovertFieldRole(p.role)) continue;
       orphanType2.push(p);
     }
-    const gOrphanT2 = roleType2Group('g:type2', orphanType2);
-    if (gOrphanT2) nodes.push(gOrphanT2);
+    const orphanCenter = orphanType2.filter(
+      (p) => normalizeRole(p.role) === 'volunteer_center'
+    );
+    const orphanBorder = orphanType2.filter(
+      (p) => normalizeRole(p.role) !== 'volunteer_center'
+    );
+    const gOrphanCenter = roleType2Group(
+      'g:vc',
+      ROLE_LABELS.volunteer_center,
+      orphanCenter
+    );
+    const gOrphanBorder = roleType2Group(
+      'g:vb',
+      ROLE_LABELS.volunteer_border,
+      orphanBorder
+    );
+    if (gOrphanCenter) nodes.push(gOrphanCenter);
+    if (gOrphanBorder) nodes.push(gOrphanBorder);
 
     const orphanStaff: ActivityPerson[] = [];
     for (const p of people) {
@@ -653,11 +795,30 @@ export function SuperOverseerActivityPanel({
       if (nestedStaff.has(p.id)) continue;
       orphanStaff.push(p);
     }
-    const gOrphanStaff = roleStaffGroup('g:staff', orphanStaff);
+    const gOrphanStaff = rolePeopleGroup(
+      'g:staff',
+      ROLE_LABELS.staff,
+      'กลุ่มเจ้าหน้าที่',
+      orphanStaff
+    );
     if (gOrphanStaff) nodes.push(gOrphanStaff);
 
+    const orphanDirectors: ActivityPerson[] = [];
+    for (const p of people) {
+      if (normalizeRole(p.role) !== 'director') continue;
+      if (nestedDirectors.has(p.id)) continue;
+      orphanDirectors.push(p);
+    }
+    const gOrphanDir = rolePeopleGroup(
+      'g:dir',
+      ROLE_LABELS.director,
+      'กลุ่มผู้อำนวยการ',
+      orphanDirectors
+    );
+    if (gOrphanDir) nodes.push(gOrphanDir);
+
     return nodes;
-  }, [type1Overseers, type2Under, staffUnder, overseers, people]);
+  }, [type1Overseers, type2Under, staffUnder, directorsUnder, overseers, people]);
 
   const placeFilterTree = useMemo((): FilterTreeNode[] => {
     const byProv = new Map<string, Map<string, ActivitySchool[]>>();
@@ -912,20 +1073,27 @@ export function SuperOverseerActivityPanel({
           person: ActivityPerson;
           type2: ActivityPerson[];
           staff: ActivityPerson[];
+          directors: ActivityPerson[];
         }
       | { kind: 'role-type2'; people: ActivityPerson[] }
-      | { kind: 'role-staff'; people: ActivityPerson[] };
+      | { kind: 'role-staff'; people: ActivityPerson[] }
+      | { kind: 'role-director'; people: ActivityPerson[] };
 
     const sections: Section[] = [];
+    const nestedDirectors = new Set<string>();
 
     for (const ov of type1Overseers) {
-      const t2s = type2Under.get(ov.id) ?? [];
+      const t2s = (type2Under.get(ov.id) ?? []).filter(
+        (p) => !isCovertFieldRole(p.role)
+      );
       const directStaff = staffUnder.get(ov.id) ?? [];
+      const dirs = directorsUnder.get(ov.id) ?? [];
       for (const t2 of t2s) {
         nestedType2.add(t2.id);
         for (const st of staffUnder.get(t2.id) ?? []) nestedStaff.add(st.id);
       }
       for (const st of directStaff) nestedStaff.add(st.id);
+      for (const d of dirs) nestedDirectors.add(d.id);
 
       if (selectedPeople.size > 0) {
         const hitSelf = selectedPeople.has(ov.id);
@@ -935,7 +1103,8 @@ export function SuperOverseerActivityPanel({
             (staffUnder.get(t2.id) ?? []).some((s) => selectedPeople.has(s.id))
         );
         const hitStaff = directStaff.some((s) => selectedPeople.has(s.id));
-        if (!hitSelf && !hitT2 && !hitStaff) continue;
+        const hitDir = dirs.some((d) => selectedPeople.has(d.id));
+        if (!hitSelf && !hitT2 && !hitStaff && !hitDir) continue;
       }
       if (needle) {
         const hitSelf = personMatches(ov);
@@ -945,7 +1114,8 @@ export function SuperOverseerActivityPanel({
             (staffUnder.get(t2.id) ?? []).some((s) => personMatches(s))
         );
         const hitStaff = directStaff.some((s) => personMatches(s));
-        if (!hitSelf && !hitT2 && !hitStaff) continue;
+        const hitDir = dirs.some((d) => personMatches(d));
+        if (!hitSelf && !hitT2 && !hitStaff && !hitDir) continue;
       }
 
       const type2Visible = t2s.filter((t2) => {
@@ -968,12 +1138,22 @@ export function SuperOverseerActivityPanel({
         }
         return personMatches(st);
       });
+      const directorsVisible = dirs.filter((d) => {
+        if (selectedPeople.size > 0) {
+          const anyDirSelected = dirs.some((k) => selectedPeople.has(k.id));
+          if (anyDirSelected) return selectedPeople.has(d.id);
+          if (selectedPeople.has(ov.id)) return true;
+          return selectedPeople.has(d.id);
+        }
+        return personMatches(d);
+      });
 
       sections.push({
         kind: 'type1',
         person: ov,
         type2: [...type2Visible].sort(comparePeopleByActivity),
         staff: [...staffVisible].sort(comparePeopleByActivity),
+        directors: [...directorsVisible].sort(comparePeopleByActivity),
       });
     }
 
@@ -985,6 +1165,7 @@ export function SuperOverseerActivityPanel({
     const orphanType2: ActivityPerson[] = [];
     for (const p of overseers) {
       if (!isOverseerType2(p.role, p.overseer_tier) || nestedType2.has(p.id)) continue;
+      if (isCovertFieldRole(p.role)) continue;
       const staff = staffUnder.get(p.id) ?? [];
       if (selectedPeople.size > 0) {
         const hitSelf = selectedPeople.has(p.id);
@@ -1017,11 +1198,27 @@ export function SuperOverseerActivityPanel({
       });
     }
 
+    const orphanDirectors: ActivityPerson[] = [];
+    for (const p of people) {
+      if (normalizeRole(p.role) !== 'director') continue;
+      if (nestedDirectors.has(p.id)) continue;
+      if (selectedPeople.size > 0 && !selectedPeople.has(p.id)) continue;
+      if (needle && !personMatches(p)) continue;
+      orphanDirectors.push(p);
+    }
+    if (orphanDirectors.length > 0) {
+      sections.push({
+        kind: 'role-director',
+        people: orphanDirectors.sort(comparePeopleByActivity),
+      });
+    }
+
     return sections;
   }, [
     type1Overseers,
     type2Under,
     staffUnder,
+    directorsUnder,
     overseers,
     people,
     peopleById,
@@ -1190,17 +1387,34 @@ export function SuperOverseerActivityPanel({
         if (section.kind === 'type1') {
           overseerIds.add(section.person.id);
           for (const t2 of section.type2) overseerIds.add(t2.id);
-          if (section.type2.length) {
-            roleKeys.add(`role:type2:${section.person.id}`);
-          }
+          const hasCenter = section.type2.some(
+            (p) => normalizeRole(p.role) === 'volunteer_center'
+          );
+          const hasBorder = section.type2.some(
+            (p) => normalizeRole(p.role) !== 'volunteer_center'
+          );
+          if (hasCenter) roleKeys.add(`role:vc:${section.person.id}`);
+          if (hasBorder) roleKeys.add(`role:vb:${section.person.id}`);
           if (section.staff.length) {
             roleKeys.add(`role:staff:${section.person.id}`);
           }
+          if (section.directors.length) {
+            roleKeys.add(`role:dir:${section.person.id}`);
+          }
         } else if (section.kind === 'role-type2') {
-          roleKeys.add('role:type2');
+          const hasCenter = section.people.some(
+            (p) => normalizeRole(p.role) === 'volunteer_center'
+          );
+          const hasBorder = section.people.some(
+            (p) => normalizeRole(p.role) !== 'volunteer_center'
+          );
+          if (hasCenter) roleKeys.add('role:vc');
+          if (hasBorder) roleKeys.add('role:vb');
           for (const t2 of section.people) overseerIds.add(t2.id);
         } else if (section.kind === 'role-staff') {
           roleKeys.add('role:staff');
+        } else if (section.kind === 'role-director') {
+          roleKeys.add('role:dir');
         }
       }
       setOpenOverseers(overseerIds);
@@ -1254,16 +1468,19 @@ export function SuperOverseerActivityPanel({
             href={schoolsHref({ status: 'all' })}
             value={schools.length}
             label="โรงเรียนทั้งหมด"
+            tone="schools"
           />
           <MetricLink
             href={calendarHref()}
             value={totalBookings}
             label="นัดหมาย"
+            tone="bookings"
           />
           <MetricLink
             href={reportsHref()}
             value={totalReports}
             label="รายงาน"
+            tone="reports"
           />
         </div>
       </div>
@@ -1322,14 +1539,16 @@ export function SuperOverseerActivityPanel({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="so-perf-legend m-0" aria-label="ระดับสีกิจกรรมล่าสุด">
-          <span>กิจกรรมล่าสุด:</span>
+        <div className="so-perf-legend m-0" aria-label="ระดับสีกล่องนัด/รายงาน">
+          <span>นัด/รายงาน:</span>
           {[
-            [0, 'เกิน 30 วัน'],
-            [2, 'ใน 30 วัน'],
-            [4, 'ใน 2 สัปดาห์'],
+            ['0', '0'],
+            ['1', '1–5'],
+            ['2', '6–10'],
+            ['3', '11–15'],
+            ['4', '16+'],
           ].map(([lv, text]) => (
-            <span key={String(lv)} className={`so-perf-chip so-perf--${lv}`}>
+            <span key={lv} className={`so-metric-legend so-metric-tone--${lv}`}>
               {text}
             </span>
           ))}
@@ -1440,23 +1659,24 @@ export function SuperOverseerActivityPanel({
 
               const renderPersonLeaf = (
                 person: ActivityPerson,
-                indent: '' | 'indent' | 'indent2',
+                indent: '' | 'indent' | 'indent2' | 'indent3',
                 clip: string[] | null = null
               ) => {
                 const sm = metricsFor(person, clip);
                 const active = Boolean(sm.hasActivity);
-                const sl = sm.level;
                 const indentClass =
-                  indent === 'indent2'
-                    ? 'so-tree__row--indent2'
-                    : indent === 'indent'
-                      ? 'so-tree__row--indent'
-                      : '';
+                  indent === 'indent3'
+                    ? 'so-tree__row--indent3'
+                    : indent === 'indent2'
+                      ? 'so-tree__row--indent2'
+                      : indent === 'indent'
+                        ? 'so-tree__row--indent'
+                        : '';
                 const roleLabel = roleDisplayLabel(person.role, person.overseer_tier);
                 return (
                   <div
                     key={person.id}
-                    className={`so-tree__row so-tree__row--leaf ${indentClass} so-perf-row so-perf--${sl} ${
+                    className={`so-tree__row so-tree__row--leaf ${indentClass} ${roleRowClass(person.role)} ${
                       active ? 'so-tree__row--active' : ''
                     }`}
                   >
@@ -1478,16 +1698,19 @@ export function SuperOverseerActivityPanel({
                         href={schoolsHref({ person: person.id })}
                         value={sm.schools}
                         label="รร."
+                        tone="schools"
                       />
                       <MetricLink
                         href={calendarHref(person.id)}
                         value={sm.bookings}
                         label="นัด"
+                        tone="bookings"
                       />
                       <MetricLink
                         href={reportsHref(person.id)}
                         value={sm.reports}
                         label="รายงาน"
+                        tone="reports"
                       />
                     </div>
                   </div>
@@ -1526,7 +1749,7 @@ export function SuperOverseerActivityPanel({
                   <div key={t2.id} className="so-tree__node">
                     <button
                       type="button"
-                      className={`so-tree__row so-tree__row--branch ${indentClass} so-perf-row so-perf--${teamAgg.level}`}
+                      className={`so-tree__row so-tree__row--branch ${indentClass} ${roleRowClass(t2.role)}`}
                       onClick={() => toggle(openOverseers, t2.id, setOpenOverseers)}
                       aria-expanded={open}
                     >
@@ -1551,16 +1774,19 @@ export function SuperOverseerActivityPanel({
                           href={schoolsHref({ person: t2.id })}
                           value={schoolCount}
                           label="รร."
+                          tone="schools"
                         />
                         <MetricLink
                           href={calendarHref(t2.id)}
                           value={teamAgg.bookings}
                           label="นัด"
+                          tone="bookings"
                         />
                         <MetricLink
                           href={reportsHref(t2.id)}
                           value={teamAgg.reports}
                           label="รายงาน"
+                          tone="reports"
                         />
                       </div>
                     </button>
@@ -1575,16 +1801,17 @@ export function SuperOverseerActivityPanel({
                 );
               };
 
-              /** Role group = province level (อาสาสมัคร / เจ้าหน้าที่) */
+              /** Role group = Center → Border → Staff → Director */
               const renderRoleGroup = (
                 groupKey: string,
                 title: string,
                 hint: string,
                 members: ActivityPerson[],
-                mode: 'type2' | 'staff',
+                mode: 'type2' | 'staff' | 'director',
                 nested: boolean,
                 parentSelected: boolean,
-                clip: string[] | null = null
+                clip: string[] | null = null,
+                rowRole: UserRole = 'staff'
               ) => {
                 if (members.length === 0) return null;
                 const open = openRoleGroups.has(groupKey);
@@ -1597,12 +1824,13 @@ export function SuperOverseerActivityPanel({
                 const agg = rollupPeople(members, staffUnderMembers, clip);
                 const indentClass = nested ? 'so-tree__row--indent' : '';
                 const childIndent = nested ? ('indent' as const) : ('' as const);
+                const leafIndent = nested ? ('indent2' as const) : ('indent' as const);
 
                 return (
                   <div key={groupKey} className="so-tree__node">
                     <button
                       type="button"
-                      className={`so-tree__row so-tree__row--branch ${indentClass} so-perf-row so-perf--${agg.level}`}
+                      className={`so-tree__row so-tree__row--branch ${indentClass} ${roleRowClass(rowRole)}`}
                       onClick={() => toggle(openRoleGroups, groupKey, setOpenRoleGroups)}
                       aria-expanded={open}
                     >
@@ -1623,18 +1851,9 @@ export function SuperOverseerActivityPanel({
                         </span>
                       </div>
                       <div className="so-tree__metrics" onClick={(e) => e.stopPropagation()}>
-                        <span className="so-metric so-metric--static">
-                          <strong>{agg.schools}</strong>
-                          <span>รร.</span>
-                        </span>
-                        <span className="so-metric so-metric--static">
-                          <strong>{agg.bookings}</strong>
-                          <span>นัด</span>
-                        </span>
-                        <span className="so-metric so-metric--static">
-                          <strong>{agg.reports}</strong>
-                          <span>รายงาน</span>
-                        </span>
+                        <MetricStatic value={agg.schools} label="รร." tone="schools" />
+                        <MetricStatic value={agg.bookings} label="นัด" tone="bookings" />
+                        <MetricStatic value={agg.reports} label="รายงาน" tone="reports" />
                       </div>
                     </button>
                     {open && (
@@ -1644,11 +1863,7 @@ export function SuperOverseerActivityPanel({
                               renderType2Node(t2, parentSelected, childIndent, clip)
                             )
                           : members.map((st) =>
-                              renderPersonLeaf(
-                                st,
-                                nested ? 'indent2' : 'indent',
-                                clip
-                              )
+                              renderPersonLeaf(st, leafIndent, clip)
                             )}
                       </div>
                     )}
@@ -1656,17 +1871,44 @@ export function SuperOverseerActivityPanel({
                 );
               };
 
+              const splitVolunteers = (list: ActivityPerson[]) => {
+                const center = list.filter(
+                  (p) => normalizeRole(p.role) === 'volunteer_center'
+                );
+                const border = list.filter(
+                  (p) => normalizeRole(p.role) !== 'volunteer_center'
+                );
+                return { center, border };
+              };
+
               return filteredPersonSections.map((section) => {
                 if (section.kind === 'role-type2') {
-                  return renderRoleGroup(
-                    'role:type2',
-                    ROLE_LABELS.volunteer,
-                    'กลุ่มอาสาสมัคร',
-                    section.people,
-                    'type2',
-                    false,
-                    false,
-                    viewerClipProvinces
+                  const { center, border } = splitVolunteers(section.people);
+                  return (
+                    <div key="role:type2-wrap">
+                      {renderRoleGroup(
+                        'role:vc',
+                        ROLE_LABELS.volunteer_center,
+                        'กลุ่มอาสาสมัครส่วนกลาง',
+                        center,
+                        'type2',
+                        false,
+                        false,
+                        viewerClipProvinces,
+                        'volunteer_center'
+                      )}
+                      {renderRoleGroup(
+                        'role:vb',
+                        ROLE_LABELS.volunteer_border,
+                        'กลุ่มอาสาสมัครประจำพื้นที่',
+                        border,
+                        'type2',
+                        false,
+                        false,
+                        viewerClipProvinces,
+                        'volunteer_border'
+                      )}
+                    </div>
                   );
                 }
                 if (section.kind === 'role-staff') {
@@ -1678,25 +1920,54 @@ export function SuperOverseerActivityPanel({
                     'staff',
                     false,
                     false,
-                    viewerClipProvinces
+                    viewerClipProvinces,
+                    'staff'
+                  );
+                }
+                if (section.kind === 'role-director') {
+                  return renderRoleGroup(
+                    'role:dir',
+                    ROLE_LABELS.director,
+                    'กลุ่มผู้อำนวยการ',
+                    section.people,
+                    'director',
+                    false,
+                    false,
+                    viewerClipProvinces,
+                    'director'
                   );
                 }
 
                 const ov = section.person;
                 const open = openOverseers.has(ov.id);
                 const clip = ov.controlProvinces ?? null;
-                const teamCount = section.type2.length + section.staff.length;
+                const teamCount =
+                  section.type2.length +
+                  section.staff.length +
+                  section.directors.length;
                 const roleLabel = roleDisplayLabel(ov.role, ov.overseer_tier);
                 const parentSelected = selectedPeople.has(ov.id);
                 const staffUnderType2 = section.type2.flatMap((t2) =>
                   visibleStaffOf(t2.id, parentSelected || selectedPeople.has(t2.id))
                 );
                 const schoolCount = distinctSchoolsOf(
-                  [[ov], section.type2, section.staff, staffUnderType2],
+                  [
+                    [ov],
+                    section.type2,
+                    section.staff,
+                    staffUnderType2,
+                    section.directors,
+                  ],
                   clip
                 );
                 const teamAgg = rollupPeople(
-                  [ov, ...section.type2, ...section.staff, ...staffUnderType2],
+                  [
+                    ov,
+                    ...section.type2,
+                    ...section.staff,
+                    ...staffUnderType2,
+                    ...section.directors,
+                  ],
                   [],
                   clip
                 );
@@ -1707,7 +1978,7 @@ export function SuperOverseerActivityPanel({
                   <div key={ov.id} className="so-tree__node">
                     <button
                       type="button"
-                      className={`so-tree__row so-tree__row--branch so-perf-row so-perf--${teamAgg.level}`}
+                      className={`so-tree__row so-tree__row--branch ${roleRowClass(ov.role)}`}
                       onClick={() => toggle(openOverseers, ov.id, setOpenOverseers)}
                       aria-expanded={open}
                     >
@@ -1732,16 +2003,19 @@ export function SuperOverseerActivityPanel({
                           href={schoolsHref({ person: ov.id })}
                           value={schoolCount}
                           label="รร."
+                          tone="schools"
                         />
                         <MetricLink
                           href={calendarHref(ov.id)}
                           value={teamAgg.bookings}
                           label="นัด"
+                          tone="bookings"
                         />
                         <MetricLink
                           href={reportsHref(ov.id)}
                           value={teamAgg.reports}
                           label="รายงาน"
+                          tone="reports"
                         />
                       </div>
                     </button>
@@ -1753,16 +2027,37 @@ export function SuperOverseerActivityPanel({
                           </p>
                         ) : (
                           <>
-                            {renderRoleGroup(
-                              `role:type2:${ov.id}`,
-                              ROLE_LABELS.volunteer,
-                              'กลุ่มอาสาสมัคร',
-                              section.type2,
-                              'type2',
-                              true,
-                              parentSelected,
-                              clip
-                            )}
+                            {(() => {
+                              const { center, border } = splitVolunteers(
+                                section.type2
+                              );
+                              return (
+                                <>
+                                  {renderRoleGroup(
+                                    `role:vc:${ov.id}`,
+                                    ROLE_LABELS.volunteer_center,
+                                    'กลุ่มอาสาสมัครส่วนกลาง',
+                                    center,
+                                    'type2',
+                                    true,
+                                    parentSelected,
+                                    clip,
+                                    'volunteer_center'
+                                  )}
+                                  {renderRoleGroup(
+                                    `role:vb:${ov.id}`,
+                                    ROLE_LABELS.volunteer_border,
+                                    'กลุ่มอาสาสมัครประจำพื้นที่',
+                                    border,
+                                    'type2',
+                                    true,
+                                    parentSelected,
+                                    clip,
+                                    'volunteer_border'
+                                  )}
+                                </>
+                              );
+                            })()}
                             {renderRoleGroup(
                               `role:staff:${ov.id}`,
                               ROLE_LABELS.staff,
@@ -1771,7 +2066,19 @@ export function SuperOverseerActivityPanel({
                               'staff',
                               true,
                               parentSelected,
-                              clip
+                              clip,
+                              'staff'
+                            )}
+                            {renderRoleGroup(
+                              `role:dir:${ov.id}`,
+                              ROLE_LABELS.director,
+                              'กลุ่มผู้อำนวยการ',
+                              section.directors,
+                              'director',
+                              true,
+                              parentSelected,
+                              clip,
+                              'director'
                             )}
                           </>
                         )}
@@ -1794,7 +2101,7 @@ export function SuperOverseerActivityPanel({
                 <div key={prov.province} className="so-tree__node">
                   <button
                     type="button"
-                    className={`so-tree__row so-tree__row--branch so-perf-row so-perf--${prov.level}`}
+                    className="so-tree__row so-tree__row--branch"
                     onClick={() => toggle(openProvinces, prov.province, setOpenProvinces)}
                     aria-expanded={pOpen}
                   >
@@ -1819,16 +2126,19 @@ export function SuperOverseerActivityPanel({
                         href={schoolsHref({ province: prov.province })}
                         value={prov.schoolCount}
                         label="รร."
+                        tone="schools"
                       />
                       <MetricLink
                         href={calendarHref()}
                         value={prov.bookings}
                         label="นัด"
+                        tone="bookings"
                       />
                       <MetricLink
                         href={reportsHref()}
                         value={prov.reports}
                         label="รายงาน"
+                        tone="reports"
                       />
                     </div>
                   </button>
@@ -1841,7 +2151,7 @@ export function SuperOverseerActivityPanel({
                           <div key={areaKey} className="so-tree__node">
                             <button
                               type="button"
-                              className={`so-tree__row so-tree__row--branch so-tree__row--indent so-perf-row so-perf--${area.level}`}
+                              className="so-tree__row so-tree__row--branch so-tree__row--indent"
                               onClick={() => toggle(openAreas, areaKey, setOpenAreas)}
                               aria-expanded={aOpen}
                             >
@@ -1874,16 +2184,19 @@ export function SuperOverseerActivityPanel({
                                   })}
                                   value={area.schools.length}
                                   label="รร."
+                                  tone="schools"
                                 />
                                 <MetricLink
                                   href={calendarHref()}
                                   value={area.bookings}
                                   label="นัด"
+                                  tone="bookings"
                                 />
                                 <MetricLink
                                   href={reportsHref()}
                                   value={area.reports}
                                   label="รายงาน"
+                                  tone="reports"
                                 />
                               </div>
                             </button>
@@ -1892,7 +2205,7 @@ export function SuperOverseerActivityPanel({
                                 {area.schools.map((leaf) => (
                                   <div
                                     key={leaf.school.id}
-                                    className={`so-tree__row so-tree__row--leaf so-tree__row--indent2 so-perf-row so-perf--${leaf.level} ${
+                                    className={`so-tree__row so-tree__row--leaf so-tree__row--indent2 ${
                                       leaf.hasActivity ? 'so-tree__row--active' : ''
                                     }`}
                                   >
@@ -1920,16 +2233,19 @@ export function SuperOverseerActivityPanel({
                                         href={`/schools/${leaf.school.id}`}
                                         value={1}
                                         label="รร."
+                                        tone="schools"
                                       />
                                       <MetricLink
                                         href={calendarHref()}
                                         value={leaf.bookings}
                                         label="นัด"
+                                        tone="bookings"
                                       />
                                       <MetricLink
                                         href={reportsHref()}
                                         value={leaf.reports}
                                         label="รายงาน"
+                                        tone="reports"
                                       />
                                     </div>
                                   </div>

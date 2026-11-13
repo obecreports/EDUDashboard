@@ -35,7 +35,16 @@ export default async function AdminDomainPage() {
     .sort((a, b) => a.name.localeCompare(b.name, 'th'));
 
   const fieldAccounts = accounts.filter((a) =>
-    ['staff', 'overseer', 'volunteer', 'super_overseer'].includes(a.role)
+    [
+      'staff',
+      'overseer',
+      'volunteer_center',
+      'volunteer_border',
+      'special_volunteer',
+      'covert_overseer',
+      'director',
+      'super_overseer',
+    ].includes(a.role)
   );
 
   return (

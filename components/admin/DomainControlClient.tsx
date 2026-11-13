@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { assignGeoAction } from '@/app/actions/admin';
 import {
+  ADMIN_ROLE_LABELS,
   ROLE_LABELS,
   formatPersonLabel,
   isOverseerLike,
@@ -13,6 +14,10 @@ import {
   type OverseerTier,
   type UserRole,
 } from '@/lib/types';
+import {
+  DOMAIN_SCOPE_GLOBAL,
+  isGlobalDomainScope,
+} from '@/lib/auth/domain-scope';
 import { X } from 'lucide-react';
 
 type Account = {
@@ -93,7 +98,14 @@ export function DomainControlClient({
   };
 
   const [roleFilter, setRoleFilter] = useState<
-    'all' | 'type1' | 'type2' | 'staff'
+    | 'all'
+    | 'type1'
+    | 'volunteer_center'
+    | 'volunteer_border'
+    | 'special_volunteer'
+    | 'covert_overseer'
+    | 'type2'
+    | 'staff'
   >('all');
   const [nameQuery, setNameQuery] = useState('');
   const [selectedId, setSelectedId] = useState('');
@@ -119,6 +131,9 @@ export function DomainControlClient({
   }, [areas]);
 
   const labelForTag = (tag: string, role: UserRole) => {
+    if (tag === DOMAIN_SCOPE_GLOBAL) {
+      return isOverseerLike(role) ? 'ทั้งประเทศ' : 'ทุกเขตพื้นที่การศึกษา';
+    }
     if (isOverseerLike(role)) return tag;
     return areaById.get(tag) || tag.replace('|', ' / ');
   };
@@ -126,9 +141,11 @@ export function DomainControlClient({
   const userTouchesProvince = (u: Account, province: string) => {
     if (!province) return true;
     if (isOverseerLike(u.role)) {
+      if (isGlobalDomainScope(u.assigned_provinces)) return true;
       return (u.assigned_provinces ?? []).includes(province);
     }
     if (u.role === 'staff') {
+      if (isGlobalDomainScope(u.assigned_districts)) return true;
       for (const d of u.assigned_districts ?? []) {
         if (d.includes('|')) {
           const p = d.split('|')[0]?.trim();
@@ -152,6 +169,14 @@ export function DomainControlClient({
     let list = assignable;
     if (roleFilter === 'type1') {
       list = list.filter((a) => isOverseerType1(a.role, a.overseer_tier));
+    } else if (roleFilter === 'volunteer_center') {
+      list = list.filter((a) => a.role === 'volunteer_center');
+    } else if (roleFilter === 'volunteer_border') {
+      list = list.filter((a) => a.role === 'volunteer_border');
+    } else if (roleFilter === 'special_volunteer') {
+      list = list.filter((a) => a.role === 'special_volunteer');
+    } else if (roleFilter === 'covert_overseer') {
+      list = list.filter((a) => a.role === 'covert_overseer');
     } else if (roleFilter === 'type2') {
       list = list.filter((a) => isOverseerType2(a.role, a.overseer_tier));
     } else if (roleFilter === 'staff') {
@@ -191,6 +216,7 @@ export function DomainControlClient({
   }, [pickSafePage, pickTotalPages]);
 
   const selected = assignable.find((a) => a.id === selectedId) ?? null;
+  const globalOn = isGlobalDomainScope(tags);
 
   const pickUser = (id: string) => {
     setSelectedId(id);
@@ -208,22 +234,27 @@ export function DomainControlClient({
   };
 
   const availableTags = useMemo(() => {
-    if (!selected) return [] as string[];
+    if (!selected || globalOn) return [] as string[];
     if (isOverseerLike(selected.role)) {
       // Type 1 and Type 2 both pick freely from all provinces
       return provinces.filter((t) => !tags.includes(t));
     }
     return areas.filter((a) => !tags.includes(a.id)).map((a) => a.id);
-  }, [selected, provinces, areas, tags]);
+  }, [selected, provinces, areas, tags, globalOn]);
 
   const addTag = (value: string) => {
-    if (!value || tags.includes(value)) return;
+    if (!value || tags.includes(value) || globalOn) return;
     setTags((prev) => [...prev, value]);
     setTagPick('');
   };
 
   const removeTag = (value: string) => {
     setTags((prev) => prev.filter((t) => t !== value));
+  };
+
+  const setGlobalScope = (on: boolean) => {
+    setTags(on ? [DOMAIN_SCOPE_GLOBAL] : []);
+    setTagPick('');
   };
 
   const saveDomain = () => {
@@ -291,7 +322,15 @@ export function DomainControlClient({
                 value={roleFilter}
                 onChange={(e) => {
                   setRoleFilter(
-                    e.target.value as 'all' | 'type1' | 'type2' | 'staff'
+                    e.target.value as
+                      | 'all'
+                      | 'type1'
+                      | 'volunteer_center'
+                      | 'volunteer_border'
+                      | 'special_volunteer'
+                      | 'covert_overseer'
+                      | 'type2'
+                      | 'staff'
                   );
                   setSelectedId('');
                   setTags([]);
@@ -300,7 +339,18 @@ export function DomainControlClient({
               >
                 <option value="all">ทั้งหมด</option>
                 <option value="type1">{ROLE_LABELS.overseer}</option>
-                <option value="type2">{ROLE_LABELS.volunteer}</option>
+                <option value="covert_overseer">
+                  {ADMIN_ROLE_LABELS.covert_overseer}
+                </option>
+                <option value="volunteer_center">
+                  {ROLE_LABELS.volunteer_center}
+                </option>
+                <option value="volunteer_border">
+                  {ROLE_LABELS.volunteer_border}
+                </option>
+                <option value="special_volunteer">
+                  {ROLE_LABELS.special_volunteer}
+                </option>
                 <option value="staff">{ROLE_LABELS.staff}</option>
               </select>
             </label>
@@ -450,6 +500,29 @@ export function DomainControlClient({
               </p>
             )}
 
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={`ed-btn ed-btn--outline ${globalOn ? 'is-active' : ''}`}
+                onClick={() => setGlobalScope(!globalOn)}
+              >
+                {isOverseerLike(selected.role)
+                  ? globalOn
+                    ? 'ยกเลิกทั้งประเทศ'
+                    : 'ทั้งประเทศ'
+                  : globalOn
+                    ? 'ยกเลิกทุกเขต'
+                    : 'ทุกเขตพื้นที่การศึกษา'}
+              </button>
+              {globalOn && (
+                <span className="text-sm text-slate-600">
+                  {isOverseerLike(selected.role)
+                    ? 'ครอบคลุมทุกจังหวัด'
+                    : 'ครอบคลุมทุกเขตพื้นที่การศึกษา'}
+                </span>
+              )}
+            </div>
+
             <div className="domain-tag-list">
               {tags.length === 0 && (
                 <span className="text-sm text-slate-500">ยังไม่ได้เลือกพื้นที่</span>
@@ -464,25 +537,27 @@ export function DomainControlClient({
               ))}
             </div>
 
-            <label className="grid gap-1 text-sm font-semibold">
-              เพิ่ม{isOverseerLike(selected.role) ? 'จังหวัด' : 'เขตพื้นที่การศึกษา'}
-              <select
-                className="form-input"
-                value={tagPick}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setTagPick(v);
-                  if (v) addTag(v);
-                }}
-              >
-                <option value="">— เลือกเพื่อเพิ่ม —</option>
-                {availableTags.map((t) => (
-                  <option key={t} value={t}>
-                    {selected.role === 'staff' ? labelForTag(t, 'staff') : t}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {!globalOn && (
+              <label className="grid gap-1 text-sm font-semibold">
+                เพิ่ม{isOverseerLike(selected.role) ? 'จังหวัด' : 'เขตพื้นที่การศึกษา'}
+                <select
+                  className="form-input"
+                  value={tagPick}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setTagPick(v);
+                    if (v) addTag(v);
+                  }}
+                >
+                  <option value="">— เลือกเพื่อเพิ่ม —</option>
+                  {availableTags.map((t) => (
+                    <option key={t} value={t}>
+                      {selected.role === 'staff' ? labelForTag(t, 'staff') : t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <div className="flex flex-wrap gap-2">
               <button

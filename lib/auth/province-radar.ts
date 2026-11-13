@@ -1,11 +1,13 @@
 import type { OverseerTier, SchoolFull } from '@/lib/types';
 import {
   districtKey,
+  isOverseerLike,
   isOverseerType1,
   isOverseerType2,
   normalizeRole,
 } from '@/lib/types';
 import type { PermissionUser } from '@/lib/auth/permissions';
+import { isGlobalDomainScope } from '@/lib/auth/domain-scope';
 
 export const T2_VIEW_TYPE1S_COOKIE = 'coned-t2-view-type1s';
 
@@ -24,16 +26,24 @@ export function actionProvinces(user: PermissionUser | null | undefined): string
   if (!user) return [];
   const role = normalizeRole(user.role);
   if (role === 'super_overseer') return []; // caller treats SO as all
-  if (role !== 'overseer' && role !== 'volunteer') return [];
+  if (!isOverseerLike(role)) return [];
+  // Global grant kept as ['*'] — callers that need a full list must expand
   return uniq(user.assigned_provinces ?? []);
 }
 
 export function overlapProvinces(a: string[], b: string[]): string[] {
+  if (isGlobalDomainScope(a) || isGlobalDomainScope(b)) {
+    // Global ∩ X → X (minus sentinel); Global ∩ Global → ['*']
+    if (isGlobalDomainScope(a) && isGlobalDomainScope(b)) return ['*'];
+    const other = isGlobalDomainScope(a) ? b : a;
+    return uniq(other.filter((p) => p !== '*'));
+  }
   const setB = new Set(b.map((p) => p.trim()).filter(Boolean));
   return uniq(a.filter((p) => setB.has(p.trim())));
 }
 
 export function provincesIntersect(a: string[], b: string[]): boolean {
+  if (isGlobalDomainScope(a) || isGlobalDomainScope(b)) return true;
   return overlapProvinces(a, b).length > 0;
 }
 
@@ -47,6 +57,13 @@ export function staffProvinces(
   if (!user || normalizeRole(user.role) !== 'staff') return [];
   const assigned = user.assigned_districts ?? [];
   if (!assigned.length) return [];
+  if (isGlobalDomainScope(assigned)) {
+    return uniq(
+      schools
+        .map((s) => s.province?.trim() || s.Gov_Domain?.province_name?.trim() || '')
+        .filter(Boolean)
+    );
+  }
 
   const out = new Set<string>();
   for (const token of assigned) {
@@ -74,7 +91,25 @@ export function staffProvinces(
   return [...out];
 }
 
-/** Control provinces for nesting/clip: Type1/2 = assigned; Staff = district→province. */
+/** Director control provinces from assigned_schools → school.province. */
+export function directorProvinces(
+  user: PermissionUser | null | undefined,
+  schools: SchoolFull[] = []
+): string[] {
+  if (!user || normalizeRole(user.role) !== 'director') return [];
+  const assigned = new Set(
+    (user.assigned_schools ?? []).map((s) => String(s).trim()).filter(Boolean)
+  );
+  if (!assigned.size) return [];
+  return uniq(
+    schools
+      .filter((s) => assigned.has(String(s.school_id)))
+      .map((s) => s.province?.trim() || '')
+      .filter(Boolean)
+  );
+}
+
+/** Control provinces for nesting/clip: Type1/2 = assigned; Staff = district→province; Director = school provinces. */
 export function controlProvinces(
   user: PermissionUser | null | undefined,
   schools: SchoolFull[] = []
@@ -82,8 +117,25 @@ export function controlProvinces(
   if (!user) return [];
   const role = normalizeRole(user.role);
   if (role === 'staff') return staffProvinces(user, schools);
-  if (role === 'overseer' || role === 'volunteer') return actionProvinces(user);
+  if (role === 'director') return directorProvinces(user, schools);
+  if (isOverseerLike(role)) return actionProvinces(user);
   return [];
+}
+
+/** Directors whose school provinces ∩ Type 1 control provinces. */
+export function directorsUnderType1(
+  type1: PermissionUser,
+  directory: RadarUser[],
+  schools: SchoolFull[]
+): RadarUser[] {
+  if (!isType1User(type1)) return [];
+  const t1p = actionProvinces(type1);
+  return directory.filter(
+    (u) =>
+      !u.disabled &&
+      normalizeRole(u.role) === 'director' &&
+      provincesIntersect(t1p, directorProvinces(u, schools))
+  );
 }
 
 export function isType1User(user: PermissionUser): boolean {

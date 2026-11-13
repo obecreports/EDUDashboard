@@ -88,6 +88,8 @@ export function StaffDashboardClient({
   type2ViewOptions = [],
   type2ViewSelectedIds = null,
   activityClipProvinces = null,
+  showActivityPanel = true,
+  showRadarPanel = true,
 }: {
   schools: SchoolFull[];
   /** All-project schools for national average shadow on charts */
@@ -112,10 +114,16 @@ export function StaffDashboardClient({
   type2ViewSelectedIds?: string[] | null;
   /** Type 1 dashboard: clip activity metrics to viewer provinces */
   activityClipProvinces?: string[] | null;
+  /** ACL: dashboard_activity */
+  showActivityPanel?: boolean;
+  /** ACL: dashboard_radar (compare + radar charts) */
+  showRadarPanel?: boolean;
 }) {
   /** SO + Type 1 share activity / compare / YoY radars; Type 2 & staff keep national compare */
   const showSoDashboard =
     role === 'super_overseer' || isOverseerType1(role, overseerTier);
+  const showActivity = showSoDashboard && showActivityPanel;
+  const showCompare = showSoDashboard && showRadarPanel;
   const isType2 = isOverseerType2(role, overseerTier);
   const isStaff = role === 'staff';
   const showReportReminder = isStaff && pendingReportVisits.length > 0;
@@ -357,7 +365,7 @@ export function StaffDashboardClient({
         />
       ) : null}
 
-      {showSoDashboard ? (
+      {showActivity ? (
         <SuperOverseerActivityPanel
           events={calendarEvents}
           people={activityPeople}
@@ -414,7 +422,7 @@ export function StaffDashboardClient({
         </div>
       ) : (
         <>
-          {showSoDashboard ? (
+          {showCompare ? (
             <SuperOverseerComparePanel
               schools={schools}
               scoresByYear={compareScoresByYear}
@@ -451,6 +459,8 @@ export function StaffDashboardClient({
             </div>
           )}
 
+          {showRadarPanel ? (
+          <>
           <section className="ed-card p-4 space-y-4 schools-list-panel schools-list-panel--three">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -572,6 +582,8 @@ export function StaffDashboardClient({
               ))}
             </div>
           </section>
+          </>
+          ) : null}
 
           <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
             <RankSchoolList

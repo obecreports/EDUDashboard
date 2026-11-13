@@ -27,17 +27,29 @@ import {
   isOverseerType2,
   normalizeRole,
 } from '@/lib/types';
+import { scholarshipStudentsBySchool } from '@/lib/mock/scholarship-students';
+import { contractTeachersBySchool } from '@/lib/mock/contract-teachers';
+import {
+  canAccess,
+  canAccessSection,
+  mergeContentAccess,
+} from '@/lib/auth/content-access';
+import { readContentAccessMapStored } from '@/lib/auth/user-store';
 
 export const revalidate = 60;
 
 async function SchoolDetailBody({ id }: { id: string }) {
-  const [school, { profile, isAuthenticated }] = await Promise.all([
-    fetchSchoolById(id),
-    getSessionProfile(),
-  ]);
+  const [school, { profile, isAuthenticated }, contentAccessRaw] =
+    await Promise.all([
+      fetchSchoolById(id),
+      getSessionProfile(),
+      readContentAccessMapStored().catch(() => null),
+    ]);
 
   if (!school) notFound();
 
+  const contentAccess = mergeContentAccess(contentAccessRaw);
+  const viewerRole = normalizeRole(profile?.role);
   const usersForScope = await readStoredUsers().catch(() => []);
   const directory = usersForScope.map((u) => ({
     id: u.id,
@@ -58,13 +70,56 @@ async function SchoolDetailBody({ id }: { id: string }) {
         ),
       }
     : {};
-  const fullAccess = canAccessSchoolDetail(
+  const scopeAccess = canAccessSchoolDetail(
     profile,
     school,
     isAuthenticated,
     directory,
     readableOpts
   );
+  const aclPageOk = canAccess(
+    viewerRole,
+    'school_detail',
+    'view',
+    contentAccess
+  );
+  const fullAccess = scopeAccess && aclPageOk;
+  const allowScholarshipTab = canAccessSection(
+    viewerRole,
+    'school_detail',
+    'school_tab_scholarship',
+    'view',
+    contentAccess
+  );
+  const allowContractTab = canAccessSection(
+    viewerRole,
+    'school_detail',
+    'school_tab_contract_teachers',
+    'view',
+    contentAccess
+  );
+  const allowVisitsTab = canAccessSection(
+    viewerRole,
+    'school_detail',
+    'school_tab_visits',
+    'view',
+    contentAccess
+  );
+  const allowScoresTab =
+    canAccessSection(
+      viewerRole,
+      'school_detail',
+      'school_tab_scores',
+      'view',
+      contentAccess
+    ) ||
+    canAccessSection(
+      viewerRole,
+      'school_detail',
+      'school_tab_pillars',
+      'view',
+      contentAccess
+    );
   const commentsAllowed = canComment(
     profile,
     school,
@@ -76,13 +131,15 @@ async function SchoolDetailBody({ id }: { id: string }) {
 
   const cookieExtras = await readSchoolExtras(school.school_id);
 
+  const loadScores = fullAccess && allowScoresTab;
+  const loadVisits = fullAccess && allowVisitsTab;
   const [dbSwot, dbComments, pillarRow, dbVisits, cookieVisits, users] = await Promise.all([
     fetchSchoolSwot(school.school_id),
     commentsAllowed ? fetchSchoolComments(school.school_id) : Promise.resolve([]),
-    fullAccess ? fetchPillarScoreBySchoolId(school.school_id) : Promise.resolve(null),
-    fullAccess ? fetchSiteVisitsForSchool(school.school_id) : Promise.resolve([]),
-    fullAccess ? readCalendarEvents() : Promise.resolve([]),
-    fullAccess ? Promise.resolve(usersForScope) : Promise.resolve([]),
+    loadScores ? fetchPillarScoreBySchoolId(school.school_id) : Promise.resolve(null),
+    loadVisits ? fetchSiteVisitsForSchool(school.school_id) : Promise.resolve([]),
+    loadVisits ? readCalendarEvents() : Promise.resolve([]),
+    loadVisits ? Promise.resolve(usersForScope) : Promise.resolve([]),
   ]);
 
   const initialSwot = swotHasContent(dbSwot)
@@ -125,9 +182,28 @@ async function SchoolDetailBody({ id }: { id: string }) {
   }
   const visitHistory = [...visitById.values()].sort((a, b) => b.date.localeCompare(a.date));
 
-  const pillarIndicators = fullAccess
+  const pillarIndicators = loadScores
     ? indicatorScoresFromRow(pillarRow, school.labelLookup)
     : undefined;
+
+  const scholarshipRows = allowScholarshipTab
+    ? scholarshipStudentsBySchool(school.school_id).map((s) => ({
+        id: s.id,
+        name: [s.name_prefix, s.full_name].filter(Boolean).join(' '),
+        grade_level: s.grade_level,
+        scholarship_type: s.scholarship_type,
+        status: s.status,
+      }))
+    : [];
+  const contractTeacherRows = allowContractTab
+    ? contractTeachersBySchool(school.school_id).map((t) => ({
+        id: t.id,
+        name: [t.name_prefix, t.full_name].filter(Boolean).join(' '),
+        subject: t.subject,
+        contract_type: t.contract_type,
+        status: t.status,
+      }))
+    : [];
 
   return (
     <div className="page-shell school-detail-shell">
@@ -136,8 +212,10 @@ async function SchoolDetailBody({ id }: { id: string }) {
         canEdit={canEdit}
         canViewComments={commentsAllowed}
         canComment={commentsAllowed}
-        showScores={fullAccess}
-        guestView={!fullAccess}
+        showScores={loadScores}
+        guestView={!scopeAccess}
+        viewerRole={viewerRole}
+        contentAccess={contentAccess}
         initialComments={
           commentsAllowed
             ? dbComments.length
@@ -149,6 +227,8 @@ async function SchoolDetailBody({ id }: { id: string }) {
         initialAchievements={cookieExtras.achievements}
         visitHistory={visitHistory}
         pillarIndicators={pillarIndicators}
+        scholarshipStudents={scholarshipRows}
+        contractTeachers={contractTeacherRows}
       />
     </div>
   );

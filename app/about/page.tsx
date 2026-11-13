@@ -1,9 +1,22 @@
+import { redirect } from 'next/navigation';
 import { fetchSchools, formatFetchError } from '@/lib/supabase/schools';
 import { AboutProjectMockup } from '@/components/landing/AboutProjectMockup';
+import { getSessionProfile } from '@/lib/auth/session';
+import { readContentAccessMapStored } from '@/lib/auth/user-store';
+import { canAccess } from '@/lib/auth/content-access';
+import { normalizeRole } from '@/lib/types';
 
-export const revalidate = 60;
+export const dynamic = 'force-dynamic';
 
 export default async function AboutPage() {
+  const [{ role }, acl] = await Promise.all([
+    getSessionProfile(),
+    readContentAccessMapStored(),
+  ]);
+  if (!canAccess(normalizeRole(role), 'about', 'view', acl)) {
+    redirect('/');
+  }
+
   let schools: Awaited<ReturnType<typeof fetchSchools>> = [];
   let errorMsg: string | null = null;
   try {

@@ -407,7 +407,7 @@ export function NewReportClient({
           return;
         }
         setDraftId(res.draft.id);
-        window.alert('บันทึกร่างสำเร็จแล้ว\nคุณสามารถกลับมาเขียนต่อได้จากหน้ารายงานทั้งหมด');
+        window.alert('บันทึกร่างสำเร็จแล้ว\nคุณสามารถกลับมาเขียนต่อได้จากหน้าบันทึกทั้งหมด');
         router.push('/reports');
         router.refresh();
       } catch (e) {
@@ -441,7 +441,7 @@ export function NewReportClient({
   return (
     <div className="page-shell py-5 grid gap-4 max-w-3xl">
       <Link href="/reports" className="text-sm text-tm-blue font-semibold inline-flex items-center gap-1 w-fit">
-        <ArrowLeft size={14} /> กลับหน้ารายงาน
+        <ArrowLeft size={14} /> กลับหน้าบันทึกการตรวจเยี่ยม
       </Link>
 
       {draftId && (
@@ -463,7 +463,7 @@ export function NewReportClient({
           <div>
             <h2 className="ed-section-title text-base m-0">เลือกโรงเรียนและวันที่</h2>
             <p className="text-sm text-slate-600 m-0 mt-1">
-              เลือกจากตารางนัด = รายงานผูกกับนัดหมาย · เลือกโรงเรียนเอง = รายงานอิสระ
+              เลือกจากตารางนัด = บันทึกผูกกับนัดหมาย · เลือกโรงเรียนเอง = บันทึกอิสระ
             </p>
           </div>
           <span
@@ -474,7 +474,7 @@ export function NewReportClient({
                 : { background: '#F1F5F9', color: '#475569' }
             }
           >
-            {isLinked ? 'รายงานผูกกับนัดหมาย' : 'รายงานอิสระ'}
+            {isLinked ? 'บันทึกผูกกับนัดหมาย' : 'บันทึกอิสระ'}
           </span>
         </div>
 
@@ -905,7 +905,7 @@ export function NewReportClient({
             บันทึกร่าง
           </button>
           <Link href="/reports" className="ed-btn ed-btn--outline">
-            ไปหน้ารายงานทั้งหมด
+            ไปหน้าบันทึกทั้งหมด
           </Link>
         </div>
       </div>

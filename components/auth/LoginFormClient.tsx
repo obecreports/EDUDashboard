@@ -76,7 +76,7 @@ export function LoginFormClient() {
       )}
       <button
         type="submit"
-        className="navbar__login w-full justify-center"
+        className="ed-btn ed-btn--primary login-form__submit"
         disabled={submitting}
       >
         {submitting ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบ'}

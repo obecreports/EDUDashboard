@@ -21,9 +21,20 @@ export default async function ManageSchoolsPage() {
   const { data: staff } = await supabase
     .from('user_profiles')
     .select('id, full_name, assigned_zone, role')
-    .in('role', ['staff', 'overseer', 'volunteer']);
+    .in('role', [
+      'staff',
+      'overseer',
+      'volunteer_center',
+      'volunteer_border',
+      'special_volunteer',
+    ]);
 
-  const canAssign = role === 'overseer' || role === 'volunteer' || role === 'admin';
+  const canAssign =
+    role === 'overseer' ||
+    role === 'volunteer_center' ||
+    role === 'volunteer_border' ||
+    role === 'special_volunteer' ||
+    role === 'admin';
 
   return (
     <div className="page-shell">

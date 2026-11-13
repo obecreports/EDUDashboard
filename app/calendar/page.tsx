@@ -1,7 +1,10 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getSessionProfile } from '@/lib/auth/session';
-import { readStoredUsers } from '@/lib/auth/user-store';
+import {
+  readContentAccessMapStored,
+  readStoredUsers,
+} from '@/lib/auth/user-store';
 import {
   listCalendarEventsForStaffIds,
   listMyCalendarEvents,
@@ -26,6 +29,10 @@ import {
 import { fetchSchools } from '@/lib/supabase/schools';
 import { StaffVisitHubClient } from '@/components/staff/StaffVisitHubClient';
 import { PageBanner } from '@/components/layout/PageBanner';
+import {
+  canAccessSection,
+  mergeContentAccess,
+} from '@/lib/auth/content-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +45,12 @@ export default async function CalendarPage({
   const r = normalizeRole(role);
   if (!isAuthenticated || !profile || !isFieldRole(r)) {
     redirect('/login?next=/calendar');
+  }
+  const acl = mergeContentAccess(
+    await readContentAccessMapStored().catch(() => null)
+  );
+  if (!canAccessSection(r, 'calendar', 'calendar_view', 'view', acl)) {
+    redirect('/dashboard');
   }
 
   const sp = await searchParams;

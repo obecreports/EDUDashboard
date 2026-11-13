@@ -3,8 +3,10 @@ import type { OverseerTier, UserProfile, UserRole } from '@/lib/types';
 import {
   isOverseerLike,
   isOverseerType1,
+  isVolunteerRole,
   normalizeOverseerTier,
   normalizeRole,
+  ROLE_LABELS,
 } from '@/lib/types';
 import {
   AUTH_CREDENTIALS_COOKIE,
@@ -55,6 +57,7 @@ export async function readAuthSession(): Promise<AuthSession | null> {
     overseer_tier: normalizeOverseerTier(parsed.overseer_tier),
     assigned_provinces: parsed.assigned_provinces ?? [],
     assigned_districts: parsed.assigned_districts ?? [],
+    assigned_schools: parsed.assigned_schools ?? [],
     reports_to: parsed.reports_to ?? null,
   };
 }
@@ -100,6 +103,7 @@ function profileFromStored(
     assigned_zone: stored?.assigned_zone ?? session.assigned_zone,
     assigned_provinces: stored?.assigned_provinces ?? session.assigned_provinces ?? [],
     assigned_districts: stored?.assigned_districts ?? session.assigned_districts ?? [],
+    assigned_schools: stored?.assigned_schools ?? session.assigned_schools ?? [],
     reports_to: stored?.reports_to ?? session.reports_to ?? null,
     avatar_url: null,
     birthday: stored?.birthday ?? null,
@@ -129,6 +133,7 @@ export async function getSessionProfile(): Promise<{
         assigned_zone: profile.assigned_zone,
         assigned_provinces: profile.assigned_provinces,
         assigned_districts: profile.assigned_districts,
+        assigned_schools: profile.assigned_schools ?? [],
         reports_to: profile.reports_to,
       },
     };
@@ -145,6 +150,7 @@ export async function getSessionProfile(): Promise<{
       assigned_zone: null,
       assigned_provinces: [],
       assigned_districts: [],
+      assigned_schools: [],
       reports_to: null,
       avatar_url: null,
     },
@@ -218,6 +224,7 @@ export async function loginWithPassword(email: string, password: string): Promis
     assigned_zone: user.assigned_zone,
     assigned_provinces: user.assigned_provinces ?? [],
     assigned_districts: user.assigned_districts ?? [],
+    assigned_schools: user.assigned_schools ?? [],
     reports_to: user.reports_to ?? null,
     mustChangePassword: matchedTemp || mustChangePassword,
     authVia: matchedTemp ? 'temp' : 'password',
@@ -342,11 +349,19 @@ export async function adminAssignGeo(
     /** Provinces covered by staff areas (for hierarchy linking) */
     staffAreaProvinces?: string[];
     /**
-     * Field role for overseer-like accounts: overseer (องคมนตรี) | volunteer (อาสาสมัคร).
-     * Also accepts legacy overseerTier type1|type2 from older clients.
+     * Field role for overseer-like accounts.
+     * Also accepts legacy overseerTier type1|type2 and `volunteer` from older clients.
      */
-    fieldRole?: 'overseer' | 'volunteer' | null;
+    fieldRole?:
+      | 'overseer'
+      | 'volunteer_center'
+      | 'volunteer_border'
+      | 'special_volunteer'
+      | 'volunteer'
+      | null;
     overseerTier?: OverseerTier | null;
+    /** Director school-admin scope */
+    schools?: string[];
   }
 ): Promise<ChangePasswordResult> {
   const session = await readAuthSession();
@@ -363,40 +378,78 @@ export async function adminAssignGeo(
   const patch: Parameters<typeof updateUserProfileFields>[1] = {};
 
   // Map domain role draft → role identity (clear deprecated tier)
-  let nextFieldRole: 'overseer' | 'volunteer' | null = null;
-  if (input.fieldRole === 'overseer' || input.fieldRole === 'volunteer') {
+  type FieldRoleNext =
+    | 'overseer'
+    | 'volunteer_center'
+    | 'volunteer_border'
+    | 'special_volunteer';
+  let nextFieldRole: FieldRoleNext | null = null;
+  if (
+    input.fieldRole === 'overseer' ||
+    input.fieldRole === 'volunteer_center' ||
+    input.fieldRole === 'volunteer_border' ||
+    input.fieldRole === 'special_volunteer'
+  ) {
     nextFieldRole = input.fieldRole;
+  } else if (input.fieldRole === 'volunteer') {
+    nextFieldRole = 'volunteer_border';
   } else if (input.overseerTier === 'type2') {
-    nextFieldRole = 'volunteer';
+    nextFieldRole = 'volunteer_border';
   } else if (input.overseerTier === 'type1') {
     nextFieldRole = 'overseer';
   }
-  if (
-    nextFieldRole &&
-    (userRole === 'overseer' ||
-      userRole === 'volunteer' ||
-      isOverseerLike(userRole))
-  ) {
+  if (nextFieldRole && (userRole === 'overseer' || isOverseerLike(userRole))) {
     patch.role = nextFieldRole;
     patch.overseer_tier = null;
-    if (nextFieldRole === 'volunteer') {
-      patch.position = 'อาสาสมัคร';
-    } else if (!user.position || user.position === 'อาสาสมัคร') {
-      patch.position = 'องคมนตรี';
+    if (nextFieldRole === 'volunteer_center') {
+      patch.position = ROLE_LABELS.volunteer_center;
+    } else if (nextFieldRole === 'volunteer_border') {
+      patch.position = ROLE_LABELS.volunteer_border;
+    } else if (nextFieldRole === 'special_volunteer') {
+      patch.position = ROLE_LABELS.special_volunteer;
+    } else if (
+      !user.position ||
+      user.position.startsWith('อาสาสมัคร')
+    ) {
+      patch.position = ROLE_LABELS.overseer;
     }
-  } else if (userRole === 'overseer' || userRole === 'volunteer') {
+  } else if (userRole === 'overseer' || isOverseerLike(userRole)) {
     // Always clear deprecated tier on geo save
     patch.overseer_tier = null;
   }
 
   if (input.provinces) {
     // Volunteer may hold any provinces; Type 1 dashboards nest by ∩ only
-    patch.assigned_provinces = [
-      ...new Set(input.provinces.map((p) => p.trim()).filter(Boolean)),
-    ];
+    // Sentinel `*` = nationwide grant (clear discrete tags)
+    const { isGlobalDomainScope, DOMAIN_SCOPE_GLOBAL } = await import(
+      '@/lib/auth/domain-scope'
+    );
+    if (isGlobalDomainScope(input.provinces)) {
+      patch.assigned_provinces = [DOMAIN_SCOPE_GLOBAL];
+      patch.assigned_districts = [];
+    } else {
+      patch.assigned_provinces = [
+        ...new Set(input.provinces.map((p) => p.trim()).filter(Boolean)),
+      ];
+    }
   }
   if (input.districts) {
-    patch.assigned_districts = [...new Set(input.districts.map((d) => d.trim()).filter(Boolean))];
+    const { isGlobalDomainScope, DOMAIN_SCOPE_GLOBAL } = await import(
+      '@/lib/auth/domain-scope'
+    );
+    if (isGlobalDomainScope(input.districts)) {
+      patch.assigned_districts = [DOMAIN_SCOPE_GLOBAL];
+      patch.assigned_provinces = [];
+    } else {
+      patch.assigned_districts = [
+        ...new Set(input.districts.map((d) => d.trim()).filter(Boolean)),
+      ];
+    }
+  }
+  if (input.schools) {
+    patch.assigned_schools = [
+      ...new Set(input.schools.map((s) => String(s).trim()).filter(Boolean)),
+    ];
   }
 
   // Staff Gov_Domain districts → province → report to Type 1 (not Type 2)
@@ -522,9 +575,9 @@ export async function adminSetReportsTo(
       }
     }
 
-    // Volunteer (or unmigrated type2) under overseer — keep/set role=volunteer
+    // Volunteers under overseer — keep/set volunteer_border unless already Center/Special
     if (
-      (userRole === 'overseer' || userRole === 'volunteer') &&
+      (userRole === 'overseer' || isVolunteerRole(userRole)) &&
       bossRole === 'overseer'
     ) {
       if (!isOverseerType1(boss.role, boss.overseer_tier)) {
@@ -533,14 +586,16 @@ export async function adminSetReportsTo(
       if (boss.id === userId) {
         return { ok: false, error: 'ไม่สามารถตั้งหัวหน้าเป็นตนเองได้' };
       }
-      patch.role = 'volunteer';
+      if (!isVolunteerRole(userRole)) {
+        patch.role = 'volunteer_border';
+        patch.position = ROLE_LABELS.volunteer_border;
+      }
       patch.overseer_tier = null;
-      patch.position = 'อาสาสมัคร';
     } else if (userRole === 'overseer' && bossRole === 'super_overseer') {
       patch.role = 'overseer';
       patch.overseer_tier = null;
-      if (!user.position || user.position === 'อาสาสมัคร') {
-        patch.position = 'องคมนตรี';
+      if (!user.position || user.position.startsWith('อาสาสมัคร')) {
+        patch.position = ROLE_LABELS.overseer;
       }
     }
   }
@@ -597,6 +652,7 @@ export async function registerInitialPassword(userId: string, password: string) 
 export async function logoutSession() {
   await writeAuthSession(null);
   // Drop mock data cookies so logout/navigation is not blocked by 431 header limits
+  // Note: coned-content-access is intentionally NOT purgeable — ACL must survive logout.
   const { clearPurgeableDataCookies } = await import('@/lib/auth/cookie-json');
   await clearPurgeableDataCookies();
 }

@@ -2,14 +2,25 @@ export type UserRole =
   | 'guest'
   | 'staff'
   | 'overseer'
-  /** อาสาสมัคร — assists องคมนตรี; same field perspective as overseer */
-  | 'volunteer'
+  /** อาสาสมัครส่วนกลาง — province scope; same field perspective as overseer */
+  | 'volunteer_center'
+  /** อาสาสมัครประจำพื้นที่ — province scope (default migration from legacy volunteer) */
+  | 'volunteer_border'
+  /** อาสาสมัครเฉพาะกิจ — province scope; full ACL on scholarship students */
+  | 'special_volunteer'
+  /**
+   * องคมนตรี (ปกปิด) — province scope; display as องคมนตรี;
+   * hidden from SO/OS activity dashboard; still on admin org-map.
+   */
+  | 'covert_overseer'
+  /** ผู้อำนวยการโรงเรียน — school-scoped login (separate from SchoolDirector master) */
+  | 'director'
   | 'super_overseer'
   | 'admin'
   | 'super_admin';
 
-/** @deprecated use guest — kept for old cookie sessions */
-export type LegacyUserRole = UserRole | 'global';
+/** @deprecated use guest — kept for old cookie sessions; `volunteer` → volunteer_border */
+export type LegacyUserRole = UserRole | 'global' | 'volunteer';
 
 export type SchoolSize = 'เล็ก' | 'กลาง' | 'ใหญ่' | 'ใหญ่พิเศษ';
 
@@ -137,7 +148,7 @@ export interface UserProfile {
   position: string | null;
   role: UserRole;
   /**
-   * @deprecated Identity is role only (overseer | volunteer).
+   * @deprecated Identity is role only.
    * Kept for legacy rows until migration 028; ignore for new logic.
    */
   overseer_tier?: OverseerTier | null;
@@ -150,6 +161,11 @@ export interface UserProfile {
    * - legacy: `province|district`
    */
   assigned_districts: string[];
+  /**
+   * Director (school-admin login) scope — school_id strings.
+   * Empty for non-director roles.
+   */
+  assigned_schools?: string[];
   reports_to: string | null;
   avatar_url: string | null;
   /** ISO date `YYYY-MM-DD` for birthday flower on dashboard */
@@ -186,7 +202,11 @@ export const ALL_ROLES: UserRole[] = [
   'guest',
   'staff',
   'overseer',
-  'volunteer',
+  'volunteer_center',
+  'volunteer_border',
+  'special_volunteer',
+  'covert_overseer',
+  'director',
   'super_overseer',
   'admin',
   'super_admin',
@@ -195,7 +215,11 @@ export const ALL_ROLES: UserRole[] = [
 export const FIELD_ROLES: UserRole[] = [
   'staff',
   'overseer',
-  'volunteer',
+  'volunteer_center',
+  'volunteer_border',
+  'special_volunteer',
+  'covert_overseer',
+  'director',
   'super_overseer',
 ];
 export const ADMIN_ROLES: UserRole[] = ['admin', 'super_admin'];
@@ -203,17 +227,54 @@ export const PUBLIC_ROLES: UserRole[] = [
   'guest',
   'staff',
   'overseer',
-  'volunteer',
+  'volunteer_center',
+  'volunteer_border',
+  'special_volunteer',
+  'covert_overseer',
+  'director',
   'super_overseer',
   'admin',
   'super_admin',
 ];
 
-export const ROLE_LABELS: Record<UserRole, string> = {
-  guest: 'ผู้เยี่ยมชม (Guest)',
+/** Province-scoped volunteer variants (Center / Border / Special). */
+export const VOLUNTEER_ROLES: UserRole[] = [
+  'volunteer_center',
+  'volunteer_border',
+  'special_volunteer',
+];
+
+/** Hidden from SO/OS activity dashboard; still on admin org-map / ACL. */
+export const COVERT_FIELD_ROLES: UserRole[] = [
+  'covert_overseer',
+  'special_volunteer',
+];
+
+/** Admin picker labels (distinguish covert overseer from normal). */
+export const ADMIN_ROLE_LABELS: Record<UserRole, string> = {
+  guest: 'ผู้เยี่ยมชม',
   staff: 'ศึกษานิเทศก์',
   overseer: 'องคมนตรี',
-  volunteer: 'อาสาสมัคร',
+  volunteer_center: 'อาสาสมัครส่วนกลาง',
+  volunteer_border: 'อาสาสมัครประจำพื้นที่',
+  special_volunteer: 'อาสาสมัครเฉพาะกิจ',
+  covert_overseer: 'องคมนตรี (ปกปิด)',
+  director: 'ผู้อำนวยการโรงเรียน',
+  super_overseer: 'ท่านประธาน',
+  admin: 'ผู้ดูแลระบบ (Admin)',
+  super_admin: 'ผู้ดูแลระบบสูงสุด (Super Admin)',
+};
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+  guest: 'ผู้เยี่ยมชม',
+  staff: 'ศึกษานิเทศก์',
+  overseer: 'องคมนตรี',
+  volunteer_center: 'อาสาสมัครส่วนกลาง',
+  volunteer_border: 'อาสาสมัครประจำพื้นที่',
+  special_volunteer: 'อาสาสมัครเฉพาะกิจ',
+  /** Same display name as overseer */
+  covert_overseer: 'องคมนตรี',
+  director: 'ผู้อำนวยการโรงเรียน',
   super_overseer: 'ท่านประธาน',
   admin: 'ผู้ดูแลระบบ (Admin)',
   super_admin: 'ผู้ดูแลระบบสูงสุด (Super Admin)',
@@ -221,14 +282,30 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 
 export function normalizeRole(role: string | null | undefined): UserRole {
   if (role === 'global') return 'guest';
+  // Legacy single volunteer role → Border (migration default)
+  if (role === 'volunteer') return 'volunteer_border';
   if (role && (ALL_ROLES as string[]).includes(role)) return role as UserRole;
   return 'guest';
 }
 
-/** องคมนตรี + อาสาสมัคร — same province scope / field perspective */
+/** องคมนตรี + covert + อาสาสมัคร variants — province scope / field perspective */
 export function isOverseerLike(role: string | null | undefined): boolean {
   const r = normalizeRole(role);
-  return r === 'overseer' || r === 'volunteer';
+  return (
+    r === 'overseer' ||
+    r === 'covert_overseer' ||
+    VOLUNTEER_ROLES.includes(r)
+  );
+}
+
+/** Center / Border / Special (province volunteers). */
+export function isVolunteerRole(role: string | null | undefined): boolean {
+  return VOLUNTEER_ROLES.includes(normalizeRole(role));
+}
+
+/** Covert field roles — not shown on SO/OS activity dashboard. */
+export function isCovertFieldRole(role: string | null | undefined): boolean {
+  return COVERT_FIELD_ROLES.includes(normalizeRole(role));
 }
 
 export function normalizeOverseerTier(
@@ -239,7 +316,7 @@ export function normalizeOverseerTier(
 }
 
 /**
- * @deprecated Prefer role identity. Maps volunteer → type2; unmigrated
+ * @deprecated Prefer role identity. Maps volunteer roles → type2; unmigrated
  * overseer+type2 → type2; plain overseer → type1. Returns null for other roles.
  */
 export function effectiveOverseerTier(
@@ -247,7 +324,7 @@ export function effectiveOverseerTier(
   tier: OverseerTier | null | undefined
 ): OverseerTier | null {
   const r = normalizeRole(role);
-  if (r === 'volunteer') return 'type2';
+  if (isVolunteerRole(r)) return 'type2';
   if (r !== 'overseer') return null;
   // Back-compat until migration 028: overseer+type2 still counts as Type 2
   if (normalizeOverseerTier(tier) === 'type2') return 'type2';
@@ -264,40 +341,57 @@ export function isOverseerType1(
   return r === 'overseer';
 }
 
-/** อาสาสมัคร — role=volunteer, or unmigrated overseer+type2. */
+/**
+ * Province volunteers (Center / Border / Special) + legacy overseer+type2.
+ * Used for Type-2 geo nesting / readable province union.
+ */
 export function isOverseerType2(
   role: string | null | undefined,
   tier?: OverseerTier | null
 ): boolean {
   const r = normalizeRole(role);
-  if (r === 'volunteer') return true;
+  if (isVolunteerRole(r)) return true;
   return r === 'overseer' && normalizeOverseerTier(tier) === 'type2';
 }
 
 /** @deprecated Use ROLE_LABELS / roleDisplayLabel(role). */
 export function overseerTierLabel(tier: OverseerTier | null | undefined): string {
-  if (tier === 'type2') return ROLE_LABELS.volunteer;
+  if (tier === 'type2') return ROLE_LABELS.volunteer_border;
   if (tier === 'type1') return ROLE_LABELS.overseer;
   return ROLE_LABELS.overseer;
 }
 
-/** User-facing บทบาท: SO · overseer · volunteer · staff. */
+/** User-facing บทบาท — distinct labels for Center / Border / Special. */
 export function roleDisplayLabel(
   role: string | null | undefined,
   tier?: OverseerTier | null
 ): string {
-  if (isOverseerType2(role, tier)) return ROLE_LABELS.volunteer;
+  const r = normalizeRole(role);
+  if (r === 'covert_overseer') return ROLE_LABELS.overseer;
   if (isOverseerType1(role, tier)) return ROLE_LABELS.overseer;
-  return ROLE_LABELS[normalizeRole(role)];
+  // Unmigrated overseer+type2 → Border label
+  if (r === 'overseer' && normalizeOverseerTier(tier) === 'type2') {
+    return ROLE_LABELS.volunteer_border;
+  }
+  return ROLE_LABELS[r];
 }
 
-/** User-facing ตำแหน่ง (volunteer → อาสาสมัคร). */
+/** User-facing ตำแหน่ง. */
 export function positionDisplayLabel(
   role: string | null | undefined,
   tier: OverseerTier | null | undefined,
   position: string | null | undefined
 ): string {
-  if (isOverseerType2(role, tier)) return ROLE_LABELS.volunteer;
+  if (isVolunteerRole(role)) {
+    const raw = (position ?? '').trim();
+    return raw || ROLE_LABELS[normalizeRole(role)];
+  }
+  if (
+    normalizeRole(role) === 'overseer' &&
+    normalizeOverseerTier(tier) === 'type2'
+  ) {
+    return ROLE_LABELS.volunteer_border;
+  }
   const raw = (position ?? '').trim();
   if (raw) return raw;
   if (isOverseerType1(role, tier)) return ROLE_LABELS.overseer;
@@ -363,8 +457,10 @@ export const NAV_CATALOG: NavItem[] = [
   { href: '/dashboard', label: 'แดชบอร์ด', roles: FIELD_ROLES },
   { href: '/calendar', label: 'สรุปปฏิทิน', roles: FIELD_ROLES },
   { href: '/calendar/new', label: 'สร้างนัดหมาย', roles: FIELD_ROLES },
-  { href: '/reports/new', label: 'ส่งรายงาน', roles: FIELD_ROLES },
-  { href: '/reports', label: 'ดูผลรายงาน', roles: FIELD_ROLES },
+  { href: '/reports/new', label: 'ส่งบันทึกการตรวจเยี่ยม', roles: FIELD_ROLES },
+  { href: '/reports', label: 'ดูบันทึกการตรวจเยี่ยม', roles: FIELD_ROLES },
+  { href: '/scholarship-students', label: 'นักเรียนทุน', roles: FIELD_ROLES },
+  { href: '/contract-teachers', label: 'ครูอัตรจ้าง', roles: FIELD_ROLES },
   { href: '/tickets', label: 'คำขอแก้ไขข้อมูล', roles: FIELD_ROLES },
   { href: '/admin/accounts', label: 'จัดการบัญชี', roles: ADMIN_ROLES },
   { href: '/admin/domain', label: 'มอบหมายพื้นที่จัดการ', roles: ADMIN_ROLES },
@@ -372,6 +468,7 @@ export const NAV_CATALOG: NavItem[] = [
   { href: '/admin/schools', label: 'แก้ไขข้อมูลโรงเรียน', roles: ADMIN_ROLES },
   { href: '/admin/directors', label: 'แก้ไขข้อมูลผู้อำนวยการ', roles: ADMIN_ROLES },
   { href: '/admin/tickets', label: 'จัดการคำขอ', roles: ADMIN_ROLES },
+  { href: '/admin/content-access', label: 'สิทธิ์เข้าถึงเนื้อหา', roles: ADMIN_ROLES },
   { href: '/admin/settings', label: 'ตั้งค่าระบบ', roles: ['super_admin'] },
 ];
 
@@ -410,14 +507,37 @@ export function navForRole(role: UserRole): NavItem[] {
   });
 }
 
+/**
+ * Optional ACL filter for nav items that map to content resources.
+ * Pass `canView(href)` from content-access helper.
+ */
+export function navForRoleWithAcl(
+  role: UserRole,
+  canViewHref: (href: string) => boolean
+): NavItem[] {
+  return navForRole(role).filter((item) => canViewHref(item.href));
+}
+
 export const PROTECTED_ROUTES: { prefix: string; roles: UserRole[] }[] = [
   { prefix: '/staff/profile', roles: [...FIELD_ROLES, ...ADMIN_ROLES] },
   { prefix: '/staff', roles: FIELD_ROLES },
   { prefix: '/dashboard', roles: FIELD_ROLES },
   { prefix: '/calendar', roles: FIELD_ROLES },
   { prefix: '/reports', roles: FIELD_ROLES },
+  { prefix: '/scholarship-students', roles: FIELD_ROLES },
+  { prefix: '/contract-teachers', roles: FIELD_ROLES },
   { prefix: '/tickets', roles: [...FIELD_ROLES, ...ADMIN_ROLES] },
-  { prefix: '/overseer', roles: ['overseer', 'volunteer', 'super_overseer'] },
+  {
+    prefix: '/overseer',
+    roles: [
+      'overseer',
+      'volunteer_center',
+      'volunteer_border',
+      'special_volunteer',
+      'covert_overseer',
+      'super_overseer',
+    ],
+  },
   { prefix: '/admin', roles: ADMIN_ROLES },
   { prefix: '/manage-schools', roles: ADMIN_ROLES },
   { prefix: '/change-password', roles: ALL_ROLES },

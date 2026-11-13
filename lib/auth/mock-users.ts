@@ -5,6 +5,11 @@ export const AUTH_SESSION_COOKIE = 'coned-auth-session';
 export const AUTH_CREDENTIALS_COOKIE = 'coned-auth-credentials';
 export const AUTH_USERS_COOKIE = 'coned-auth-users';
 export const SITE_SETTINGS_COOKIE = 'coned-site-settings';
+/**
+ * Content ACL overrides (sparse). Kept separate from site-settings so logout
+ * purge of mock data cookies does not wipe Global/guest visibility rules.
+ */
+export const CONTENT_ACCESS_COOKIE = 'coned-content-access';
 /** Bumped to v3 when Cookie header 431s — old v2 payloads are purged in middleware. */
 export const CALENDAR_EVENTS_COOKIE = 'coned-calendar-events-v3';
 export const SCHOOL_EXTRAS_COOKIE = 'coned-school-extras';
@@ -21,11 +26,13 @@ export interface MockUserSeed {
   name_prefix?: string | null;
   position: string;
   role: UserRole;
-  /** @deprecated identity is role (overseer|volunteer); kept for legacy reads */
+  /** @deprecated identity is role; kept for legacy reads */
   overseer_tier?: OverseerTier | null;
   assigned_zone: string | null;
   assigned_provinces: string[];
   assigned_districts: string[];
+  /** Director school-admin scope */
+  assigned_schools?: string[];
   reports_to: string | null;
   password: string | null;
   tempPassword: string | null;
@@ -73,15 +80,24 @@ export const UAT_USER_IDS = {
   os12: 'a1111111-1111-4111-8111-111111111212',
   os13: 'a1111111-1111-4111-8111-111111111213',
   os14: 'a1111111-1111-4111-8111-111111111214',
-  /** OS10T01 · volunteer (อาสาสมัคร) under OS10 provinces (migration 020/028) */
+  /** OS10T01 · volunteer_border under OS10 provinces (migration 020/028/030) */
   os10t01: 'a1111111-1111-4111-8111-111111111301',
+  /** ASX01 · special_volunteer */
+  special_volunteer: 'a1111111-1111-4111-8111-111111111401',
+  /** COV01 · covert_overseer */
+  covert_overseer: 'a1111111-1111-4111-8111-111111111402',
+  /** Director login — email = school_id */
+  director: 'a1111111-1111-4111-8111-111111111501',
 } as const;
+
+/** Demo director login uses this school_id as both login ID and assigned_schools[0] */
+export const MOCK_DIRECTOR_SCHOOL_ID = '1039760340';
 
 /**
  * Demo / UAT accounts — `email` stores short login ID (not a mailbox).
  * Hierarchy: SO → overseer (องคมนตรี) ← staff via Gov district/province;
- * volunteer (อาสาสมัคร) nests by province ∩ — staff does not reports_to volunteer.
- * Password: MOCK_LOGIN_PASSWORD. Profiles also live in Supabase (014/020).
+ * volunteer_center / volunteer_border nest by province ∩ — staff does not reports_to volunteer.
+ * Password: MOCK_LOGIN_PASSWORD. Profiles also live in Supabase (014/020/030).
  */
 export const MOCK_USER_SEEDS: MockUserSeed[] = [
   {
@@ -382,6 +398,67 @@ export const MOCK_USER_SEEDS: MockUserSeed[] = [
     tempPassword: null,
     mustChangePassword: false,
   },
+  {
+    id: UAT_USER_IDS.os10t01,
+    email: 'OS10T01',
+    name_prefix: 'นาย',
+    full_name: 'สมบัติ อาสาพื้นที่',
+    position: 'อาสาสมัครประจำพื้นที่',
+    role: 'volunteer_border',
+    assigned_zone: null,
+    assigned_provinces: ['กาญจนบุรี', 'สุพรรณบุรี'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.os10,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.special_volunteer,
+    email: 'ASX01',
+    name_prefix: 'นางสาว',
+    full_name: 'มานี ทุนการศึกษา',
+    position: 'อาสาสมัครเฉพาะกิจ',
+    role: 'special_volunteer',
+    assigned_zone: null,
+    assigned_provinces: ['กาญจนบุรี', 'สุพรรณบุรี', 'อุทัยธานี'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.covert_overseer,
+    email: 'COV01',
+    name_prefix: 'นาย',
+    full_name: 'สมบูรณ์ ปกปิด',
+    position: 'องคมนตรี',
+    role: 'covert_overseer',
+    assigned_zone: null,
+    assigned_provinces: ['กาญจนบุรี', 'สุพรรณบุรี'],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.director,
+    email: MOCK_DIRECTOR_SCHOOL_ID,
+    name_prefix: 'นาย',
+    full_name: 'วิชัย ผู้อำนวยการ',
+    position: 'ผู้อำนวยการโรงเรียน',
+    role: 'director',
+    assigned_zone: null,
+    assigned_provinces: [],
+    assigned_districts: [],
+    assigned_schools: [MOCK_DIRECTOR_SCHOOL_ID],
+    reports_to: null,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
 ];
 
 /** Normalize login ID for lookup (case-insensitive; strips @domain if pasted). */
@@ -424,6 +501,7 @@ export interface AuthSession {
   assigned_zone: string | null;
   assigned_provinces: string[];
   assigned_districts: string[];
+  assigned_schools?: string[];
   reports_to: string | null;
   mustChangePassword: boolean;
   authVia: 'password' | 'temp';
@@ -450,6 +528,7 @@ export type StoredUserProfile = {
   assigned_zone: string | null;
   assigned_provinces: string[];
   assigned_districts: string[];
+  assigned_schools?: string[];
   reports_to: string | null;
   disabled: boolean;
   birthday?: string | null;
@@ -493,6 +572,7 @@ export function normalizeStoredUser(
     assigned_zone: raw.assigned_zone ?? null,
     assigned_provinces: Array.isArray(raw.assigned_provinces) ? raw.assigned_provinces : [],
     assigned_districts: Array.isArray(raw.assigned_districts) ? raw.assigned_districts : [],
+    assigned_schools: Array.isArray(raw.assigned_schools) ? raw.assigned_schools : [],
     reports_to: raw.reports_to ?? null,
     disabled: Boolean(raw.disabled),
     birthday: raw.birthday ?? null,

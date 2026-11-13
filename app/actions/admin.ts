@@ -11,6 +11,7 @@ import {
   createMockUser,
   readHeroSettings,
   setUserDisabled,
+  writeContentAccessMapStored,
   writeHeroSettings,
 } from '@/lib/auth/user-store';
 import type { UserRole } from '@/lib/types';
@@ -20,6 +21,8 @@ import {
   adminAssignGeo,
   adminSetReportsTo,
 } from '@/lib/auth/session';
+import type { ContentAccessMap } from '@/lib/auth/content-access';
+import { mergeContentAccess } from '@/lib/auth/content-access';
 
 function requireAdmin() {
   return getSessionProfile().then(({ profile, isAuthenticated }) => {
@@ -70,6 +73,34 @@ export async function saveSiteSettings(formData: FormData) {
 
   revalidatePath('/');
   revalidatePath('/admin/settings');
+  return { ok: true as const };
+}
+
+export async function saveContentAccessAction(formData: FormData) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+
+  const raw = String(formData.get('map') || '');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false as const, error: 'รูปแบบข้อมูลไม่ถูกต้อง' };
+  }
+  const { mergeContentAccessForActor } = await import(
+    '@/lib/auth/content-access'
+  );
+  const { readContentAccessMapStored } = await import('@/lib/auth/user-store');
+  const existing = await readContentAccessMapStored();
+  const incoming = mergeContentAccess(parsed as ContentAccessMap);
+  const map = mergeContentAccessForActor(
+    normalizeRole(gate.profile.role),
+    existing,
+    incoming
+  );
+  await writeContentAccessMapStored(map);
+  revalidatePath('/admin/content-access');
+  revalidatePath('/');
   return { ok: true as const };
 }
 
@@ -174,12 +205,14 @@ export async function createAccountAction(formData: FormData) {
   const full_name = String(formData.get('full_name') || '');
   const position = String(formData.get('position') || '');
   const name_prefix = String(formData.get('name_prefix') || '').trim() || null;
-  // Legacy form value overseer:type2 → volunteer
+  // Legacy form values → current roles
   const roleRaw = String(formData.get('role') || 'staff').trim();
   const role = normalizeRole(
-    roleRaw === 'overseer:type2' ? 'volunteer' : roleRaw
+    roleRaw === 'overseer:type2' || roleRaw === 'volunteer'
+      ? 'volunteer_border'
+      : roleRaw
   ) as UserRole;
-  const email = String(formData.get('email') || '') || undefined;
+  let email = String(formData.get('email') || '') || undefined;
 
   if (
     normalizeRole(gate.profile.role) === 'admin' &&
@@ -188,9 +221,27 @@ export async function createAccountAction(formData: FormData) {
     return { ok: false as const, error: 'Admin ไม่สามารถสร้างบัญชี Admin / Super Admin ได้' };
   }
 
+  if (role === 'director' && !email?.trim()) {
+    return {
+      ok: false as const,
+      error: 'บัญชีผู้อำนวยการต้องระบุรหัสผู้ใช้เป็นรหัสโรงเรียน (school ID)',
+    };
+  }
+
+  const defaultPosition =
+    role === 'volunteer_center'
+      ? ROLE_LABELS.volunteer_center
+      : role === 'volunteer_border'
+        ? ROLE_LABELS.volunteer_border
+        : role === 'special_volunteer'
+          ? ROLE_LABELS.special_volunteer
+          : role === 'director'
+            ? ROLE_LABELS.director
+            : position;
+
   const created = await createMockUser({
     full_name,
-    position: role === 'volunteer' ? ROLE_LABELS.volunteer : position,
+    position: defaultPosition || position,
     role,
     email,
     name_prefix,
@@ -287,7 +338,25 @@ export async function assignGeoAction(formData: FormData) {
 
   // Staff districts field now stores Gov_Domain area_ids — resolve provinces for hierarchy
   let staffAreaProvinces: string[] | undefined;
-  if (districts.length > 0) {
+  const { isGlobalDomainScope, DOMAIN_SCOPE_GLOBAL } = await import(
+    '@/lib/auth/domain-scope'
+  );
+  if (isGlobalDomainScope(provinces)) {
+    provinces = [DOMAIN_SCOPE_GLOBAL];
+  }
+  if (isGlobalDomainScope(districts)) {
+    districts = [DOMAIN_SCOPE_GLOBAL];
+    // All provinces for hierarchy linking when staff is nationwide
+    const { fetchSchools } = await import('@/lib/supabase/schools');
+    const schools = await fetchSchools().catch(() => []);
+    staffAreaProvinces = [
+      ...new Set(
+        schools
+          .map((s) => s.province?.trim())
+          .filter(Boolean) as string[]
+      ),
+    ];
+  } else if (districts.length > 0) {
     const { fetchSchools, fetchGovDomains } = await import('@/lib/supabase/schools');
     const [schools, govDomains] = await Promise.all([
       fetchSchools().catch(() => []),
@@ -315,8 +384,17 @@ export async function assignGeoAction(formData: FormData) {
 
   const fieldRoleRaw = String(formData.get('fieldRole') || '').trim();
   const fieldRole =
-    fieldRoleRaw === 'overseer' || fieldRoleRaw === 'volunteer'
-      ? fieldRoleRaw
+    fieldRoleRaw === 'overseer' ||
+    fieldRoleRaw === 'volunteer_center' ||
+    fieldRoleRaw === 'volunteer_border' ||
+    fieldRoleRaw === 'special_volunteer' ||
+    fieldRoleRaw === 'volunteer'
+      ? (fieldRoleRaw as
+          | 'overseer'
+          | 'volunteer_center'
+          | 'volunteer_border'
+          | 'special_volunteer'
+          | 'volunteer')
       : undefined;
   // Legacy Domain form still posts overseerTier
   const tierRaw = String(formData.get('overseerTier') || '').trim();

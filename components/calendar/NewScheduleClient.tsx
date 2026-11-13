@@ -159,18 +159,37 @@ export function NewScheduleClient({
 
   const teammateGroups = useMemo(() => {
     const overseers: TeamOpt[] = [];
-    const volunteers: TeamOpt[] = [];
+    const volunteerCenter: TeamOpt[] = [];
+    const volunteerBorder: TeamOpt[] = [];
+    const specialVolunteer: TeamOpt[] = [];
     const staffList: TeamOpt[] = [];
     const other: TeamOpt[] = [];
     for (const t of selectableTeammates) {
       if (isOverseerType1(t.role, t.overseer_tier)) overseers.push(t);
-      else if (isOverseerType2(t.role, t.overseer_tier)) volunteers.push(t);
+      else if (t.role === 'volunteer_center') volunteerCenter.push(t);
+      else if (t.role === 'volunteer_border') volunteerBorder.push(t);
+      else if (t.role === 'special_volunteer') specialVolunteer.push(t);
+      else if (isOverseerType2(t.role, t.overseer_tier)) volunteerBorder.push(t);
       else if (t.role === 'staff') staffList.push(t);
       else other.push(t);
     }
     return [
       { key: 'overseer', title: ROLE_LABELS.overseer, people: overseers },
-      { key: 'volunteer', title: ROLE_LABELS.volunteer, people: volunteers },
+      {
+        key: 'volunteer_center',
+        title: ROLE_LABELS.volunteer_center,
+        people: volunteerCenter,
+      },
+      {
+        key: 'volunteer_border',
+        title: ROLE_LABELS.volunteer_border,
+        people: volunteerBorder,
+      },
+      {
+        key: 'special_volunteer',
+        title: ROLE_LABELS.special_volunteer,
+        people: specialVolunteer,
+      },
       { key: 'staff', title: ROLE_LABELS.staff, people: staffList },
       ...(other.length
         ? [{ key: 'other', title: 'อื่นๆ', people: other }]

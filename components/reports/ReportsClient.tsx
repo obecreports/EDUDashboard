@@ -9,7 +9,11 @@ import type { SchoolSize } from '@/lib/types';
 import type { ReportDraft } from '@/lib/auth/mock-users';
 import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
 import { formatThaiDate, formatThaiDateTime } from '@/lib/format/date';
-import { ThaiDateField } from '@/components/ui/ThaiDateField';
+import {
+  DateRangePicker,
+  rangeForPreset,
+  type RangePreset,
+} from '@/components/ui/DateRangePicker';
 import {
   parsePersonIdsParam,
   personIdsToParam,
@@ -45,63 +49,8 @@ export type ReportRow = {
   participants?: { id: string; name: string }[];
 };
 
-type RangePreset = 'today' | 'this-week' | 'next-week' | 'this-month' | 'next-month' | 'custom';
-
 const DAYS_PER_PAGE = 10;
 const SCHOOL_SIZES: SchoolSize[] = ['เล็ก', 'กลาง', 'ใหญ่', 'ใหญ่พิเศษ'];
-
-function ymd(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function startOfWeek(d: Date) {
-  const x = new Date(d);
-  const day = (x.getDay() + 6) % 7;
-  x.setDate(x.getDate() - day);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function addDays(d: Date, n: number) {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-}
-
-function rangeForPreset(preset: RangePreset): { from: string; to: string } {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (preset === 'today') return { from: ymd(today), to: ymd(today) };
-  if (preset === 'this-week') {
-    const start = startOfWeek(today);
-    return { from: ymd(start), to: ymd(addDays(start, 6)) };
-  }
-  if (preset === 'next-week') {
-    const start = addDays(startOfWeek(today), 7);
-    return { from: ymd(start), to: ymd(addDays(start, 6)) };
-  }
-  if (preset === 'this-month') {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    return { from: ymd(start), to: ymd(end) };
-  }
-  if (preset === 'next-month') {
-    const start = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-    return { from: ymd(start), to: ymd(end) };
-  }
-  const start = new Date(today.getFullYear(), today.getMonth(), 1);
-  const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  return { from: ymd(start), to: ymd(end) };
-}
-
-const PRESETS: { key: RangePreset; label: string }[] = [
-  { key: 'today', label: 'วันนี้' },
-  { key: 'this-week', label: 'สัปดาห์นี้' },
-  { key: 'next-week', label: 'สัปดาห์หน้า' },
-  { key: 'this-month', label: 'เดือนนี้' },
-  { key: 'next-month', label: 'เดือนหน้า' },
-];
 
 function canEditReport(row: ReportRow, userId: string) {
   if (row.staff_id === userId) return true;
@@ -205,14 +154,6 @@ export function ReportsClient({
     );
   }, [rows, province]);
 
-  const applyPreset = (key: RangePreset) => {
-    setPreset(key);
-    const next = rangeForPreset(key);
-    setDateFrom(next.from);
-    setDateTo(next.to);
-    setPage(1);
-  };
-
   const filtered = useMemo(() => {
     let list = [...rows];
     if (ownerFilter === 'mine') {
@@ -293,20 +234,20 @@ export function ReportsClient({
     <div className="page-shell py-5 grid gap-5">
       <section className="ed-card p-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="ed-section-title text-base m-0">ส่งรายงานลงพื้นที่</h2>
+          <h2 className="ed-section-title text-base m-0">ส่งบันทึกการตรวจเยี่ยม</h2>
           <p className="text-sm text-slate-600 m-0 mt-1">
             บันทึกความคิดเห็นหรือกิจกรรมของโรงเรียนของฉัน
           </p>
         </div>
         <Link href="/reports/new" className="ed-btn ed-btn--primary">
-          <FilePlus2 size={16} /> ฉันจะส่งรายงาน
+          <FilePlus2 size={16} /> ฉันจะส่งบันทึก
         </Link>
       </section>
 
       {drafts.length > 0 && (
         <section className="ed-card p-4 space-y-3">
           <div>
-            <h2 className="ed-section-title text-base m-0">ร่างรายงานของฉัน</h2>
+            <h2 className="ed-section-title text-base m-0">ร่างบันทึกของฉัน</h2>
             <p className="text-sm text-slate-600 m-0 mt-1">
               คลิกเพื่อเขียนต่อ · หากไม่ต้องการแล้ว ให้เปิดร่างแล้วกดลบด้านบน
             </p>
@@ -336,7 +277,7 @@ export function ReportsClient({
       <section className="ed-card p-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <strong className="text-sm">มุมมอง</strong>
-          <div className="score-mode-switch" role="group" aria-label="เจ้าของรายงาน">
+          <div className="score-mode-switch" role="group" aria-label="เจ้าของบันทึก">
             <button
               type="button"
               className={ownerFilter === 'mine' ? 'is-active' : ''}
@@ -345,7 +286,7 @@ export function ReportsClient({
                 setPage(1);
               }}
             >
-              รายงานของฉัน
+              บันทึกของฉัน
             </button>
             <button
               type="button"
@@ -355,7 +296,7 @@ export function ReportsClient({
                 setPage(1);
               }}
             >
-              รายงานทั้งหมด
+              บันทึกทั้งหมด
             </button>
           </div>
         </div>
@@ -435,42 +376,19 @@ export function ReportsClient({
             </select>
           </label>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="space-y-1">
           <strong className="text-sm">ช่วงวันที่</strong>
-          {PRESETS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              className={`navbar__link ${preset === p.key ? 'navbar__link--active' : ''}`}
-              onClick={() => applyPreset(p.key)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-3 items-end">
-          <label className="text-sm font-semibold grid gap-1">
-            จากวันที่
-            <ThaiDateField
-              value={dateFrom}
-              onChange={(ymd) => {
-                setPreset('custom');
-                setDateFrom(ymd);
-                setPage(1);
-              }}
-            />
-          </label>
-          <label className="text-sm font-semibold grid gap-1">
-            ถึงวันที่
-            <ThaiDateField
-              value={dateTo}
-              onChange={(ymd) => {
-                setPreset('custom');
-                setDateTo(ymd);
-                setPage(1);
-              }}
-            />
-          </label>
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            preset={preset}
+            onChange={({ from, to, preset: nextPreset }) => {
+              setPreset(nextPreset);
+              setDateFrom(from);
+              setDateTo(to);
+              setPage(1);
+            }}
+          />
         </div>
         <p className="text-sm text-slate-500 m-0">
           {filtered.length} รายการ · {dayGroups.length} วัน · หน้า {page}/{totalPages}
@@ -481,7 +399,7 @@ export function ReportsClient({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <MessageSquare size={18} className="text-tm-blue" />
-            <h2 className="section-heading text-base m-0">รายงานทั้งหมด</h2>
+            <h2 className="section-heading text-base m-0">บันทึกการตรวจเยี่ยมทั้งหมด</h2>
           </div>
           {pageGroups.length > 0 ? (
             <div className="flex flex-wrap gap-2">
@@ -504,7 +422,7 @@ export function ReportsClient({
         </div>
 
         {pageGroups.length === 0 ? (
-          <p className="school-empty-note m-0">ไม่พบรายงานตามเงื่อนไข</p>
+          <p className="school-empty-note m-0">ไม่พบบันทึกตามเงื่อนไข</p>
         ) : (
           <div className="school-activity__list">
             {pageGroups.map(([day, items]) => {

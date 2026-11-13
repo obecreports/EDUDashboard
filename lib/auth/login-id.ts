@@ -9,8 +9,17 @@ export function loginPrefixForRole(role: UserRole | string): string {
       return 'staff';
     case 'overseer':
       return 'OS';
-    case 'volunteer':
-      return 'AS';
+    case 'volunteer_center':
+      return 'ASC';
+    case 'volunteer_border':
+      return 'ASB';
+    case 'special_volunteer':
+      return 'ASX';
+    case 'covert_overseer':
+      return 'COV';
+    case 'director':
+      // Director login ID = school_id (no auto-prefix); caller must supply email
+      return '';
     case 'super_overseer':
       return 'SO';
     case 'admin':
@@ -41,12 +50,14 @@ function escapeRegExp(s: string): string {
 /**
  * Next login id for role: `{prefix}{NNNN}` (4-digit pad).
  * Pass existing profile login ids (email column).
+ * Director must supply school_id as login — returns empty string.
  */
 export function allocateNextLoginId(
   role: UserRole | string,
   existingLogins: string[]
 ): string {
   const prefix = loginPrefixForRole(role);
+  if (!prefix) return '';
   let next = maxNumericSuffix(existingLogins, prefix) + 1;
   const used = new Set(existingLogins.map((e) => e.trim().toLowerCase()));
 

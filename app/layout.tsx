@@ -4,11 +4,16 @@ import './globals.css';
 import { AppNavbar } from '@/components/layout/AppNavbar';
 import { AppFooter } from '@/components/layout/AppFooter';
 import { HeroGate } from '@/components/layout/HeroGate';
+import { MobileFieldShell } from '@/components/layout/MobileFieldShell';
 import { PathKeyedMain } from '@/components/layout/PathKeyedMain';
 import { PendingNav } from '@/components/layout/PendingNav';
 import { getSessionProfile } from '@/lib/auth/session';
-import { readHeroSettings } from '@/lib/auth/user-store';
-import { formatPersonLabel } from '@/lib/types';
+import { isFieldRole } from '@/lib/auth/scope';
+import {
+  readContentAccessMapStored,
+  readHeroSettings,
+} from '@/lib/auth/user-store';
+import { formatPersonLabel, normalizeRole } from '@/lib/types';
 
 export const metadata: Metadata = {
   title: 'โครงการกองทุนการศึกษา · Connext ED',
@@ -20,12 +25,19 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [{ role, profile, isAuthenticated, mustChangePassword }, heroSettings] =
-    await Promise.all([getSessionProfile(), readHeroSettings()]);
+  const [{ role, profile, isAuthenticated, mustChangePassword }, heroSettings, contentAccess] =
+    await Promise.all([
+      getSessionProfile(),
+      readHeroSettings(),
+      readContentAccessMapStored(),
+    ]);
+
+  const fieldMobile =
+    isAuthenticated && isFieldRole(normalizeRole(role)) ? '1' : undefined;
 
   return (
     <html lang="th" data-scroll-behavior="smooth">
-      <body>
+      <body data-field-mobile={fieldMobile}>
         <PendingNav />
         <AppNavbar
           role={role}
@@ -38,6 +50,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           }
           isAuthenticated={isAuthenticated}
           mustChangePassword={mustChangePassword}
+          contentAccess={contentAccess}
+        />
+        <MobileFieldShell
+          role={normalizeRole(role)}
+          isAuthenticated={isAuthenticated}
+          contentAccess={contentAccess}
         />
         <HeroGate isAuthenticated={isAuthenticated} settings={heroSettings} />
         <Suspense fallback={null}>

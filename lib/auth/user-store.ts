@@ -8,6 +8,7 @@ import {
   SCHOOL_COMMENTS_COOKIE,
   SCHOOL_EXTRAS_COOKIE,
   SITE_SETTINGS_COOKIE,
+  CONTENT_ACCESS_COOKIE,
   loginIdsMatch,
   normalizeStoredUser,
   type HeroSiteSettings,
@@ -171,6 +172,12 @@ export async function createMockUser(input: {
   const manualLogin = input.email?.trim();
   let loginId = manualLogin || '';
   if (!loginId) {
+    if (role === 'director') {
+      return {
+        ok: false,
+        error: 'บัญชีผู้อำนวยการต้องระบุรหัสผู้ใช้เป็นรหัสโรงเรียน (school ID)',
+      };
+    }
     const existing = (await readStoredUsers()).map((u) => u.email).filter(Boolean);
     loginId = allocateNextLoginId(role, existing);
   }
@@ -203,6 +210,7 @@ export async function createMockUser(input: {
     assigned_zone: null,
     assigned_provinces: [],
     assigned_districts: [],
+    assigned_schools: role === 'director' && loginId ? [loginId] : [],
     reports_to: null,
     disabled: false,
   };
@@ -243,6 +251,7 @@ export async function updateUserProfileFields(
       | 'assigned_zone'
       | 'assigned_provinces'
       | 'assigned_districts'
+      | 'assigned_schools'
       | 'reports_to'
     >
   >
@@ -275,6 +284,103 @@ export async function readHeroSettings(): Promise<HeroSiteSettings> {
 export async function writeHeroSettings(next: Partial<HeroSiteSettings>) {
   const current = await readHeroSettings();
   await writeJsonCookie(SITE_SETTINGS_COOKIE, { ...current, ...next });
+}
+
+export async function readContentAccessMapStored(): Promise<
+  import('@/lib/auth/content-access').ContentAccessMap
+> {
+  const {
+    CONTENT_ACCESS_SETTING_KEY,
+    DEFAULT_CONTENT_ACCESS,
+    mergeContentAccess,
+  } = await import('@/lib/auth/content-access');
+  /** Dedicated ACL cookie survives logout (site-settings is purgeable). */
+  const fromAclCookie = await readJsonCookie<Record<string, unknown> | null>(
+    CONTENT_ACCESS_COOKIE,
+    null
+  );
+  if (fromAclCookie && typeof fromAclCookie === 'object') {
+    return mergeContentAccess(
+      fromAclCookie as import('@/lib/auth/content-access').ContentAccessMap
+    );
+  }
+  /** Migrate legacy nest under site-settings if still present. */
+  const siteBag = await readJsonCookie<Record<string, unknown>>(
+    SITE_SETTINGS_COOKIE,
+    {}
+  );
+  const fromLegacy = siteBag[CONTENT_ACCESS_SETTING_KEY];
+  if (fromLegacy && typeof fromLegacy === 'object') {
+    return mergeContentAccess(
+      fromLegacy as import('@/lib/auth/content-access').ContentAccessMap
+    );
+  }
+  try {
+    const { createClient } = await import('@/lib/supabase/server');
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', CONTENT_ACCESS_SETTING_KEY)
+      .maybeSingle();
+    if (data?.value && typeof data.value === 'object') {
+      return mergeContentAccess(
+        data.value as import('@/lib/auth/content-access').ContentAccessMap
+      );
+    }
+    if (typeof data?.value === 'string') {
+      try {
+        return mergeContentAccess(JSON.parse(data.value));
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* cookie / defaults */
+  }
+  return DEFAULT_CONTENT_ACCESS;
+}
+
+export async function writeContentAccessMapStored(
+  map: import('@/lib/auth/content-access').ContentAccessMap
+) {
+  const { CONTENT_ACCESS_SETTING_KEY, compactContentAccess } = await import(
+    '@/lib/auth/content-access'
+  );
+  /** Sparse diffs only — full matrix overflows cookie cap (~2.4KB). */
+  const compact = compactContentAccess(map);
+
+  let supabaseOk = false;
+  try {
+    const { createClient } = await import('@/lib/supabase/server');
+    const { getSessionProfile } = await import('@/lib/auth/session');
+    const { profile } = await getSessionProfile();
+    const supabase = await createClient();
+    const { error } = await supabase.from('site_settings').upsert({
+      key: CONTENT_ACCESS_SETTING_KEY,
+      value: compact,
+      updated_by: profile?.id?.startsWith('mock-') ? null : profile?.id ?? null,
+      updated_at: new Date().toISOString(),
+    });
+    supabaseOk = !error;
+  } catch {
+    /* mock / RLS — cookie is source of truth */
+  }
+
+  /** Dedicated ACL cookie (not logout-purged). Strip legacy key from site-settings. */
+  try {
+    await writeJsonCookie(CONTENT_ACCESS_COOKIE, compact);
+    const siteBag = await readJsonCookie<Record<string, unknown>>(
+      SITE_SETTINGS_COOKIE,
+      {}
+    );
+    if (CONTENT_ACCESS_SETTING_KEY in siteBag) {
+      const { [CONTENT_ACCESS_SETTING_KEY]: _drop, ...rest } = siteBag;
+      await writeJsonCookie(SITE_SETTINGS_COOKIE, rest);
+    }
+  } catch (e) {
+    if (!supabaseOk) throw e;
+  }
 }
 
 /** Slim row for cookie storage — Thai text balloons encodeURIComponent size. */

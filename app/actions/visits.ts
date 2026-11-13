@@ -412,7 +412,15 @@ export async function markVisitCompletedAction(formData: FormData) {
   if (
     !isAuthenticated ||
     !profile ||
-    !['staff', 'overseer', 'volunteer', 'super_overseer'].includes(profile.role)
+    ![
+      'staff',
+      'overseer',
+      'volunteer_center',
+      'volunteer_border',
+      'special_volunteer',
+      'director',
+      'super_overseer',
+    ].includes(profile.role)
   ) {
     return { ok: false, error: 'เฉพาะเจ้าหน้าที่ที่เข้าสู่ระบบแล้ว' };
   }

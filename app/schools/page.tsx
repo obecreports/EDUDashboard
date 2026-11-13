@@ -102,16 +102,23 @@ async function SchoolsBody({
   if (
     staffMode &&
     profile &&
-    (r === 'super_overseer' || r === 'overseer' || r === 'volunteer')
+    (r === 'super_overseer' ||
+      r === 'overseer' ||
+      r === 'volunteer_center' ||
+      r === 'volunteer_border' ||
+      r === 'special_volunteer')
   ) {
     const profiles = profilesForScope;
     if (r === 'super_overseer') {
-      domainPeopleLabel = 'ผู้รับผิดชอบพื้นที่ (องคมนตรี · อาสาสมัคร · ศึกษานิเทศก์)';
+      domainPeopleLabel =
+        'ผู้รับผิดชอบพื้นที่ (องคมนตรี · อาสาสมัคร · ศึกษานิเทศก์)';
       domainPeople = profiles
         .filter(
           (u) =>
             (normalizeRole(u.role) === 'overseer' ||
-              normalizeRole(u.role) === 'volunteer' ||
+              normalizeRole(u.role) === 'volunteer_center' ||
+              normalizeRole(u.role) === 'volunteer_border' ||
+              normalizeRole(u.role) === 'special_volunteer' ||
               normalizeRole(u.role) === 'staff') &&
             !u.disabled
         )

@@ -26,6 +26,8 @@ import {
   X,
   Layers,
   Database,
+  GraduationCap,
+  UserCog,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -40,6 +42,10 @@ import {
 import { DROPDOWN_ONLY_HREFS } from '@/lib/auth/mock-users';
 import { isAdminRole, isFieldRole } from '@/lib/auth/scope';
 import { logoutAction } from '@/app/actions/auth';
+import {
+  canAccessHref,
+  type ContentAccessMap,
+} from '@/lib/auth/content-access';
 
 const ICONS: Record<string, LucideIcon> = {
   '/': Home,
@@ -61,7 +67,10 @@ const ICONS: Record<string, LucideIcon> = {
   '/admin/schools': School,
   '/admin/directors': UserRound,
   '/admin/tickets': ClipboardPen,
+  '/admin/content-access': Settings,
   '/admin/settings': Settings,
+  '/scholarship-students': GraduationCap,
+  '/contract-teachers': UserCog,
 };
 
 /** ภาพรวมด้านต่างๆ — 3 pillars + SMS evaluation */
@@ -86,8 +95,14 @@ const AUTH_MAIN_BEFORE = ['/dashboard'] as const;
 /** Tickets render after ข้อมูลรายละเอียด */
 const AUTH_TICKETS_HREF = '/tickets' as const;
 
-/** รายงาน — ส่งรายงาน + ดูผลรายงาน */
+/** บันทึกการตรวจเยี่ยม */
 const REPORTS_HREFS = ['/reports/new', '/reports'] as const;
+
+/** Scholarship / contract-teacher pages (field) */
+const PEOPLE_DATA_HREFS = [
+  '/scholarship-students',
+  '/contract-teachers',
+] as const;
 
 /** จัดการโรงเรียน — domain schools + schedule (logged-in field roles) */
 const MANAGE_SCHOOLS_HREFS = ['/schools', '/calendar', '/calendar/new'] as const;
@@ -104,8 +119,13 @@ const MANAGE_DATA_HREFS = [
   '/admin/tickets',
 ] as const;
 
-/** จัดการผู้ใช้งาน — assign domain + manage accounts */
-const MANAGE_USERS_HREFS = ['/admin/domain', '/admin/accounts'] as const;
+/** จัดการผู้ใช้งาน — assign domain + manage accounts + ACL */
+const MANAGE_USERS_HREFS = [
+  '/admin/domain',
+  '/admin/accounts',
+  '/admin/org-map',
+  '/admin/content-access',
+] as const;
 
 type OpenMenu = 'overview' | 'detail' | 'manage' | 'reports' | 'data' | 'users' | null;
 
@@ -115,8 +135,10 @@ export function AppNavbar({
   displayName,
   isAuthenticated,
   mustChangePassword,
+  contentAccess,
 }: {
   role: UserRole;
+  contentAccess?: ContentAccessMap;
   overseerTier?: OverseerTier | null;
   displayName: string;
   isAuthenticated: boolean;
@@ -138,9 +160,19 @@ export function AppNavbar({
 
   const normalizedRole = normalizeRole(role);
   const roleLabel = roleDisplayLabel(normalizedRole, overseerTier);
-  const catalog = navForRole(normalizedRole).filter((item) => !DROPDOWN_ONLY_HREFS.has(item.href));
+
+  const aclAllows = (href: string) => {
+    if (!contentAccess) return true;
+    return canAccessHref(normalizedRole, href, 'view', contentAccess);
+  };
+
+  const catalog = navForRole(normalizedRole).filter((item) => {
+    if (DROPDOWN_ONLY_HREFS.has(item.href)) return false;
+    return aclAllows(item.href);
+  });
 
   const byHref = (href: string) => {
+    if (!aclAllows(href)) return undefined;
     const item = catalog.find((i) => i.href === href) ?? NAV_CATALOG.find((i) => i.href === href);
     if (!item) return undefined;
     if (href === '/schools' && isAuthenticated && isFieldRole(normalizedRole)) {
@@ -173,6 +205,8 @@ export function AppNavbar({
 
   let ticketsItem: NavItem | undefined;
 
+  let peopleDataItems: NavItem[] = [];
+
   if (isAuthenticated && isFieldRole(normalizedRole)) {
     mainBefore = AUTH_MAIN_BEFORE.map((h) => byHref(h)).filter(Boolean) as NavItem[];
     ticketsItem = byHref(AUTH_TICKETS_HREF);
@@ -180,6 +214,9 @@ export function AppNavbar({
     showManageGroup = manageGroup.length > 0;
     reportsGroup = REPORTS_HREFS.map((h) => byHref(h)).filter(Boolean) as NavItem[];
     showReportsGroup = reportsGroup.length > 0;
+    peopleDataItems = PEOPLE_DATA_HREFS.map((h) => byHref(h)).filter(
+      Boolean
+    ) as NavItem[];
     mapItem = byHref('/thailand-map') ?? DETAIL_GROUP_AUTH[0];
     showOverviewGroup = false;
     showPublicGroups = false;
@@ -196,12 +233,12 @@ export function AppNavbar({
   } else {
     mainBefore = [
       byHref('/') ?? { href: '/', label: 'หน้าหลัก', roles: [], end: true },
-      byHref('/about') ?? { href: '/about', label: 'เกี่ยวกับโครงการ', roles: [] },
-    ];
+      byHref('/about'),
+    ].filter(Boolean) as NavItem[];
+    overviewGroup = OVERVIEW_GROUP.filter((i) => aclAllows(i.href));
+    detailGroup = DETAIL_GROUP_GUEST.filter((i) => aclAllows(i.href));
     showPublicGroups = true;
-    showOverviewGroup = true;
-    overviewGroup = OVERVIEW_GROUP;
-    detailGroup = DETAIL_GROUP_GUEST;
+    showOverviewGroup = overviewGroup.length > 0;
   }
 
   const showProfile = isFieldRole(normalizedRole) || isAdminRole(normalizedRole);
@@ -433,12 +470,15 @@ export function AppNavbar({
       {showReportsGroup &&
         renderGroup(
           'reports',
-          'รายงาน',
+          'บันทึกการตรวจเยี่ยม',
           FileText,
           reportsGroup,
           reportsActive,
           reportsRef
         )}
+      {peopleDataItems.map((item) => (
+        <li key={`bar-${item.href}`}>{renderLink(item, 'bar')}</li>
+      ))}
       {showDataGroup &&
         renderGroup(
           'data',
@@ -482,9 +522,17 @@ export function AppNavbar({
       )}
       {showReportsGroup && (
         <>
-          <li className="ed-nav-drawer__group-label">รายงาน</li>
+          <li className="ed-nav-drawer__group-label">บันทึกการตรวจเยี่ยม</li>
           {reportsGroup.map((item) => (
             <li key={`drawer-rp-${item.href}`}>{renderLink(item, 'drawer')}</li>
+          ))}
+        </>
+      )}
+      {peopleDataItems.length > 0 && (
+        <>
+          <li className="ed-nav-drawer__group-label">ข้อมูลบุคลากร / นักเรียนทุน</li>
+          {peopleDataItems.map((item) => (
+            <li key={`drawer-pd-${item.href}`}>{renderLink(item, 'drawer')}</li>
           ))}
         </>
       )}

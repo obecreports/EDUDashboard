@@ -1,0 +1,681 @@
+import type { UserRole } from '@/lib/types';
+import {
+  ADMIN_ROLE_LABELS,
+  ADMIN_ROLES,
+  FIELD_ROLES,
+  normalizeRole,
+} from '@/lib/types';
+
+/** Access depth for a content resource */
+export type AccessLevel = 'none' | 'view' | 'modify';
+
+/** Field sensitivity clearance (scholarship / school detail tiered pages) */
+export type SensitivityLevel = 1 | 2 | 3;
+
+export type TieredAccessCell = {
+  access: AccessLevel;
+  viewUpTo?: SensitivityLevel;
+  modifyUpTo?: SensitivityLevel;
+};
+
+/** Plain level (legacy) or tiered cell with clearance */
+export type ContentAccessCell = AccessLevel | TieredAccessCell;
+
+export type ContentResourceId =
+  | 'home'
+  | 'about'
+  | 'pillars'
+  | 'strategy'
+  | 'thailand_map'
+  | 'schools'
+  | 'school_detail'
+  | 'dashboard'
+  | 'calendar'
+  | 'reports'
+  | 'scholarship_students'
+  | 'contract_teachers'
+  | 'tickets'
+  // school_detail tabs
+  | 'school_tab_overview'
+  | 'school_tab_basic'
+  | 'school_tab_buildings'
+  | 'school_tab_location'
+  | 'school_tab_swot'
+  | 'school_tab_visits'
+  | 'school_tab_pillars'
+  | 'school_tab_scores'
+  | 'school_tab_people'
+  | 'school_tab_scholarship'
+  | 'school_tab_contract_teachers'
+  // page sections
+  | 'dashboard_activity'
+  | 'dashboard_radar'
+  | 'calendar_view'
+  | 'calendar_create'
+  | 'reports_list'
+  | 'reports_create'
+  // scholarship_students sections
+  | 'ss_banner'
+  | 'ss_general'
+  | 'ss_contact'
+  | 'ss_teacher'
+  | 'ss_performance'
+  | 'ss_behavior'
+  | 'ss_health'
+  | 'ss_fund'
+  | 'ss_project'
+  | 'ss_friends'
+  | 'ss_family';
+
+export type ContentAccessMap = Record<
+  ContentResourceId,
+  Partial<Record<UserRole, ContentAccessCell>>
+>;
+
+export type ContentPageDef = {
+  id: ContentResourceId;
+  label: string;
+  sections: { id: ContentResourceId; label: string }[];
+  /** Hide/View/Modify + Level 1–3 clearance dropdowns */
+  supportsSensitivity?: boolean;
+};
+
+const SS_SECTIONS: { id: ContentResourceId; label: string }[] = [
+  { id: 'ss_banner', label: 'โปรไฟล์ (แบนเนอร์)' },
+  { id: 'ss_general', label: 'ข้อมูลทั่วไป' },
+  { id: 'ss_contact', label: 'ติดต่อ' },
+  { id: 'ss_teacher', label: 'ครู / ผู้ดูแล' },
+  { id: 'ss_performance', label: 'ผลการเรียน' },
+  { id: 'ss_behavior', label: 'พฤติกรรม / ความเสี่ยง' },
+  { id: 'ss_health', label: 'สุขภาพ' },
+  { id: 'ss_fund', label: 'ทุน / การเบิกจ่าย' },
+  { id: 'ss_project', label: 'ประวัติโครงการ' },
+  { id: 'ss_friends', label: 'เพื่อน' },
+  { id: 'ss_family', label: 'ครอบครัว' },
+];
+
+/** Page cards with nested section toggles (admin UI). */
+export const CONTENT_PAGES: ContentPageDef[] = [
+  { id: 'home', label: 'หน้าหลัก', sections: [] },
+  { id: 'about', label: 'เกี่ยวกับโครงการ', sections: [] },
+  { id: 'pillars', label: 'ภาพรวม 3 เสาหลัก', sections: [] },
+  { id: 'strategy', label: 'ผลการประเมินตามระบบ SMS', sections: [] },
+  { id: 'thailand_map', label: 'แผนที่', sections: [] },
+  { id: 'schools', label: 'รายการโรงเรียน', sections: [] },
+  {
+    id: 'school_detail',
+    label: 'รายละเอียดโรงเรียน',
+    supportsSensitivity: true,
+    sections: [
+      { id: 'school_tab_overview', label: 'ภาพรวม' },
+      { id: 'school_tab_basic', label: 'ข้อมูลพื้นฐาน' },
+      { id: 'school_tab_buildings', label: 'ข้อมูลสิ่งปลูกสร้าง' },
+      { id: 'school_tab_location', label: 'ที่ตั้งและแผนที่' },
+      { id: 'school_tab_swot', label: 'SWOT โรงเรียน' },
+      { id: 'school_tab_visits', label: 'การลงพื้นที่' },
+      { id: 'school_tab_pillars', label: '3 เสาหลัก' },
+      { id: 'school_tab_scores', label: 'ผลการประเมินตามระบบ SMS' },
+      { id: 'school_tab_people', label: 'นักเรียน / บุคลากร' },
+      { id: 'school_tab_scholarship', label: 'นักเรียนทุน' },
+      { id: 'school_tab_contract_teachers', label: 'ครูอัตรจ้าง' },
+    ],
+  },
+  {
+    id: 'dashboard',
+    label: 'แดชบอร์ด',
+    sections: [
+      { id: 'dashboard_activity', label: 'ภาพรวมกิจกรรม' },
+      { id: 'dashboard_radar', label: 'เรดาร์ / เปรียบเทียบ' },
+    ],
+  },
+  {
+    id: 'calendar',
+    label: 'ปฏิทิน / นัดหมาย',
+    sections: [
+      { id: 'calendar_view', label: 'ดูปฏิทิน' },
+      { id: 'calendar_create', label: 'สร้างนัดหมาย' },
+    ],
+  },
+  {
+    id: 'reports',
+    label: 'บันทึกการตรวจเยี่ยม',
+    sections: [
+      { id: 'reports_list', label: 'ดูรายการ' },
+      { id: 'reports_create', label: 'ส่งบันทึก' },
+    ],
+  },
+  {
+    id: 'scholarship_students',
+    label: 'นักเรียนทุน',
+    supportsSensitivity: true,
+    sections: SS_SECTIONS,
+  },
+  { id: 'contract_teachers', label: 'ครูอัตรจ้าง', sections: [] },
+  { id: 'tickets', label: 'คำขอแก้ไขข้อมูล', sections: [] },
+];
+
+/** Flat list of every resource (pages + sections) for merge/defaults. */
+export const CONTENT_RESOURCES: {
+  id: ContentResourceId;
+  label: string;
+  pageId: ContentResourceId;
+}[] = CONTENT_PAGES.flatMap((page) => [
+  { id: page.id, label: page.label, pageId: page.id },
+  ...page.sections.map((s) => ({
+    id: s.id,
+    label: s.label,
+    pageId: page.id,
+  })),
+]);
+
+const TIERED_PAGE_IDS = new Set<ContentResourceId>(
+  CONTENT_PAGES.filter((p) => p.supportsSensitivity).map((p) => p.id)
+);
+
+export function resourceSupportsSensitivity(
+  resource: ContentResourceId
+): boolean {
+  const pageId = pageIdForResource(resource);
+  return TIERED_PAGE_IDS.has(pageId);
+}
+
+/** Roles in ACL dropdown: Global (guest) first, then field + admin. */
+export const ACL_MATRIX_ROLES: UserRole[] = [
+  'guest',
+  'super_overseer',
+  'overseer',
+  'covert_overseer',
+  'special_volunteer',
+  'volunteer_center',
+  'volunteer_border',
+  'staff',
+  'director',
+  'admin',
+  'super_admin',
+];
+
+/** Roles an actor may edit in Content Access UI / save. */
+export function aclEditableRoles(actorRole: UserRole): UserRole[] {
+  const r = normalizeRole(actorRole);
+  if (r === 'super_admin') return [...ACL_MATRIX_ROLES];
+  return ACL_MATRIX_ROLES.filter((role) => role !== 'super_admin');
+}
+
+/**
+ * Merge incoming ACL for save: non–super_admin actors cannot change
+ * super_admin cells (keep existing / defaults).
+ */
+export function mergeContentAccessForActor(
+  actorRole: UserRole,
+  existing: ContentAccessMap,
+  incoming: ContentAccessMap
+): ContentAccessMap {
+  const r = normalizeRole(actorRole);
+  if (r === 'super_admin') return incoming;
+  const out = { ...incoming } as ContentAccessMap;
+  for (const res of CONTENT_RESOURCES) {
+    out[res.id] = {
+      ...incoming[res.id],
+      super_admin:
+        existing[res.id]?.super_admin ??
+        DEFAULT_CONTENT_ACCESS[res.id]?.super_admin ??
+        (resourceSupportsSensitivity(res.id)
+          ? tierCell('modify', 3, 3)
+          : 'modify'),
+    };
+  }
+  return out;
+}
+
+/** Admin UI label — Global for non-login guest. */
+export function aclRoleLabel(role: UserRole): string {
+  if (role === 'guest') return 'Global';
+  return ADMIN_ROLE_LABELS[role] ?? role;
+}
+
+const FULL: AccessLevel = 'modify';
+const VIEW: AccessLevel = 'view';
+const NONE: AccessLevel = 'none';
+
+export function tierCell(
+  access: AccessLevel,
+  viewUpTo?: SensitivityLevel,
+  modifyUpTo?: SensitivityLevel
+): TieredAccessCell {
+  if (access === 'none') return { access: 'none' };
+  if (access === 'view') {
+    return { access: 'view', viewUpTo: (viewUpTo ?? 1) as SensitivityLevel };
+  }
+  const v = (viewUpTo ?? 3) as SensitivityLevel;
+  const m = Math.min(v, modifyUpTo ?? v) as SensitivityLevel;
+  return { access: 'modify', viewUpTo: v, modifyUpTo: m };
+}
+
+export function isTieredCell(cell: ContentAccessCell): cell is TieredAccessCell {
+  return typeof cell === 'object' && cell !== null && 'access' in cell;
+}
+
+/** Normalize plain or tiered cell. Legacy plain view/modify → full L3. */
+export function normalizeAccessCell(
+  cell: ContentAccessCell | null | undefined
+): TieredAccessCell {
+  if (cell == null) return { access: 'none' };
+  if (typeof cell === 'string') {
+    if (cell === 'none') return { access: 'none' };
+    if (cell === 'view') return { access: 'view', viewUpTo: 3 };
+    return { access: 'modify', viewUpTo: 3, modifyUpTo: 3 };
+  }
+  const access = cell.access ?? 'none';
+  if (access === 'none') return { access: 'none' };
+  if (access === 'view') {
+    return { access: 'view', viewUpTo: (cell.viewUpTo ?? 3) as SensitivityLevel };
+  }
+  const v = (cell.viewUpTo ?? 3) as SensitivityLevel;
+  const m = Math.min(v, (cell.modifyUpTo ?? v) as SensitivityLevel) as SensitivityLevel;
+  return { access: 'modify', viewUpTo: v, modifyUpTo: m };
+}
+
+export function accessOf(cell: ContentAccessCell | null | undefined): AccessLevel {
+  return normalizeAccessCell(cell).access;
+}
+
+export function cellsEqual(
+  a: ContentAccessCell | null | undefined,
+  b: ContentAccessCell | null | undefined
+): boolean {
+  const na = normalizeAccessCell(a);
+  const nb = normalizeAccessCell(b);
+  return (
+    na.access === nb.access &&
+    (na.viewUpTo ?? 0) === (nb.viewUpTo ?? 0) &&
+    (na.modifyUpTo ?? 0) === (nb.modifyUpTo ?? 0)
+  );
+}
+
+function fieldDefaults(
+  level: AccessLevel
+): Partial<Record<UserRole, ContentAccessCell>> {
+  const out: Partial<Record<UserRole, ContentAccessCell>> = {};
+  for (const r of FIELD_ROLES) out[r] = level;
+  for (const r of ADMIN_ROLES) out[r] = FULL;
+  return out;
+}
+
+function fieldDefaultsTiered(
+  access: AccessLevel,
+  viewUpTo: SensitivityLevel,
+  modifyUpTo?: SensitivityLevel
+): Partial<Record<UserRole, ContentAccessCell>> {
+  const out: Partial<Record<UserRole, ContentAccessCell>> = {};
+  for (const r of FIELD_ROLES) {
+    out[r] = tierCell(
+      access,
+      viewUpTo,
+      access === 'modify' ? (modifyUpTo ?? 1) : undefined
+    );
+  }
+  for (const r of ADMIN_ROLES) out[r] = tierCell('modify', 3, 3);
+  return out;
+}
+
+function withGuest(
+  base: Partial<Record<UserRole, ContentAccessCell>>,
+  guest: ContentAccessCell
+): Partial<Record<UserRole, ContentAccessCell>> {
+  return { ...base, guest };
+}
+
+/** School detail prepare: L3 view so existing UI stays fully visible until tagged. */
+const SCHOOL_TIER = withGuest(fieldDefaultsTiered('view', 3), tierCell('view', 3));
+
+/** Scholarship: field roles view L1; special/covert modify view L3 / modify L2. */
+const SCHOLARSHIP_TIER = withGuest(
+  {
+    ...fieldDefaultsTiered('view', 1),
+    special_volunteer: tierCell('modify', 3, 2),
+    covert_overseer: tierCell('modify', 3, 2),
+    director: tierCell('view', 1),
+  },
+  tierCell('none')
+);
+
+/**
+ * Default ACL:
+ * - Global (guest): public pages view; field pages none; guest school tabs
+ * - SO / admin: full
+ * - special_volunteer / covert_overseer: strong on scholarship
+ * - director: school surfaces
+ */
+export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
+  home: withGuest(fieldDefaults(VIEW), VIEW),
+  about: withGuest(fieldDefaults(VIEW), VIEW),
+  pillars: withGuest(fieldDefaults(VIEW), VIEW),
+  strategy: withGuest(fieldDefaults(VIEW), VIEW),
+  thailand_map: withGuest(fieldDefaults(VIEW), VIEW),
+  schools: withGuest(fieldDefaults(VIEW), VIEW),
+  school_detail: SCHOOL_TIER,
+  dashboard: withGuest(
+    {
+      ...fieldDefaults(VIEW),
+      special_volunteer: VIEW,
+      covert_overseer: VIEW,
+      director: VIEW,
+    },
+    NONE
+  ),
+  calendar: withGuest(
+    {
+      ...fieldDefaults(FULL),
+      special_volunteer: VIEW,
+      covert_overseer: VIEW,
+      director: VIEW,
+    },
+    NONE
+  ),
+  reports: withGuest(
+    {
+      ...fieldDefaults(FULL),
+      special_volunteer: VIEW,
+      covert_overseer: VIEW,
+      director: VIEW,
+    },
+    NONE
+  ),
+  scholarship_students: SCHOLARSHIP_TIER,
+  contract_teachers: withGuest(
+    {
+      ...fieldDefaults(VIEW),
+      special_volunteer: VIEW,
+      covert_overseer: VIEW,
+      director: VIEW,
+    },
+    NONE
+  ),
+  tickets: withGuest(
+    {
+      ...fieldDefaults(FULL),
+      special_volunteer: NONE,
+      covert_overseer: NONE,
+      director: FULL,
+    },
+    NONE
+  ),
+  school_tab_overview: SCHOOL_TIER,
+  school_tab_basic: SCHOOL_TIER,
+  school_tab_buildings: SCHOOL_TIER,
+  school_tab_location: SCHOOL_TIER,
+  school_tab_swot: SCHOOL_TIER,
+  school_tab_visits: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
+  school_tab_pillars: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
+  school_tab_scores: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
+  school_tab_people: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
+  school_tab_scholarship: SCHOLARSHIP_TIER,
+  school_tab_contract_teachers: withGuest(
+    fieldDefaultsTiered('view', 3),
+    tierCell('none')
+  ),
+  dashboard_activity: withGuest(fieldDefaults(VIEW), NONE),
+  dashboard_radar: withGuest(fieldDefaults(VIEW), NONE),
+  calendar_view: withGuest(
+    {
+      ...fieldDefaults(FULL),
+      special_volunteer: VIEW,
+      covert_overseer: VIEW,
+      director: VIEW,
+    },
+    NONE
+  ),
+  calendar_create: withGuest(
+    {
+      ...fieldDefaults(FULL),
+      special_volunteer: NONE,
+      covert_overseer: NONE,
+      director: NONE,
+    },
+    NONE
+  ),
+  reports_list: withGuest(
+    {
+      ...fieldDefaults(FULL),
+      special_volunteer: VIEW,
+      covert_overseer: VIEW,
+      director: VIEW,
+    },
+    NONE
+  ),
+  reports_create: withGuest(
+    {
+      ...fieldDefaults(FULL),
+      special_volunteer: NONE,
+      covert_overseer: NONE,
+      director: NONE,
+    },
+    NONE
+  ),
+  ss_banner: SCHOLARSHIP_TIER,
+  ss_general: SCHOLARSHIP_TIER,
+  ss_contact: SCHOLARSHIP_TIER,
+  ss_teacher: SCHOLARSHIP_TIER,
+  ss_performance: SCHOLARSHIP_TIER,
+  ss_behavior: SCHOLARSHIP_TIER,
+  ss_health: SCHOLARSHIP_TIER,
+  ss_fund: SCHOLARSHIP_TIER,
+  ss_project: SCHOLARSHIP_TIER,
+  ss_friends: SCHOLARSHIP_TIER,
+  ss_family: SCHOLARSHIP_TIER,
+};
+
+export const CONTENT_ACCESS_SETTING_KEY = 'content_access_map';
+
+const LEVEL_RANK: Record<AccessLevel, number> = {
+  none: 0,
+  view: 1,
+  modify: 2,
+};
+
+export function getAccessCell(
+  map: ContentAccessMap,
+  resource: ContentResourceId,
+  role: UserRole
+): TieredAccessCell {
+  return normalizeAccessCell(
+    map[resource]?.[role] ?? DEFAULT_CONTENT_ACCESS[resource]?.[role]
+  );
+}
+
+export function mergeContentAccess(
+  stored: Partial<ContentAccessMap> | null | undefined
+): ContentAccessMap {
+  const out = { ...DEFAULT_CONTENT_ACCESS } as ContentAccessMap;
+  if (!stored || typeof stored !== 'object') return out;
+  for (const res of CONTENT_RESOURCES) {
+    const patch = stored[res.id];
+    if (!patch || typeof patch !== 'object') continue;
+    out[res.id] = { ...out[res.id], ...patch };
+  }
+  return out;
+}
+
+/**
+ * Store only cells that differ from defaults — keeps cookie/DB payloads small.
+ * Tiered cells stored compactly as objects `{a,v?,m?}`.
+ */
+export function compactContentAccess(
+  map: ContentAccessMap | Partial<ContentAccessMap>
+): Partial<ContentAccessMap> {
+  const out: Partial<ContentAccessMap> = {};
+  for (const res of CONTENT_RESOURCES) {
+    const roles = map[res.id];
+    if (!roles || typeof roles !== 'object') continue;
+    const defaults = DEFAULT_CONTENT_ACCESS[res.id] ?? {};
+    const diff: Partial<Record<UserRole, ContentAccessCell>> = {};
+    for (const [role, level] of Object.entries(roles)) {
+      if (level == null) continue;
+      const r = role as UserRole;
+      if (!cellsEqual(defaults[r], level)) {
+        diff[r] = compactCell(level, resourceSupportsSensitivity(res.id));
+      }
+    }
+    if (Object.keys(diff).length > 0) {
+      out[res.id] = diff;
+    }
+  }
+  return out;
+}
+
+/** Compact tiered cell for storage; plain AccessLevel for non-tiered. */
+function compactCell(
+  cell: ContentAccessCell,
+  tiered: boolean
+): ContentAccessCell {
+  const n = normalizeAccessCell(cell);
+  if (!tiered) return n.access;
+  if (n.access === 'none') return { access: 'none' };
+  if (n.access === 'view') return { access: 'view', viewUpTo: n.viewUpTo };
+  return {
+    access: 'modify',
+    viewUpTo: n.viewUpTo,
+    modifyUpTo: n.modifyUpTo,
+  };
+}
+
+export function canAccess(
+  role: string | null | undefined,
+  resource: ContentResourceId,
+  level: AccessLevel = 'view',
+  map: ContentAccessMap = DEFAULT_CONTENT_ACCESS
+): boolean {
+  const r = normalizeRole(role);
+  if (r === 'super_admin' || r === 'admin') {
+    if (ADMIN_ROLES.includes(r) && level === 'view') return true;
+  }
+  const granted = accessOf(
+    map[resource]?.[r] ?? DEFAULT_CONTENT_ACCESS[resource]?.[r]
+  );
+  return LEVEL_RANK[granted] >= LEVEL_RANK[level];
+}
+
+/** Section access requires parent page ≥ view as well. */
+export function canAccessSection(
+  role: string | null | undefined,
+  pageId: ContentResourceId,
+  sectionId: ContentResourceId,
+  level: AccessLevel = 'view',
+  map: ContentAccessMap = DEFAULT_CONTENT_ACCESS
+): boolean {
+  if (!canAccess(role, pageId, 'view', map)) return false;
+  return canAccess(role, sectionId, level, map);
+}
+
+export function canViewSensitivity(
+  role: string | null | undefined,
+  resource: ContentResourceId,
+  fieldLevel: SensitivityLevel,
+  map: ContentAccessMap = DEFAULT_CONTENT_ACCESS
+): boolean {
+  const r = normalizeRole(role);
+  if (!canAccess(r, resource, 'view', map)) return false;
+  if (!resourceSupportsSensitivity(resource)) return true;
+  if (r === 'super_admin' || r === 'admin') return true;
+  const cell = getAccessCell(map, resource, r);
+  const upTo = cell.viewUpTo ?? 0;
+  return upTo >= fieldLevel;
+}
+
+export function canModifySensitivity(
+  role: string | null | undefined,
+  resource: ContentResourceId,
+  fieldLevel: SensitivityLevel,
+  map: ContentAccessMap = DEFAULT_CONTENT_ACCESS
+): boolean {
+  const r = normalizeRole(role);
+  if (!canAccess(r, resource, 'modify', map)) return false;
+  if (!resourceSupportsSensitivity(resource)) {
+    return canAccess(r, resource, 'modify', map);
+  }
+  const cell = getAccessCell(map, resource, r);
+  if (cell.access !== 'modify') return false;
+  const upTo = cell.modifyUpTo ?? 0;
+  return upTo >= fieldLevel;
+}
+
+/** Map school detail TabId → ACL section resource. */
+export function schoolTabResource(
+  tabId: string
+): ContentResourceId | null {
+  const map: Record<string, ContentResourceId> = {
+    overview: 'school_tab_overview',
+    basic: 'school_tab_basic',
+    buildings: 'school_tab_buildings',
+    location: 'school_tab_location',
+    swot: 'school_tab_swot',
+    visits: 'school_tab_visits',
+    pillars: 'school_tab_pillars',
+    scores: 'school_tab_scores',
+    people: 'school_tab_people',
+    scholarship: 'school_tab_scholarship',
+    contract_teachers: 'school_tab_contract_teachers',
+  };
+  return map[tabId] ?? null;
+}
+
+/** Map nav href → content resource for ACL filtering */
+export function resourceForHref(href: string): ContentResourceId | null {
+  if (href === '/') return 'home';
+  if (href === '/about' || href.startsWith('/about/')) return 'about';
+  if (href === '/pillars' || href.startsWith('/pillars/')) return 'pillars';
+  if (href === '/strategy' || href.startsWith('/strategy/')) return 'strategy';
+  if (href === '/overview' || href.startsWith('/overview/')) return 'strategy';
+  if (href.startsWith('/thailand-map')) return 'thailand_map';
+  if (href === '/dashboard') return 'dashboard';
+  if (href === '/calendar/new' || href.startsWith('/calendar/new'))
+    return 'calendar_create';
+  if (href.startsWith('/calendar')) return 'calendar_view';
+  if (href === '/reports/new' || href.startsWith('/reports/new'))
+    return 'reports_create';
+  if (href.startsWith('/reports')) return 'reports_list';
+  if (href.startsWith('/scholarship-students')) return 'scholarship_students';
+  if (href.startsWith('/contract-teachers')) return 'contract_teachers';
+  if (/^\/schools\/[^/]+/.test(href) && !href.startsWith('/schools/public')) {
+    return 'school_detail';
+  }
+  if (href === '/schools' || href.startsWith('/schools/')) return 'schools';
+  if (href.startsWith('/tickets')) return 'tickets';
+  return null;
+}
+
+/** Parent page id for a resource (itself if it is a page). */
+export function pageIdForResource(
+  resource: ContentResourceId
+): ContentResourceId {
+  const found = CONTENT_RESOURCES.find((r) => r.id === resource);
+  return found?.pageId ?? resource;
+}
+
+/** Nav/href ACL: sections also require parent page ≥ view. */
+export function canAccessHref(
+  role: string | null | undefined,
+  href: string,
+  level: AccessLevel = 'view',
+  map: ContentAccessMap = DEFAULT_CONTENT_ACCESS
+): boolean {
+  const resource = resourceForHref(href);
+  if (!resource) return true;
+  const pageId = pageIdForResource(resource);
+  if (pageId !== resource) {
+    return canAccessSection(role, pageId, resource, level, map);
+  }
+  return canAccess(role, resource, level, map);
+}
+
+export function accessLevelLabel(level: AccessLevel): string {
+  if (level === 'modify') return 'แก้ไขได้';
+  if (level === 'view') return 'ดูได้อย่างเดียว';
+  return 'ไม่มีสิทธิ์';
+}
+
+export function sensitivityLevelLabel(level: SensitivityLevel): string {
+  if (level === 1) return 'ระดับ 1 ทั่วไป';
+  if (level === 2) return 'ระดับ 2 ลับ';
+  return 'ระดับ 3 จำกัด';
+}

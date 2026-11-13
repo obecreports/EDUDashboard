@@ -115,9 +115,9 @@ export async function updateSelfProfileAction(formData: FormData): Promise<
   const name_prefix =
     name_prefix_raw == null ? '' : String(name_prefix_raw).trim();
   let position = String(formData.get('position') || '').trim();
-  // Overseer Type 2 always stores/displays as อาสาสมัคร
+  // Volunteer roles keep their role label as position when blanked
   if (isOverseerType2(profile.role, profile.overseer_tier)) {
-    position = ROLE_LABELS.volunteer;
+    position = ROLE_LABELS[normalizeRole(profile.role)] || ROLE_LABELS.volunteer_border;
   }
 
   if (!full_name) return { ok: false, error: 'กรุณากรอกชื่อ–นามสกุล' };

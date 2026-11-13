@@ -322,7 +322,12 @@ export function ManagedSchoolsClient({
   const domainPeopleTree = useMemo((): FilterTreeNode[] => {
     const overseers = domainPeople.filter((p) => {
       const r = normalizeRole(p.role);
-      return r === 'overseer' || r === 'volunteer';
+      return (
+        r === 'overseer' ||
+        r === 'volunteer_center' ||
+        r === 'volunteer_border' ||
+        r === 'special_volunteer'
+      );
     });
     const staff = domainPeople.filter((p) => normalizeRole(p.role) === 'staff');
     if (overseers.length === 0) {
@@ -430,7 +435,7 @@ export function ManagedSchoolsClient({
   const title = mode === 'staff' ? 'โรงเรียนของฉัน' : 'โรงเรียนในโครงการทั้งหมด';
   const subtitle =
     mode === 'staff'
-      ? `โรงเรียนของฉัน · ${staffName || 'อาสาสมัคร'} ${poolSchools.length} แห่ง`
+      ? `โรงเรียนในการดูแลของฉัน ${poolSchools.length} แห่ง`
       : `โรงเรียนในโครงการกองทุนการศึกษา ${poolSchools.length} แห่ง`;
 
   return (
@@ -718,11 +723,10 @@ export function ManagedSchoolsClient({
                   <List size={14} /> รายการ
                 </button>
               </div>
-              <label className="text-sm font-semibold flex items-center gap-2 ml-auto">
+              <label className="schools-list-panel__sort text-sm font-semibold flex items-center gap-2 ml-auto">
                 เรียงตาม
                 <select
-                  className="form-input"
-                  style={{ width: 'auto', minHeight: '2.4rem' }}
+                  className="form-input schools-list-panel__sort-select"
                   value={sort}
                   onChange={(e) => {
                     setSort(e.target.value as typeof sort);
@@ -820,7 +824,7 @@ export function ManagedSchoolsClient({
                             href={`/calendar/new?school_id=${encodeURIComponent(String(s.school_id))}`}
                             className="ed-btn ed-btn--primary ed-btn--sm"
                           >
-                            เตรียมลงพื้นที่
+                            นัดหมาย
                           </Link>
                         ) : null}
                       </div>
@@ -943,19 +947,19 @@ export function ManagedSchoolsClient({
                                 : 'ยังไม่เคย'}
                           </span>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="ed-school-card__actions flex flex-wrap gap-2">
                           <Link
                             href={`/schools/${s.school_id}`}
                             className="ed-btn ed-btn--outline ed-btn--sm"
                           >
-                            ดูข้อมูลโรงเรียน
+                            ดูข้อมูล
                           </Link>
                           {showScores ? (
                             <Link
                               href={`/calendar/new?school_id=${encodeURIComponent(String(s.school_id))}`}
                               className="ed-btn ed-btn--primary ed-btn--sm"
                             >
-                              เตรียมลงพื้นที่
+                              นัดหมาย
                             </Link>
                           ) : null}
                         </div>

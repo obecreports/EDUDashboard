@@ -22,6 +22,7 @@ import { SCORE_YEAR_CURRENT, SCORE_YEAR_PREVIOUS } from '@/lib/scores/years';
 import {
   effectiveOverseerTier,
   formatPersonLabel,
+  isCovertFieldRole,
   isOverseerType1,
   isOverseerType2,
   normalizeRole,
@@ -34,10 +35,18 @@ import {
   listMyCalendarEvents,
 } from '@/app/actions/visits';
 import { fetchAllUserProfiles } from '@/lib/supabase/profiles';
-import { readStoredUsers } from '@/lib/auth/user-store';
+import {
+  readContentAccessMapStored,
+  readStoredUsers,
+} from '@/lib/auth/user-store';
 import { fetchAllSchoolComments } from '@/lib/supabase/school-swot';
 import { eventHasMappedReport, type ReportActivityLink } from '@/lib/activity/complete';
 import { normalizeStatus } from '@/lib/visits/labels';
+import {
+  canAccess,
+  canAccessSection,
+  mergeContentAccess,
+} from '@/lib/auth/content-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +61,26 @@ async function DashboardBody() {
   if (!isAuthenticated || !profile || !isFieldRole(r)) {
     redirect('/login?next=/dashboard');
   }
+  const acl = mergeContentAccess(
+    await readContentAccessMapStored().catch(() => null)
+  );
+  if (!canAccess(r, 'dashboard', 'view', acl)) {
+    redirect('/');
+  }
+  const showActivityPanel = canAccessSection(
+    r,
+    'dashboard',
+    'dashboard_activity',
+    'view',
+    acl
+  );
+  const showRadarPanel = canAccessSection(
+    r,
+    'dashboard',
+    'dashboard_radar',
+    'view',
+    acl
+  );
 
   const isSO = r === 'super_overseer';
   const isT1 = isOverseerType1(r, profile.overseer_tier);
@@ -149,6 +178,8 @@ async function DashboardBody() {
   const activityPeople = useSoDashboard
     ? fieldProfiles
         .filter((u) => {
+          // Covert roles stay on org-map / ACL only — not SO/OS activity tree
+          if (isCovertFieldRole(u.role)) return false;
           if (isSO) return true;
           if (u.id === profile.id) return false;
           return type1TeamIds?.has(u.id) ?? false;
@@ -247,6 +278,8 @@ async function DashboardBody() {
       type2ViewOptions={type2ViewOptions}
       type2ViewSelectedIds={t2ViewSelectedIds}
       activityClipProvinces={isT1 ? actionProvinces(profile) : null}
+      showActivityPanel={showActivityPanel}
+      showRadarPanel={showRadarPanel}
     />
   );
 }

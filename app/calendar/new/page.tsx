@@ -1,6 +1,9 @@
 import { redirect } from 'next/navigation';
 import { getSessionProfile } from '@/lib/auth/session';
-import { readStoredUsers } from '@/lib/auth/user-store';
+import {
+  readContentAccessMapStored,
+  readStoredUsers,
+} from '@/lib/auth/user-store';
 import { fetchSchools } from '@/lib/supabase/schools';
 import {
   isFieldRole,
@@ -14,6 +17,10 @@ import {
 } from '@/lib/types';
 import { PageBanner } from '@/components/layout/PageBanner';
 import { NewScheduleClient } from '@/components/calendar/NewScheduleClient';
+import {
+  canAccessSection,
+  mergeContentAccess,
+} from '@/lib/auth/content-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +33,12 @@ export default async function NewSchedulePage({
   const r = normalizeRole(role);
   if (!isAuthenticated || !profile || !isFieldRole(r)) {
     redirect('/login?next=/calendar/new');
+  }
+  const acl = mergeContentAccess(
+    await readContentAccessMapStored().catch(() => null)
+  );
+  if (!canAccessSection(r, 'calendar', 'calendar_create', 'view', acl)) {
+    redirect('/calendar');
   }
 
   const sp = await searchParams;

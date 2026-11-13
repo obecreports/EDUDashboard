@@ -5,8 +5,13 @@ import { isDbOnlyMode } from '@/lib/auth/db-mode';
 import {
   listReportDraftsForStaff,
   readAllSchoolExtras,
+  readContentAccessMapStored,
   readStoredUsers,
 } from '@/lib/auth/user-store';
+import {
+  canAccessSection,
+  mergeContentAccess,
+} from '@/lib/auth/content-access';
 import { fetchReportDraftsForStaff } from '@/lib/supabase/report-drafts';
 import { fetchSchools } from '@/lib/supabase/schools';
 import { fetchSchoolExtrasBundle } from '@/lib/supabase/school-swot';
@@ -41,6 +46,12 @@ export default async function ReportsPage({
   const r = normalizeRole(role);
   if (!isAuthenticated || !profile || !isFieldRole(r)) {
     redirect('/login?next=/reports');
+  }
+  const acl = mergeContentAccess(
+    await readContentAccessMapStored().catch(() => null)
+  );
+  if (!canAccessSection(r, 'reports', 'reports_list', 'view', acl)) {
+    redirect('/dashboard');
   }
 
   const sp = await searchParams;
@@ -158,7 +169,7 @@ export default async function ReportsPage({
     <div>
       <PageBanner
         src={PAGE_BANNERS.reports}
-        title="รายงานกิจกรรม"
+        title="บันทึกการตรวจเยี่ยม"
         subtitle="บันทึกความคิดเห็นหรือกิจกรรมต่างๆของโรงเรียน"
         quote="“ทุกโรงเรียนมีศักยภาพ ทุกการสนับสนุนสร้างการเปลี่ยนแปลงได้”"
       />

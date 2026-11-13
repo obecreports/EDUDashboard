@@ -7,9 +7,17 @@ import { NewReportClient } from '@/components/reports/NewReportClient';
 import { PageBanner } from '@/components/layout/PageBanner';
 import { listMyCalendarEvents } from '@/app/actions/visits';
 import { isDbOnlyMode } from '@/lib/auth/db-mode';
-import { getReportDraft, readStoredUsers } from '@/lib/auth/user-store';
+import {
+  getReportDraft,
+  readContentAccessMapStored,
+  readStoredUsers,
+} from '@/lib/auth/user-store';
 import { fetchReportDraft } from '@/lib/supabase/report-drafts';
 import { normalizeActivity } from '@/lib/visits/labels';
+import {
+  canAccessSection,
+  mergeContentAccess,
+} from '@/lib/auth/content-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +39,12 @@ export default async function NewReportPage({
   const r = normalizeRole(role);
   if (!isAuthenticated || !profile || !isFieldRole(r)) {
     redirect('/login?next=/reports/new');
+  }
+  const acl = mergeContentAccess(
+    await readContentAccessMapStored().catch(() => null)
+  );
+  if (!canAccessSection(r, 'reports', 'reports_create', 'view', acl)) {
+    redirect('/reports');
   }
 
   const sp = await searchParams;
@@ -221,8 +235,8 @@ export default async function NewReportPage({
     <div>
       <PageBanner
         src={PAGE_BANNERS.reports}
-        title="รายงานกิจกรรม"
-        subtitle="เลือกจากตารางนัดเพื่อผูกกับนัดหมาย หรือสร้างรายงานอิสระจากโรงเรียน"
+        title="บันทึกการตรวจเยี่ยม"
+        subtitle="เลือกจากตารางนัดเพื่อผูกกับนัดหมาย หรือสร้างบันทึกอิสระจากโรงเรียน"
         quote="“ทุกโรงเรียนมีศักยภาพ ทุกการสนับสนุนสร้างการเปลี่ยนแปลงได้”"
       />
       <NewReportClient

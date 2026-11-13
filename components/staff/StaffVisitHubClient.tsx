@@ -29,7 +29,11 @@ import type { UserRole } from '@/lib/types';
 import { normalizeActivity, normalizeStatus } from '@/lib/visits/labels';
 import { statusFromScore } from '@/lib/theme/status';
 import { formatThaiDate, formatThaiMonthYear } from '@/lib/format/date';
-import { ThaiDateField } from '@/components/ui/ThaiDateField';
+import {
+  DateRangePicker,
+  rangeForPreset,
+  type RangePreset,
+} from '@/components/ui/DateRangePicker';
 import {
   cancelVisitEventAction,
   leaveVisitEventAction,
@@ -65,60 +69,9 @@ type PersonOpt = {
   role_label: string;
 };
 
-type RangePreset = 'today' | 'this-week' | 'next-week' | 'this-month' | 'next-month' | 'custom';
-
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-
-function startOfWeek(d: Date) {
-  const x = new Date(d);
-  const day = (x.getDay() + 6) % 7;
-  x.setDate(x.getDate() - day);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function addDays(d: Date, n: number) {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-}
-
-function rangeForPreset(preset: RangePreset, anchor: Date): { from: string; to: string } {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (preset === 'today') return { from: ymd(today), to: ymd(today) };
-  if (preset === 'this-week') {
-    const start = startOfWeek(today);
-    return { from: ymd(start), to: ymd(addDays(start, 6)) };
-  }
-  if (preset === 'next-week') {
-    const start = addDays(startOfWeek(today), 7);
-    return { from: ymd(start), to: ymd(addDays(start, 6)) };
-  }
-  if (preset === 'this-month') {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    return { from: ymd(start), to: ymd(end) };
-  }
-  if (preset === 'next-month') {
-    const start = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-    return { from: ymd(start), to: ymd(end) };
-  }
-  const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
-  return { from: ymd(start), to: ymd(end) };
-}
-
-const PRESETS: { key: RangePreset; label: string }[] = [
-  { key: 'today', label: 'วันนี้' },
-  { key: 'this-week', label: 'สัปดาห์นี้' },
-  { key: 'next-week', label: 'สัปดาห์หน้า' },
-  { key: 'this-month', label: 'เดือนนี้' },
-  { key: 'next-month', label: 'เดือนหน้า' },
-];
 
 const SCHEDULE_PAGE_SIZE = 10;
 
@@ -245,17 +198,6 @@ export function StaffVisitHubClient({
       role: p.role_label,
       isMe: staffId === currentUserId,
     };
-  };
-
-  const applyPreset = (key: RangePreset) => {
-    setPreset(key);
-    // Always anchor presets to "today" so month/week switches don't stick to an old cursor
-    const next = rangeForPreset(key, new Date());
-    setRange(next);
-    const d = new Date(next.from + 'T12:00:00');
-    if (!Number.isNaN(d.getTime())) {
-      setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
-    }
   };
 
   const upcoming = useMemo(
@@ -476,56 +418,33 @@ export function StaffVisitHubClient({
               />
             </div>
           ) : null}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="space-y-1">
             <strong className="text-sm">ช่วงวันที่</strong>
-            {PRESETS.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                className={`navbar__link ${preset === p.key ? 'navbar__link--active' : ''}`}
-                onClick={() => applyPreset(p.key)}
+            <DateRangePicker
+              from={range.from}
+              to={range.to}
+              preset={preset}
+              onChange={({ from, to, preset: nextPreset }) => {
+                setPreset(nextPreset);
+                setRange({ from, to });
+                const d = new Date(`${from}T12:00:00`);
+                if (!Number.isNaN(d.getTime())) {
+                  setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+                }
+              }}
+            />
+            <div className="pt-1">
+              <Link
+                href={
+                  range.from === range.to
+                    ? `/calendar/new?date=${encodeURIComponent(range.from)}`
+                    : '/calendar/new'
+                }
+                className="ed-btn ed-btn--primary ed-btn--sm"
               >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-3 items-end">
-            <label className="text-sm font-semibold grid gap-1">
-              จาก
-              <ThaiDateField
-                value={range.from}
-                onChange={(ymd) => {
-                  if (!ymd) return;
-                  setPreset('custom');
-                  setRange((r) => ({ ...r, from: ymd }));
-                  const d = new Date(ymd + 'T12:00:00');
-                  if (!Number.isNaN(d.getTime())) {
-                    setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
-                  }
-                }}
-              />
-            </label>
-            <label className="text-sm font-semibold grid gap-1">
-              ถึง
-              <ThaiDateField
-                value={range.to}
-                onChange={(ymd) => {
-                  if (!ymd) return;
-                  setPreset('custom');
-                  setRange((r) => ({ ...r, to: ymd }));
-                }}
-              />
-            </label>
-            <Link
-              href={
-                range.from === range.to
-                  ? `/calendar/new?date=${encodeURIComponent(range.from)}`
-                  : '/calendar/new'
-              }
-              className="ed-btn ed-btn--primary ed-btn--sm"
-            >
-              <CalendarDays size={14} /> เพิ่มนัดหมาย
-            </Link>
+                <CalendarDays size={14} /> เพิ่มนัดหมาย
+              </Link>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <strong className="text-sm">รูปแบบ</strong>

@@ -22,6 +22,7 @@ type ProfileRow = {
   assigned_zone: string | null;
   assigned_provinces?: string[] | null;
   assigned_districts?: string[] | null;
+  assigned_schools?: string[] | null;
   reports_to?: string | null;
   disabled?: boolean | null;
   birthday?: string | null;
@@ -40,6 +41,7 @@ function mapRow(row: ProfileRow): StoredUserProfile {
     assigned_zone: row.assigned_zone,
     assigned_provinces: row.assigned_provinces ?? [],
     assigned_districts: row.assigned_districts ?? [],
+    assigned_schools: row.assigned_schools ?? [],
     reports_to: row.reports_to ?? null,
     disabled: Boolean(row.disabled),
     birthday: row.birthday ?? null,
@@ -47,15 +49,26 @@ function mapRow(row: ProfileRow): StoredUserProfile {
 }
 
 const PROFILE_SELECT =
+  'id, email, full_name, name_prefix, position, role, overseer_tier, assigned_zone, assigned_provinces, assigned_districts, assigned_schools, reports_to, disabled, birthday, must_change_password';
+
+const PROFILE_SELECT_LEGACY =
   'id, email, full_name, name_prefix, position, role, overseer_tier, assigned_zone, assigned_provinces, assigned_districts, reports_to, disabled, birthday, must_change_password';
 
 export async function fetchAllUserProfiles(): Promise<StoredUserProfile[]> {
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('user_profiles')
       .select(PROFILE_SELECT)
       .order('full_name', { ascending: true });
+    if (error && /assigned_schools/i.test(error.message)) {
+      const fallback = await supabase
+        .from('user_profiles')
+        .select(PROFILE_SELECT_LEGACY)
+        .order('full_name', { ascending: true });
+      data = fallback.data as typeof data;
+      error = fallback.error;
+    }
     if (error || !data) return [];
     return (data as ProfileRow[]).map(mapRow);
   } catch {
@@ -69,11 +82,20 @@ export async function fetchUserProfileById(
   if (!id) return null;
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('user_profiles')
       .select(PROFILE_SELECT)
       .eq('id', id)
       .maybeSingle();
+    if (error && /assigned_schools/i.test(error.message)) {
+      const fallback = await supabase
+        .from('user_profiles')
+        .select(PROFILE_SELECT_LEGACY)
+        .eq('id', id)
+        .maybeSingle();
+      data = fallback.data as typeof data;
+      error = fallback.error;
+    }
     if (error || !data) return null;
     return mapRow(data as ProfileRow);
   } catch {
@@ -91,21 +113,37 @@ export async function fetchUserProfileByLogin(
   if (!local) return null;
   try {
     const supabase = await createClient();
+    const selectCols = PROFILE_SELECT;
     // Exact login ID (preferred)
-    const exact = await supabase
+    let exact = await supabase
       .from('user_profiles')
-      .select(PROFILE_SELECT)
+      .select(selectCols)
       .ilike('email', local)
       .maybeSingle();
+    if (exact.error && /assigned_schools/i.test(exact.error.message)) {
+      exact = await supabase
+        .from('user_profiles')
+        .select(PROFILE_SELECT_LEGACY)
+        .ilike('email', local)
+        .maybeSingle();
+    }
     if (!exact.error && exact.data) return mapRow(exact.data as ProfileRow);
 
     // Legacy mailbox form: OS01@EDU.local / staff@coned.local
-    const legacy = await supabase
+    let legacy = await supabase
       .from('user_profiles')
-      .select(PROFILE_SELECT)
+      .select(selectCols)
       .ilike('email', `${local}@%`)
       .limit(1)
       .maybeSingle();
+    if (legacy.error && /assigned_schools/i.test(legacy.error.message)) {
+      legacy = await supabase
+        .from('user_profiles')
+        .select(PROFILE_SELECT_LEGACY)
+        .ilike('email', `${local}@%`)
+        .limit(1)
+        .maybeSingle();
+    }
     if (!legacy.error && legacy.data) return mapRow(legacy.data as ProfileRow);
 
     return null;
@@ -216,6 +254,7 @@ export async function updateUserProfileInDb(
     assigned_zone: string | null;
     assigned_provinces: string[];
     assigned_districts: string[];
+    assigned_schools: string[];
     reports_to: string | null;
     disabled: boolean;
     birthday: string | null;
@@ -238,6 +277,9 @@ export async function updateUserProfileInDb(
     }
     if (patch.assigned_districts !== undefined) {
       body.assigned_districts = patch.assigned_districts;
+    }
+    if (patch.assigned_schools !== undefined) {
+      body.assigned_schools = patch.assigned_schools;
     }
     if (patch.reports_to !== undefined) body.reports_to = patch.reports_to;
     if (patch.disabled !== undefined) body.disabled = patch.disabled;

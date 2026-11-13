@@ -15,6 +15,7 @@ import {
   type ReadableScopeOpts,
 } from '@/lib/auth/permissions';
 import {
+  directorsUnderType1,
   overlappingType1s,
   staffProvinces,
   staffUnderType1,
@@ -26,6 +27,7 @@ export type ScopeUser = Pick<
   'id' | 'role' | 'assigned_provinces' | 'assigned_districts' | 'reports_to'
 > & {
   overseer_tier?: OverseerTier | null;
+  assigned_schools?: string[] | null;
   disabled?: boolean | null;
 };
 
@@ -46,7 +48,12 @@ export type { ReadableScopeOpts } from '@/lib/auth/permissions';
 
 export function isFieldRole(role: UserRole): boolean {
   const r = normalizeRole(role);
-  return r === 'staff' || isOverseerLike(r) || r === 'super_overseer';
+  return (
+    r === 'staff' ||
+    isOverseerLike(r) ||
+    r === 'director' ||
+    r === 'super_overseer'
+  );
 }
 
 export function isAdminRole(role: UserRole): boolean {
@@ -94,7 +101,7 @@ export function canAccessSchoolDetail(
   if (!isAuthenticated || !user) return false;
   const role = normalizeRole(user.role);
   if (role === 'super_overseer') return true;
-  if (role === 'staff' || isOverseerLike(role)) {
+  if (role === 'staff' || isOverseerLike(role) || role === 'director') {
     return isSchoolReadable(user, school, directory, opts);
   }
   return false;
@@ -137,9 +144,20 @@ export function addSubordinatesOf(
   for (const u of allUsers) {
     if (u.reports_to !== bossId) continue;
     const ur = normalizeRole(u.role);
-    if (ur === 'staff' || ur === 'volunteer' || ur === 'overseer') {
+    if (
+      ur === 'staff' ||
+      ur === 'volunteer_center' ||
+      ur === 'volunteer_border' ||
+      ur === 'special_volunteer' ||
+      ur === 'overseer'
+    ) {
       ids.add(u.id);
-      if (ur === 'overseer' || ur === 'volunteer') {
+      if (
+        ur === 'overseer' ||
+        ur === 'volunteer_center' ||
+        ur === 'volunteer_border' ||
+        ur === 'special_volunteer'
+      ) {
         addSubordinatesOf(u.id, allUsers, ids);
       }
     }
@@ -155,6 +173,7 @@ export function type1GeoTeamIds(
   const ids = new Set<string>([type1.id]);
   for (const u of type2UnderType1(type1, allUsers)) ids.add(u.id);
   for (const u of staffUnderType1(type1, allUsers, schools)) ids.add(u.id);
+  for (const u of directorsUnderType1(type1, allUsers, schools)) ids.add(u.id);
   return ids;
 }
 
@@ -284,6 +303,10 @@ export function scheduleInvitePeers(
 
 export function postLoginPath(role: UserRole): string {
   const r = normalizeRole(role);
+  if (r === 'special_volunteer' || r === 'covert_overseer') {
+    return '/scholarship-students';
+  }
+  if (r === 'director') return '/schools';
   if (r === 'staff' || isOverseerLike(r) || r === 'super_overseer') return '/dashboard';
   if (r === 'admin' || r === 'super_admin') return '/admin/accounts';
   return '/';

@@ -25,8 +25,17 @@ async function ProfileBody() {
   );
 
   const domainLines: string[] = [];
-  if (role === 'overseer' || role === 'volunteer') {
+  if (
+    role === 'overseer' ||
+    role === 'volunteer_center' ||
+    role === 'volunteer_border' ||
+    role === 'special_volunteer'
+  ) {
     domainLines.push(`จังหวัด: ${(profile?.assigned_provinces ?? []).join(', ') || '—'}`);
+  } else if (role === 'director') {
+    domainLines.push(
+      `โรงเรียน: ${(profile?.assigned_schools ?? []).join(', ') || '—'}`
+    );
   } else if (role === 'staff') {
     const areas = profile?.assigned_districts ?? [];
     const labels = areas.map((d) => {

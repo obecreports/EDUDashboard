@@ -7,13 +7,19 @@ import {
 } from '@/lib/types';
 import type { StoredUserProfile } from '@/lib/auth/mock-users';
 import { type2ViewProvinces } from '@/lib/auth/province-radar';
+import { isGlobalDomainScope } from '@/lib/auth/domain-scope';
 
 /** Minimal user shape for geo scope (avoids circular import with scope.ts). */
 export type PermissionUser = Pick<
   UserProfile | StoredUserProfile,
-  'id' | 'role' | 'assigned_provinces' | 'assigned_districts' | 'reports_to'
+  | 'id'
+  | 'role'
+  | 'assigned_provinces'
+  | 'assigned_districts'
+  | 'reports_to'
 > & {
   overseer_tier?: OverseerTier | null;
+  assigned_schools?: string[] | null;
 };
 
 export type ReadableScopeOpts = {
@@ -70,6 +76,8 @@ export function getReadableProvinces(
 function staffSchoolMatch(user: PermissionUser, school: SchoolFull): boolean {
   const assigned = user.assigned_districts ?? [];
   if (!assigned.length) return false;
+  /** Global staff grant — every gov domain / school */
+  if (isGlobalDomainScope(assigned)) return true;
   const areaId = school.area_id != null ? String(school.area_id) : '';
   const areaName = school.area_name?.trim() ?? '';
   if (areaId && assigned.includes(areaId)) return true;
@@ -78,6 +86,16 @@ function staffSchoolMatch(user: PermissionUser, school: SchoolFull): boolean {
   const d = school.district?.trim();
   const key = p && d ? districtKey(p, d) : null;
   return Boolean(key) && assigned.includes(key!);
+}
+
+function directorSchoolMatch(
+  user: PermissionUser,
+  school: SchoolFull
+): boolean {
+  const assigned = user.assigned_schools ?? [];
+  if (!assigned.length) return false;
+  const id = String(school.school_id);
+  return assigned.some((s) => String(s).trim() === id);
 }
 
 /** Read-only school visibility (Type 2 uses overlapping Type 1 view provinces). */
@@ -92,12 +110,14 @@ export function isSchoolReadable(
   if (role === 'super_overseer') return true;
   if (role === 'admin' || role === 'super_admin' || role === 'guest') return false;
 
+  if (role === 'director') return directorSchoolMatch(user, school);
+
   if (isOverseerLike(role)) {
+    if (isGlobalDomainScope(user.assigned_provinces)) return true;
+    const readable = getReadableProvinces(user, directory, opts);
+    if (isGlobalDomainScope(readable)) return true;
     const province = school.province?.trim() ?? '';
-    return (
-      Boolean(province) &&
-      getReadableProvinces(user, directory, opts).includes(province)
-    );
+    return Boolean(province) && readable.includes(province);
   }
 
   if (role === 'staff') return staffSchoolMatch(user, school);
@@ -114,7 +134,10 @@ export function isSchoolActionable(
   if (role === 'super_overseer') return true;
   if (role === 'admin' || role === 'super_admin' || role === 'guest') return false;
 
+  if (role === 'director') return directorSchoolMatch(user, school);
+
   if (isOverseerLike(role)) {
+    if (isGlobalDomainScope(user.assigned_provinces)) return true;
     const province = school.province?.trim() ?? '';
     return Boolean(province) && getActionableProvinces(user).includes(province);
   }
@@ -154,7 +177,12 @@ export function toScopeDirectory(
       | 'assigned_districts'
       | 'reports_to'
       | 'overseer_tier'
-    > & { disabled?: boolean | null; full_name?: string | null; name_prefix?: string | null }
+    > & {
+      assigned_schools?: string[] | null;
+      disabled?: boolean | null;
+      full_name?: string | null;
+      name_prefix?: string | null;
+    }
   >
 ): PermissionUser[] {
   return users.map((u) => ({
@@ -163,6 +191,7 @@ export function toScopeDirectory(
     overseer_tier: u.overseer_tier ?? null,
     assigned_provinces: u.assigned_provinces ?? [],
     assigned_districts: u.assigned_districts ?? [],
+    assigned_schools: u.assigned_schools ?? [],
     reports_to: u.reports_to ?? null,
   }));
 }
