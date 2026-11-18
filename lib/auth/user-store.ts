@@ -253,6 +253,7 @@ export async function updateUserProfileFields(
       | 'assigned_districts'
       | 'assigned_schools'
       | 'reports_to'
+      | 'avatar_url'
     >
   >
 ): Promise<{ ok: true } | { ok: false; error: string }> {

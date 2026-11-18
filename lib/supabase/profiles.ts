@@ -27,6 +27,7 @@ type ProfileRow = {
   disabled?: boolean | null;
   birthday?: string | null;
   must_change_password?: boolean | null;
+  avatar_url?: string | null;
 };
 
 function mapRow(row: ProfileRow): StoredUserProfile {
@@ -45,11 +46,12 @@ function mapRow(row: ProfileRow): StoredUserProfile {
     reports_to: row.reports_to ?? null,
     disabled: Boolean(row.disabled),
     birthday: row.birthday ?? null,
+    avatar_url: row.avatar_url ?? null,
   });
 }
 
 const PROFILE_SELECT =
-  'id, email, full_name, name_prefix, position, role, overseer_tier, assigned_zone, assigned_provinces, assigned_districts, assigned_schools, reports_to, disabled, birthday, must_change_password';
+  'id, email, full_name, name_prefix, position, role, overseer_tier, assigned_zone, assigned_provinces, assigned_districts, assigned_schools, reports_to, disabled, birthday, must_change_password, avatar_url';
 
 const PROFILE_SELECT_LEGACY =
   'id, email, full_name, name_prefix, position, role, overseer_tier, assigned_zone, assigned_provinces, assigned_districts, reports_to, disabled, birthday, must_change_password';
@@ -61,7 +63,7 @@ export async function fetchAllUserProfiles(): Promise<StoredUserProfile[]> {
       .from('user_profiles')
       .select(PROFILE_SELECT)
       .order('full_name', { ascending: true });
-    if (error && /assigned_schools/i.test(error.message)) {
+    if (error && (/assigned_schools|avatar_url/i.test(error.message))) {
       const fallback = await supabase
         .from('user_profiles')
         .select(PROFILE_SELECT_LEGACY)
@@ -87,7 +89,7 @@ export async function fetchUserProfileById(
       .select(PROFILE_SELECT)
       .eq('id', id)
       .maybeSingle();
-    if (error && /assigned_schools/i.test(error.message)) {
+    if (error && (/assigned_schools|avatar_url/i.test(error.message))) {
       const fallback = await supabase
         .from('user_profiles')
         .select(PROFILE_SELECT_LEGACY)
@@ -259,6 +261,7 @@ export async function updateUserProfileInDb(
     disabled: boolean;
     birthday: string | null;
     must_change_password: boolean;
+    avatar_url: string | null;
   }>
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -287,6 +290,7 @@ export async function updateUserProfileInDb(
     if (patch.must_change_password !== undefined) {
       body.must_change_password = patch.must_change_password;
     }
+    if (patch.avatar_url !== undefined) body.avatar_url = patch.avatar_url;
 
     if (!Object.keys(body).length) return { ok: true };
 

@@ -105,7 +105,7 @@ function profileFromStored(
     assigned_districts: stored?.assigned_districts ?? session.assigned_districts ?? [],
     assigned_schools: stored?.assigned_schools ?? session.assigned_schools ?? [],
     reports_to: stored?.reports_to ?? session.reports_to ?? null,
-    avatar_url: null,
+    avatar_url: stored?.avatar_url?.trim() || null,
     birthday: stored?.birthday ?? null,
   };
 }

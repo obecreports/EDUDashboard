@@ -11,6 +11,8 @@ import {
 
 export const BUCKET_SCHOOL_COVERS = 'school-covers';
 export const BUCKET_REPORT_IMAGES = 'report-images';
+/** OS / person profile photos (migration 035). */
+export const BUCKET_PROFILE_PICTURE = 'profile-picture';
 
 function publicUrl(bucket: string, path: string): string {
   const supabase = createClient();
@@ -79,6 +81,26 @@ export async function uploadDirectorPhoto(
   try {
     const thumb = await compressImageFile(file, REPORT_THUMB_COMPRESS);
     await uploadBlob(BUCKET_SCHOOL_COVERS, `directors/${id}/photo.thumb.jpg`, thumb);
+  } catch {
+    /* full photo alone is enough */
+  }
+  const bust = `v=${Date.now()}`;
+  return { ok: true, url: `${res.url}${res.url.includes('?') ? '&' : '?'}${bust}` };
+}
+
+/** Overseer (OS) photo — `overseers/{id}/` in profile-picture bucket. */
+export async function uploadOverseerPhoto(
+  userId: string,
+  file: File
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const id = userId.trim();
+  if (!id) return { ok: false, error: 'ไม่พบรหัสองคมนตรี' };
+  const path = `overseers/${id}/photo.jpg`;
+  const res = await uploadCompressed(BUCKET_PROFILE_PICTURE, path, file, COVER_COMPRESS);
+  if (!res.ok) return res;
+  try {
+    const thumb = await compressImageFile(file, REPORT_THUMB_COMPRESS);
+    await uploadBlob(BUCKET_PROFILE_PICTURE, `overseers/${id}/photo.thumb.jpg`, thumb);
   } catch {
     /* full photo alone is enough */
   }

@@ -65,6 +65,7 @@ const ICONS: Record<string, LucideIcon> = {
   '/admin/org-map': Network,
   '/admin/schools': School,
   '/admin/directors': UserRound,
+  '/admin/overseers': UserRound,
   '/admin/tickets': ClipboardPen,
   '/admin/content-access': Settings,
   '/admin/settings': Settings,
@@ -92,6 +93,7 @@ const ADMIN_MAIN_AFTER = ['/admin/settings'] as const;
 const MANAGE_DATA_HREFS = [
   '/admin/schools',
   '/admin/directors',
+  '/admin/overseers',
   '/admin/tickets',
 ] as const;
 

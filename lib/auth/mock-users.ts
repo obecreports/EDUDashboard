@@ -1,5 +1,5 @@
 import type { OverseerTier, UserRole } from '@/lib/types';
-import { normalizeRole } from '@/lib/types';
+import { normalizeOverseerTier, normalizeRole } from '@/lib/types';
 
 export const AUTH_SESSION_COOKIE = 'coned-auth-session';
 export const AUTH_CREDENTIALS_COOKIE = 'coned-auth-credentials';
@@ -84,8 +84,13 @@ export const UAT_USER_IDS = {
   os10t01: 'a1111111-1111-4111-8111-111111111301',
   /** ASX01 · special_volunteer */
   special_volunteer: 'a1111111-1111-4111-8111-111111111401',
-  /** COV01 · covert_overseer */
+  /** COV01 · พลเอก สุรยุทธ์ จุลานนท์ · ประธานองคมนตรี */
   covert_overseer: 'a1111111-1111-4111-8111-111111111402',
+  cov01: 'a1111111-1111-4111-8111-111111111402',
+  cov02: 'a1111111-1111-4111-8111-111111111403',
+  cov03: 'a1111111-1111-4111-8111-111111111404',
+  cov04: 'a1111111-1111-4111-8111-111111111405',
+  cov05: 'a1111111-1111-4111-8111-111111111406',
   /** Director login — email = school_id */
   director: 'a1111111-1111-4111-8111-111111111501',
 } as const;
@@ -429,14 +434,74 @@ export const MOCK_USER_SEEDS: MockUserSeed[] = [
     mustChangePassword: false,
   },
   {
-    id: UAT_USER_IDS.covert_overseer,
+    id: UAT_USER_IDS.cov01,
     email: 'COV01',
+    name_prefix: 'พลเอก',
+    full_name: 'สุรยุทธ์ จุลานนท์',
+    position: 'ประธานองคมนตรี',
+    role: 'covert_overseer',
+    assigned_zone: null,
+    assigned_provinces: [],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.cov02,
+    email: 'COV02',
     name_prefix: 'นาย',
-    full_name: 'สมบูรณ์ ปกปิด',
+    full_name: 'เกษม วัฒนชัย',
     position: 'องคมนตรี',
     role: 'covert_overseer',
     assigned_zone: null,
-    assigned_provinces: ['กาญจนบุรี', 'สุพรรณบุรี'],
+    assigned_provinces: [],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.cov03,
+    email: 'COV03',
+    name_prefix: 'นาย',
+    full_name: 'พลากร สุวรรณรัฐ',
+    position: 'องคมนตรี',
+    role: 'covert_overseer',
+    assigned_zone: null,
+    assigned_provinces: [],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.cov04,
+    email: 'COV04',
+    name_prefix: 'นาย',
+    full_name: 'จิรายุ อิศรางกูร ณ อยุธยา',
+    position: 'องคมนตรี',
+    role: 'covert_overseer',
+    assigned_zone: null,
+    assigned_provinces: [],
+    assigned_districts: [],
+    reports_to: UAT_USER_IDS.super_overseer,
+    password: MOCK_LOGIN_PASSWORD,
+    tempPassword: null,
+    mustChangePassword: false,
+  },
+  {
+    id: UAT_USER_IDS.cov05,
+    email: 'COV05',
+    name_prefix: 'นาย',
+    full_name: 'เกษม จันทร์แก้ว',
+    position: 'องคมนตรี',
+    role: 'covert_overseer',
+    assigned_zone: null,
+    assigned_provinces: [],
     assigned_districts: [],
     reports_to: UAT_USER_IDS.super_overseer,
     password: MOCK_LOGIN_PASSWORD,
@@ -532,6 +597,8 @@ export type StoredUserProfile = {
   reports_to: string | null;
   disabled: boolean;
   birthday?: string | null;
+  /** Public photo URL (About / admin OS display) */
+  avatar_url?: string | null;
 };
 
 export type ReportDraftBox = {
@@ -561,6 +628,12 @@ export function normalizeStoredUser(
         ? null
         : String(raw.name_prefix).trim() || null;
   const role = normalizeRole(raw.role);
+  const avatar =
+    raw.avatar_url === undefined
+      ? null
+      : raw.avatar_url == null
+        ? null
+        : String(raw.avatar_url).trim() || null;
   return {
     id: raw.id,
     email: raw.email,
@@ -568,7 +641,9 @@ export function normalizeStoredUser(
     name_prefix: prefix,
     position: raw.position ?? '',
     role,
-    overseer_tier: null,
+    overseer_tier: normalizeOverseerTier(
+      (raw as { overseer_tier?: OverseerTier | null }).overseer_tier
+    ),
     assigned_zone: raw.assigned_zone ?? null,
     assigned_provinces: Array.isArray(raw.assigned_provinces) ? raw.assigned_provinces : [],
     assigned_districts: Array.isArray(raw.assigned_districts) ? raw.assigned_districts : [],
@@ -576,6 +651,7 @@ export function normalizeStoredUser(
     reports_to: raw.reports_to ?? null,
     disabled: Boolean(raw.disabled),
     birthday: raw.birthday ?? null,
+    avatar_url: avatar,
   };
 }
 

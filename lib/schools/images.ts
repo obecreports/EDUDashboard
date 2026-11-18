@@ -33,3 +33,17 @@ export function directorPictureUrl(
   const url = director?.picture_url?.trim();
   return url || null;
 }
+
+export const PERSON_AVATAR_DEFAULT = '/images/avatar_default.svg';
+
+/** Person / OS avatar — uploaded URL or default silhouette. */
+export function personAvatarUrl(
+  user: { avatar_url?: string | null } | null | undefined
+): string {
+  const url = user?.avatar_url?.trim();
+  return url || PERSON_AVATAR_DEFAULT;
+}
+
+export function overseerStorageObjectPath(userId: string): string {
+  return `overseers/${userId}/photo.jpg`;
+}

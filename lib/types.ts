@@ -468,6 +468,7 @@ export const NAV_CATALOG: NavItem[] = [
   { href: '/admin/org-map', label: 'แผนผังสายบังคับบัญชา', roles: ADMIN_ROLES },
   { href: '/admin/schools', label: 'แก้ไขข้อมูลโรงเรียน', roles: ADMIN_ROLES },
   { href: '/admin/directors', label: 'แก้ไขข้อมูลผู้อำนวยการ', roles: ADMIN_ROLES },
+  { href: '/admin/overseers', label: 'แก้ไขการแสดงผลองคมนตรี', roles: ADMIN_ROLES },
   { href: '/admin/tickets', label: 'จัดการคำขอ', roles: ADMIN_ROLES },
   { href: '/admin/content-access', label: 'สิทธิ์เข้าถึงเนื้อหา', roles: ADMIN_ROLES },
   { href: '/admin/settings', label: 'ตั้งค่าระบบ', roles: ['super_admin'] },
