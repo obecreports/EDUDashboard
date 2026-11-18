@@ -1523,9 +1523,50 @@ a {
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-top: 0.25rem;
+  margin-top: 0.15rem;
   font-size: 0.72rem;
   color: #64748b;
+}
+.score-bar-meta--prev .score-bar-label,
+.score-bar-meta--prev .score-bar-code {
+  color: #94a3b8;
+  font-weight: 500;
+}
+.score-bar-track--prev {
+  height: 6px;
+  opacity: 0.85;
+}
+.school-budget-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.school-budget-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.school-budget-table th,
+.school-budget-table td {
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.school-budget-table th {
+  background: #f8fafc;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  white-space: nowrap;
+}
+.school-budget-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.school-budget-table__amount {
+  font-weight: 700;
+  color: var(--tm-blue);
+  white-space: nowrap;
 }
 .school-risk-badge {
   display: inline-flex;

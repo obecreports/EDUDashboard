@@ -191,22 +191,26 @@ function ScoreBar({
   score,
   prevScore,
   showCode = true,
+  prevYearLabel,
 }: {
   label: string;
   code?: string;
   score: number;
   prevScore?: number | null;
   showCode?: boolean;
+  /** Buddhist Era label for prior-year bar (e.g. 2567) */
+  prevYearLabel?: string;
 }) {
   const pct = Math.max(0, Math.min(100, (score / 5) * 100));
-  const hasPrev = prevScore != null && Number.isFinite(prevScore) && (prevScore as number) > 0;
-  const delta = hasPrev ? score - (prevScore as number) : 0;
+  const prev = prevScore != null && Number.isFinite(prevScore) ? (prevScore as number) : null;
+  const hasPrev = prev != null && prev > 0;
+  const prevPct = hasPrev ? Math.max(0, Math.min(100, ((prev as number) / 5) * 100)) : 0;
+  const delta = hasPrev ? score - (prev as number) : 0;
+  const prevLabel = prevYearLabel ? `ปี ${prevYearLabel}` : 'ปีก่อน';
+  const metaCols = showCode && code ? 'auto 1fr auto' : '1fr auto';
   return (
     <div className="score-bar-row">
-      <div
-        className="score-bar-meta"
-        style={{ gridTemplateColumns: showCode && code ? 'auto 1fr auto' : '1fr auto' }}
-      >
+      <div className="score-bar-meta" style={{ gridTemplateColumns: metaCols }}>
         {showCode && code ? <span className="score-bar-code">{code}</span> : null}
         <span className="score-bar-label">{label}</span>
         <span className="score-bar-value" style={{ color: scoreColor(score) }}>
@@ -220,13 +224,34 @@ function ScoreBar({
         />
       </div>
       {hasPrev ? (
-        <div className="score-bar-yoy">
-          <span>ปีก่อน {(prevScore as number).toFixed(2)}</span>
-          <strong style={{ color: delta >= 0 ? '#059669' : '#dc2626' }}>
-            {delta >= 0 ? '+' : ''}
-            {delta.toFixed(2)}
-          </strong>
-        </div>
+        <>
+          <div className="score-bar-meta score-bar-meta--prev" style={{ gridTemplateColumns: metaCols }}>
+            {showCode && code ? <span className="score-bar-code">{code}</span> : null}
+            <span className="score-bar-label">{prevLabel}</span>
+            <span
+              className="score-bar-value"
+              style={{ color: scoreColor(prev as number) }}
+            >
+              {(prev as number).toFixed(2)}
+            </span>
+          </div>
+          <div className="score-bar-track score-bar-track--prev">
+            <div
+              className="score-bar-fill"
+              style={{
+                width: `${prevPct}%`,
+                background: scoreColor(prev as number),
+              }}
+            />
+          </div>
+          <div className="score-bar-yoy">
+            <span>เปลี่ยนแปลง</span>
+            <strong style={{ color: delta >= 0 ? '#059669' : '#dc2626' }}>
+              {delta >= 0 ? '+' : ''}
+              {delta.toFixed(2)}
+            </strong>
+          </div>
+        </>
       ) : null}
     </div>
   );
@@ -643,14 +668,12 @@ export function SchoolDetailClient({
     );
   };
 
-  const TAB_ROW_1: { id: TabId; label: string; icon: typeof Home }[] = [
+  const ALL_TABS: { id: TabId; label: string; icon: typeof Home }[] = [
     { id: 'overview', label: 'ภาพรวม', icon: Home },
     { id: 'scholarship', label: 'นักเรียนทุน', icon: GraduationCap },
     { id: 'contract_teachers', label: 'ครูอัตรจ้าง', icon: UserCheck },
     { id: 'budget', label: 'งบสนับสนุน', icon: Wallet },
     { id: 'buildings', label: 'สิ่งปลูกสร้าง', icon: Building2 },
-  ];
-  const TAB_ROW_2: { id: TabId; label: string; icon: typeof Home }[] = [
     { id: 'pillars', label: '3 เสาหลัก', icon: Sparkles },
     { id: 'scores', label: 'SMS Score', icon: Award },
     { id: 'swot', label: 'SWOT', icon: ClipboardPen },
@@ -658,18 +681,20 @@ export function SchoolDetailClient({
     { id: 'calendar', label: 'ปฏิทิน', icon: CalendarDays },
   ];
 
-  const filterTabs = (row: typeof TAB_ROW_1) =>
-    row.filter((t) => {
-      if (!tabAllowed(t.id)) return false;
-      if ((t.id === 'pillars' || t.id === 'scores') && !showScores) return false;
-      if (t.id === 'scholarship' && !scholarshipStudents.length) return false;
-      if (t.id === 'contract_teachers' && !contractTeachers.length) return false;
-      return true;
-    });
+  const tabs = ALL_TABS.filter((t) => {
+    if (!tabAllowed(t.id)) return false;
+    if ((t.id === 'pillars' || t.id === 'scores') && !showScores) return false;
+    if (t.id === 'scholarship' && !scholarshipStudents.length) return false;
+    if (t.id === 'contract_teachers' && !contractTeachers.length) return false;
+    return true;
+  });
 
-  const tabsRow1 = filterTabs(TAB_ROW_1);
-  const tabsRow2 = filterTabs(TAB_ROW_2);
-  const tabs = [...tabsRow1, ...tabsRow2];
+  /** Float by permission: max 5 per row; ≤5 → single row */
+  const TAB_ROW_SIZE = 5;
+  const tabRows: (typeof tabs)[] = [];
+  for (let i = 0; i < tabs.length; i += TAB_ROW_SIZE) {
+    tabRows.push(tabs.slice(i, i + TAB_ROW_SIZE));
+  }
 
   useEffect(() => {
     if (tabs.length && !tabs.some((t) => t.id === tab)) {
@@ -910,9 +935,15 @@ export function SchoolDetailClient({
         <div className="school-profile-card__body">
           <h1 className="school-profile-card__name">{school.school_name_th}</h1>
           <dl className="school-profile-card__meta">
-            <div>
-              <dt>อำเภอ</dt>
-              <dd>{school.district || '—'}</dd>
+            <div className="school-profile-card__meta--wide">
+              <dt>เขตพื้นที่การศึกษา</dt>
+              <dd>
+                {school.area_name || school.Gov_Domain?.area_name || '—'}
+              </dd>
+            </div>
+            <div className="school-profile-card__meta--wide">
+              <dt>ที่อยู่</dt>
+              <dd>{address || '—'}</dd>
             </div>
             <div>
               <dt>จังหวัด</dt>
@@ -928,18 +959,39 @@ export function SchoolDetailClient({
                 {overseerNames.length > 0 ? overseerNames.join(', ') : '—'}
               </dd>
             </div>
+            <div className="school-profile-card__meta--wide">
+              <dt>ผู้อำนวยการ</dt>
+              <dd>
+                {school.director_id ? (
+                  <Link
+                    href={`/schools/${school.school_id}/director`}
+                    className="text-tm-blue underline underline-offset-2"
+                  >
+                    {directorDisplayLabel(school) || DIRECTOR_TBA_LABEL}
+                  </Link>
+                ) : (
+                  directorDisplayLabel(school) || DIRECTOR_TBA_LABEL
+                )}
+              </dd>
+            </div>
           </dl>
         </div>
       </header>
 
       <div className="school-detail__tabs-wrap">
-        {[tabsRow1, tabsRow2].map((row, rowIdx) =>
+        {tabRows.map((row, rowIdx) =>
           row.length ? (
             <div
-              key={rowIdx === 0 ? 'tab-row-1' : 'tab-row-2'}
+              key={`tab-row-${rowIdx}`}
               className="school-detail__tabs"
               role="tablist"
-              aria-label={rowIdx === 0 ? 'แท็บหลัก' : 'แท็บคะแนนและกิจกรรม'}
+              aria-label={
+                tabRows.length === 1
+                  ? 'แท็บโรงเรียน'
+                  : rowIdx === 0
+                    ? 'แท็บหลัก'
+                    : 'แท็บคะแนนและกิจกรรม'
+              }
             >
               {row.map((t) => {
                 const Icon = t.icon;
@@ -1329,52 +1381,71 @@ export function SchoolDetailClient({
             </span>
           </div>
           <p className="text-sm text-slate-600 m-0">
-            แสดงตัวอย่างโครงสร้างงบประมาณสนับสนุนโรงเรียน — จะเชื่อมฐานข้อมูลจริงในระยะถัดไป
+            ไทม์ไลน์งบประมาณสนับสนุนโรงเรียน — จะเชื่อมฐานข้อมูลจริงในระยะถัดไป
           </p>
-          <div
-            className="grid gap-3"
-            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}
-          >
-            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-              <div className="text-xs text-slate-500">ปีงบประมาณ</div>
-              <strong className="text-lg text-tm-blue">2568</strong>
-            </div>
-            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-              <div className="text-xs text-slate-500">ยอดสนับสนุนรวม</div>
-              <strong className="text-lg text-tm-blue">1,250,000</strong>
-              <div className="text-xs text-slate-500">บาท</div>
-            </div>
-            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-              <div className="text-xs text-slate-500">เบิกแล้ว</div>
-              <strong className="text-lg">780,000</strong>
-              <div className="text-xs text-slate-500">บาท</div>
-            </div>
-            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-              <div className="text-xs text-slate-500">คงเหลือ</div>
-              <strong className="text-lg text-emerald-700">470,000</strong>
-              <div className="text-xs text-slate-500">บาท</div>
-            </div>
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold m-0 mb-2">รายการจำลอง</h3>
-            <ul className="m-0 p-0 list-none space-y-2">
-              {[
-                { title: 'พัฒนาสื่อการเรียนรู้', amount: '350,000', status: 'เบิกแล้ว' },
-                { title: 'ปรับปรุงอาคารเรียน', amount: '430,000', status: 'เบิกแล้ว' },
-                { title: 'กิจกรรมพัฒนาผู้เรียน', amount: '470,000', status: 'รอเบิก' },
-              ].map((row) => (
-                <li
-                  key={row.title}
-                  className="rounded-xl border border-slate-100 px-3 py-2.5 text-sm flex flex-wrap justify-between gap-2"
-                >
-                  <div>
-                    <strong>{row.title}</strong>
-                    <div className="text-xs text-slate-500">{row.status}</div>
-                  </div>
-                  <strong className="text-tm-blue">{row.amount} บาท</strong>
-                </li>
-              ))}
-            </ul>
+          <div className="school-budget-table-wrap">
+            <table className="school-budget-table">
+              <thead>
+                <tr>
+                  <th>ปีงบประมาณ</th>
+                  <th>รายการ</th>
+                  <th>มูลค่า</th>
+                  <th>หน่วยสนับสนุน</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  {
+                    year: 2568,
+                    item: 'ระบบน้ำอุปโภค',
+                    amount: 420000,
+                    org: 'สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน',
+                  },
+                  {
+                    year: 2568,
+                    item: 'สร้างบ้านพักครู',
+                    amount: 850000,
+                    org: 'กรมส่งเสริมการปกครองท้องถิ่น',
+                  },
+                  {
+                    year: 2567,
+                    item: 'ปรับปรุงอาคารเรียน',
+                    amount: 630000,
+                    org: 'สำนักงานเขตพื้นที่การศึกษา',
+                  },
+                  {
+                    year: 2567,
+                    item: 'พัฒนาสื่อการเรียนรู้',
+                    amount: 185000,
+                    org: 'มูลนิธิการศึกษาเพื่ออนาคต',
+                  },
+                  {
+                    year: 2566,
+                    item: 'ระบบน้ำอุปโภค',
+                    amount: 275000,
+                    org: 'องค์การบริหารส่วนจังหวัด',
+                  },
+                  {
+                    year: 2566,
+                    item: 'สร้างบ้านพักครู',
+                    amount: 720000,
+                    org: 'สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน',
+                  },
+                ]
+                  .slice()
+                  .sort((a, b) => b.year - a.year)
+                  .map((row) => (
+                    <tr key={`${row.year}-${row.item}-${row.org}`}>
+                      <td>{row.year}</td>
+                      <td>{row.item}</td>
+                      <td className="school-budget-table__amount">
+                        {row.amount.toLocaleString('th-TH')} บาท
+                      </td>
+                      <td>{row.org}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
           </div>
         </section>
       )}
@@ -1714,6 +1785,7 @@ export function SchoolDetailClient({
                   label={g.label}
                   score={g.value}
                   prevScore={hasSmsPrev && gScoresPrev ? gScoresPrev[i] : null}
+                  prevYearLabel={prevYearLabel}
                   showCode={false}
                 />
               ))}
@@ -1737,6 +1809,7 @@ export function SchoolDetailClient({
                       label={r.label}
                       score={r.score}
                       prevScore={hasSmsPrev && prev > 0 ? prev : null}
+                      prevYearLabel={prevYearLabel}
                     />
                   );
                 })}
