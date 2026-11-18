@@ -455,6 +455,8 @@ export async function addCalendarEvent(
   return row;
 }
 
+export type SchoolVisitType = 'school' | 'scholarship';
+
 export type SchoolComment = {
   id: string;
   staff_id: string;
@@ -478,6 +480,8 @@ export type SchoolComment = {
   visitor_reason_map?: Record<string, string[]>;
   /** แนวทางการดำเนินงาน ณ หน้างาน */
   ops_notes?: string | null;
+  /** school = ตรวจเยี่ยมโรงเรียน; scholarship = ตรวจเยี่ยมนักเรียนทุน */
+  visit_type?: SchoolVisitType | null;
   /** Last edit audit */
   updated_at?: string | null;
   updated_by?: string | null;
@@ -614,6 +618,7 @@ export async function addSchoolComment(
     text: string;
     created_at?: string;
     tags?: string[];
+    visit_type?: SchoolVisitType | null;
   }
 ): Promise<SchoolComment> {
   const [comment] = await addSchoolComments(schoolId, [input]);
@@ -629,6 +634,7 @@ export async function addSchoolComments(
     text: string;
     created_at?: string;
     tags?: string[];
+    visit_type?: SchoolVisitType | null;
   }[]
 ): Promise<SchoolComment[]> {
   if (!inputs.length) return [];
@@ -641,6 +647,10 @@ export async function addSchoolComments(
     const created_at = input.created_at
       ? new Date(input.created_at).toISOString()
       : new Date(now + i).toISOString();
+    const visit_type =
+      input.visit_type === 'school' || input.visit_type === 'scholarship'
+        ? input.visit_type
+        : null;
     return {
       id: `cmt-${now}-${i}-${Math.random().toString(36).slice(2, 6)}`,
       staff_id: input.staff_id,
@@ -651,6 +661,7 @@ export async function addSchoolComments(
         : created_at,
       edited_at: null,
       tags: input.tags ?? [],
+      visit_type,
     };
   });
 

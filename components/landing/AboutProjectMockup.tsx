@@ -15,17 +15,25 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { PAGE_BANNERS } from '@/lib/types';
+import {
+  OverseersRoster,
+  type OverseerRosterItem,
+} from '@/components/landing/OverseersRoster';
 
 type Props = {
   generalSchools: number;
   vocationalSchools: number;
   provinces: number;
+  overseers?: OverseerRosterItem[];
+  provinceCounts?: Record<string, number>;
 };
 
 export function AboutProjectMockup({
   generalSchools,
   vocationalSchools,
   provinces,
+  overseers = [],
+  provinceCounts = {},
 }: Props) {
   return (
     <div className="about-mock">
@@ -153,6 +161,12 @@ export function AboutProjectMockup({
           </Link>
         </article>
       </div>
+
+      {overseers.length > 0 && (
+        <div className="page-shell about-overseers-wrap">
+          <OverseersRoster overseers={overseers} provinceCounts={provinceCounts} />
+        </div>
+      )}
     </div>
   );
 }

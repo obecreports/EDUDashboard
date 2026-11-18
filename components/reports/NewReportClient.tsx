@@ -136,6 +136,7 @@ export function NewReportClient({
   );
   const [visitorReasonMap, setVisitorReasonMap] = useState<Record<string, Set<string>>>({});
   const [opsNotes, setOpsNotes] = useState('');
+  const [visitType, setVisitType] = useState<'school' | 'scholarship'>('school');
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [imageUrls, setImageUrls] = useState<string[]>([]);
@@ -360,6 +361,7 @@ export function NewReportClient({
         fd.set('onsite_reasons', JSON.stringify(reasons));
         fd.set('visitor_reason_map', JSON.stringify(mapObj));
         fd.set('ops_notes', opsNotes.trim());
+        fd.set('visit_type', visitType);
         if (linkedEventId) fd.set('calendar_event_id', linkedEventId);
         const res = await postSchoolCommentsBatchAction(fd);
         if (!res.ok) {
@@ -477,6 +479,42 @@ export function NewReportClient({
             {isLinked ? 'บันทึกผูกกับนัดหมาย' : 'บันทึกอิสระ'}
           </span>
         </div>
+
+        <fieldset className="m-0 p-0 border-0">
+          <legend className="text-sm font-bold mb-2">ประเภทบันทึกตรวจเยี่ยม</legend>
+          <div className="flex flex-wrap gap-2">
+            <label
+              className={`ed-btn ed-btn--sm ${
+                visitType === 'school' ? 'ed-btn--primary' : 'ed-btn--outline'
+              }`}
+            >
+              <input
+                type="radio"
+                name="visit_type"
+                value="school"
+                checked={visitType === 'school'}
+                onChange={() => setVisitType('school')}
+                className="sr-only"
+              />
+              บันทึกตรวจเยี่ยมโรงเรียน
+            </label>
+            <label
+              className={`ed-btn ed-btn--sm ${
+                visitType === 'scholarship' ? 'ed-btn--primary' : 'ed-btn--outline'
+              }`}
+            >
+              <input
+                type="radio"
+                name="visit_type"
+                value="scholarship"
+                checked={visitType === 'scholarship'}
+                onChange={() => setVisitType('scholarship')}
+                className="sr-only"
+              />
+              บันทึกตรวจเยี่ยมนักเรียนทุน
+            </label>
+          </div>
+        </fieldset>
 
         {scheduleHints.length > 0 && (
           <div>

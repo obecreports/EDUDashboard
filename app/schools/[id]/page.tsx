@@ -29,6 +29,7 @@ import {
 } from '@/lib/types';
 import { scholarshipStudentsBySchool } from '@/lib/mock/scholarship-students';
 import { contractTeachersBySchool } from '@/lib/mock/contract-teachers';
+import { MOCK_USER_SEEDS } from '@/lib/auth/mock-users';
 import {
   canAccess,
   canAccessSection,
@@ -98,13 +99,21 @@ async function SchoolDetailBody({ id }: { id: string }) {
     'view',
     contentAccess
   );
-  const allowVisitsTab = canAccessSection(
-    viewerRole,
-    'school_detail',
-    'school_tab_visits',
-    'view',
-    contentAccess
-  );
+  const allowCalendarTab =
+    canAccessSection(
+      viewerRole,
+      'school_detail',
+      'school_tab_calendar',
+      'view',
+      contentAccess
+    ) ||
+    canAccessSection(
+      viewerRole,
+      'school_detail',
+      'school_tab_visits',
+      'view',
+      contentAccess
+    );
   const allowScoresTab =
     canAccessSection(
       viewerRole,
@@ -132,7 +141,7 @@ async function SchoolDetailBody({ id }: { id: string }) {
   const cookieExtras = await readSchoolExtras(school.school_id);
 
   const loadScores = fullAccess && allowScoresTab;
-  const loadVisits = fullAccess && allowVisitsTab;
+  const loadVisits = fullAccess && allowCalendarTab;
   const [dbSwot, dbComments, pillarRow, dbVisits, cookieVisits, users] = await Promise.all([
     fetchSchoolSwot(school.school_id),
     commentsAllowed ? fetchSchoolComments(school.school_id) : Promise.resolve([]),
@@ -193,6 +202,9 @@ async function SchoolDetailBody({ id }: { id: string }) {
         grade_level: s.grade_level,
         scholarship_type: s.scholarship_type,
         status: s.status,
+        average_gpa: s.average_gpa ?? s.gpa ?? null,
+        educational_risk: s.educational_risk ?? null,
+        behavioral_risk: s.behavioral_risk ?? null,
       }))
     : [];
   const contractTeacherRows = allowContractTab
@@ -205,6 +217,14 @@ async function SchoolDetailBody({ id }: { id: string }) {
       }))
     : [];
 
+  const province = school.province?.trim() ?? '';
+  const overseerNames = MOCK_USER_SEEDS.filter(
+    (u) =>
+      u.role === 'overseer' &&
+      province.length > 0 &&
+      u.assigned_provinces.some((p) => p.trim() === province)
+  ).map((u) => [u.name_prefix, u.full_name].filter(Boolean).join(' '));
+
   return (
     <div className="page-shell school-detail-shell">
       <SchoolDetailClient
@@ -216,6 +236,7 @@ async function SchoolDetailBody({ id }: { id: string }) {
         guestView={!scopeAccess}
         viewerRole={viewerRole}
         contentAccess={contentAccess}
+        overseerNames={overseerNames}
         initialComments={
           commentsAllowed
             ? dbComments.length

@@ -210,6 +210,17 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
   }
 
   const opsNotes = String(formData.get('ops_notes') || '').trim();
+  const visitTypeRaw = String(formData.get('visit_type') || '').trim();
+  const visitType =
+    visitTypeRaw === 'school' || visitTypeRaw === 'scholarship'
+      ? (visitTypeRaw as 'school' | 'scholarship')
+      : null;
+  if (!visitType) {
+    return {
+      ok: false as const,
+      error: 'เลือกประเภทบันทึกตรวจเยี่ยม (โรงเรียน หรือ นักเรียนทุน)',
+    };
+  }
 
   if (!schoolId) {
     return { ok: false as const, error: 'กรุณาเลือกโรงเรียน' };
@@ -236,6 +247,7 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
       text: b.text,
       created_at,
       tags: b.tags,
+      visit_type: visitType,
     };
   });
 
@@ -262,9 +274,10 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
         onsiteReasons: i === 0 ? onsiteReasons : [],
         visitorReasonMap: i === 0 ? visitorReasonMap : {},
         opsNotes: i === 0 ? opsNotes : null,
+        visitType,
       });
       if (!db.ok) return { ok: false as const, error: db.error };
-      comments.push({ ...db.comment, tags: b.tags });
+      comments.push({ ...db.comment, tags: b.tags, visit_type: visitType });
     }
 
     if (!isDbOnlyMode()) {

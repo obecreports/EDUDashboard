@@ -22,30 +22,30 @@ import {
   ClipboardPen,
   Expand,
   FilePlus2,
+  FileText,
   GraduationCap,
   Home,
-  Info,
   Map as MapIcon,
   MapPin,
   MessageSquare,
-  Phone,
   ShieldAlert,
   Sparkles,
   Star,
   TriangleAlert,
   UserCheck,
-  UserRound,
   Users,
+  Wallet,
   X,
 } from 'lucide-react';
 import type { SchoolFull, ThreePillarScores } from '@/lib/types';
 import { DIRECTOR_TBA_LABEL, directorDisplayLabel } from '@/lib/types';
-import { directorPictureUrl, schoolCoverImage } from '@/lib/schools/images';
+import { schoolCoverImage } from '@/lib/schools/images';
 import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
 import type {
   SchoolAchievements,
   SchoolComment,
   SchoolSwot,
+  SchoolVisitType,
 } from '@/lib/auth/user-store';
 import { DualRadarChart } from '@/components/schools/SchoolRadarChart';
 import { THREE_PILLAR_INDICATOR_DEFS, THREE_PILLAR_LABELS } from '@/lib/mock/pillars';
@@ -75,6 +75,9 @@ type TabId =
   | 'location'
   | 'swot'
   | 'visits'
+  | 'reports'
+  | 'calendar'
+  | 'budget'
   | 'scores'
   | 'pillars'
   | 'buildings'
@@ -186,14 +189,18 @@ function ScoreBar({
   label,
   code,
   score,
+  prevScore,
   showCode = true,
 }: {
   label: string;
   code?: string;
   score: number;
+  prevScore?: number | null;
   showCode?: boolean;
 }) {
   const pct = Math.max(0, Math.min(100, (score / 5) * 100));
+  const hasPrev = prevScore != null && Number.isFinite(prevScore) && (prevScore as number) > 0;
+  const delta = hasPrev ? score - (prevScore as number) : 0;
   return (
     <div className="score-bar-row">
       <div
@@ -212,6 +219,15 @@ function ScoreBar({
           style={{ width: `${pct}%`, background: scoreColor(score) }}
         />
       </div>
+      {hasPrev ? (
+        <div className="score-bar-yoy">
+          <span>ปีก่อน {(prevScore as number).toFixed(2)}</span>
+          <strong style={{ color: delta >= 0 ? '#059669' : '#dc2626' }}>
+            {delta >= 0 ? '+' : ''}
+            {delta.toFixed(2)}
+          </strong>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -316,7 +332,20 @@ export type SchoolScholarshipRow = {
   grade_level: string;
   scholarship_type: string;
   status: string;
+  average_gpa?: number | null;
+  educational_risk?: string | null;
+  behavioral_risk?: string | null;
 };
+
+function riskBadge(value: string | null | undefined) {
+  const v = value?.trim();
+  if (!v) {
+    return (
+      <span className="school-risk-badge school-risk-badge--ok">ไม่มี</span>
+    );
+  }
+  return <span className="school-risk-badge school-risk-badge--warn">{v}</span>;
+}
 
 export type SchoolContractTeacherRow = {
   id: string;
@@ -335,6 +364,7 @@ export function SchoolDetailClient({
   guestView = false,
   viewerRole = 'guest',
   contentAccess,
+  overseerNames = [],
   initialComments,
   initialSwot,
   initialAchievements,
@@ -351,6 +381,8 @@ export function SchoolDetailClient({
   guestView?: boolean;
   viewerRole?: string | null;
   contentAccess?: ContentAccessMap;
+  /** Province-mapped องคมนตรี display names */
+  overseerNames?: string[];
   initialComments: SchoolComment[];
   initialSwot: SchoolSwot;
   initialAchievements: SchoolAchievements;
@@ -373,8 +405,6 @@ export function SchoolDetailClient({
     return groups[0] ? new Set([groups[0][0]]) : new Set();
   });
 
-  const activityGroups = useMemo(() => groupCommentsByDate(comments), [comments]);
-  const visibleGroups = showAllActivity ? activityGroups : activityGroups.slice(0, 3);
   const swotTexts = useMemo(() => swotLongTexts(initialSwot), [initialSwot]);
   const hasSwot = useMemo(() => swotHasContent(initialSwot), [initialSwot]);
 
@@ -398,7 +428,6 @@ export function SchoolDetailClient({
     .join(' ');
 
   const areaName = school.area_name || school.Gov_Domain?.area_name || '';
-  const directorPhoto = directorPictureUrl(school.director);
 
   const groups = useMemo(() => {
     const kinder = [
@@ -596,10 +625,9 @@ export function SchoolDetailClient({
       if (guestView) {
         return (
           id === 'overview' ||
-          id === 'basic' ||
           id === 'buildings' ||
-          id === 'location' ||
-          id === 'swot'
+          id === 'swot' ||
+          id === 'budget'
         );
       }
       return true;
@@ -615,27 +643,33 @@ export function SchoolDetailClient({
     );
   };
 
-  const allTabs: { id: TabId; label: string; icon: typeof Home }[] = [
+  const TAB_ROW_1: { id: TabId; label: string; icon: typeof Home }[] = [
     { id: 'overview', label: 'ภาพรวม', icon: Home },
-    { id: 'basic', label: 'ข้อมูลพื้นฐาน', icon: Info },
-    { id: 'buildings', label: 'ข้อมูลสิ่งปลูกสร้าง', icon: Building2 },
-    { id: 'location', label: 'ที่ตั้งและแผนที่', icon: MapIcon },
-    { id: 'swot', label: 'SWOT โรงเรียน', icon: ClipboardPen },
-    { id: 'visits', label: 'การลงพื้นที่', icon: CalendarDays },
-    { id: 'pillars', label: '3 เสาหลัก', icon: Sparkles },
-    { id: 'scores', label: 'ผลการประเมินตามระบบ SMS', icon: Award },
-    { id: 'people', label: 'นักเรียน / บุคลากร', icon: Users },
     { id: 'scholarship', label: 'นักเรียนทุน', icon: GraduationCap },
     { id: 'contract_teachers', label: 'ครูอัตรจ้าง', icon: UserCheck },
+    { id: 'budget', label: 'งบสนับสนุน', icon: Wallet },
+    { id: 'buildings', label: 'สิ่งปลูกสร้าง', icon: Building2 },
+  ];
+  const TAB_ROW_2: { id: TabId; label: string; icon: typeof Home }[] = [
+    { id: 'pillars', label: '3 เสาหลัก', icon: Sparkles },
+    { id: 'scores', label: 'SMS Score', icon: Award },
+    { id: 'swot', label: 'SWOT', icon: ClipboardPen },
+    { id: 'reports', label: 'บันทึกตรวจเยี่ยม', icon: FileText },
+    { id: 'calendar', label: 'ปฏิทิน', icon: CalendarDays },
   ];
 
-  const tabs = allTabs.filter((t) => {
-    if (!tabAllowed(t.id)) return false;
-    if ((t.id === 'pillars' || t.id === 'scores') && !showScores) return false;
-    if (t.id === 'scholarship' && !scholarshipStudents.length) return false;
-    if (t.id === 'contract_teachers' && !contractTeachers.length) return false;
-    return true;
-  });
+  const filterTabs = (row: typeof TAB_ROW_1) =>
+    row.filter((t) => {
+      if (!tabAllowed(t.id)) return false;
+      if ((t.id === 'pillars' || t.id === 'scores') && !showScores) return false;
+      if (t.id === 'scholarship' && !scholarshipStudents.length) return false;
+      if (t.id === 'contract_teachers' && !contractTeachers.length) return false;
+      return true;
+    });
+
+  const tabsRow1 = filterTabs(TAB_ROW_1);
+  const tabsRow2 = filterTabs(TAB_ROW_2);
+  const tabs = [...tabsRow1, ...tabsRow2];
 
   useEffect(() => {
     if (tabs.length && !tabs.some((t) => t.id === tab)) {
@@ -650,88 +684,102 @@ export function SchoolDetailClient({
       ? `https://www.google.com/maps?q=${lat},${lng}`
       : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(school.school_name_th + ' ' + (school.province || ''))}`;
 
-  const renderActivityFeed = () => (
-    <section className="panel-card space-y-3 school-activity">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <MessageSquare size={18} className="text-tm-blue" />
-          <h2 className="section-heading text-base m-0">บันทึกกิจกรรม</h2>
-        </div>
-        {canComment && (
-          <Link
-            href={`/reports/new?school_id=${encodeURIComponent(String(school.school_id))}`}
-            className="ed-btn ed-btn--primary ed-btn--sm"
-          >
-            <FilePlus2 size={14} /> ส่งรายงาน
-          </Link>
-        )}
-      </div>
-      {activityGroups.length === 0 ? (
-        <p className="school-empty-note m-0">ยังไม่มีกิจกรรมของโรงเรียนนี้</p>
-      ) : (
-        <div className="school-activity__list">
-          {visibleGroups.map(([day, items]) => {
-            const open = expandedDays.has(day);
-            return (
-              <article key={day} className="school-activity__day">
-                <button
-                  type="button"
-                  className="school-activity__day-head"
-                  aria-expanded={open}
-                  onClick={() =>
-                    setExpandedDays((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(day)) next.delete(day);
-                      else next.add(day);
-                      return next;
-                    })
-                  }
-                >
-                  <div>
-                    <strong>
-                      {formatThaiDateWithWeekday(day)}
-                    </strong>
-                    <div className="school-activity__day-preview">
-                      {open ? 'คลิกเพื่อย่อ' : items[0]?.text.slice(0, 72) || '—'}
-                      {!open && (items[0]?.text.length ?? 0) > 72 ? '…' : ''}
-                    </div>
-                  </div>
-                  <span className="school-activity__count">{items.length} รายการ</span>
-                </button>
-                {open && (
-                  <ul className="school-activity__items">
-                    {items.map((c) => (
-                      <li key={c.id}>
-                        <div className="school-activity__meta">
-                          <strong>{c.staff_name}</strong>
-                          <span>{formatThaiTime(c.created_at)}</span>
-                        </div>
-                        <p>{c.text}</p>
-                        {c.image_urls && c.image_urls.length > 0 ? (
-                          <ImageThumbGrid urls={c.image_urls} />
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </article>
-            );
-          })}
-          {activityGroups.length > 3 && (
-            <button
-              type="button"
-              className="ed-btn ed-btn--outline ed-btn--sm w-fit"
-              onClick={() => setShowAllActivity((v) => !v)}
+  const renderActivityFeed = (
+    opts: {
+      title: string;
+      visitType?: SchoolVisitType;
+      showCta?: boolean;
+      emptyText?: string;
+    } = { title: 'บันทึกตรวจเยี่ยม' }
+  ) => {
+    const filtered = opts.visitType
+      ? comments.filter((c) => c.visit_type === opts.visitType)
+      : comments;
+    const groups = groupCommentsByDate(filtered);
+    const visible = showAllActivity ? groups : groups.slice(0, 3);
+    return (
+      <section className="panel-card space-y-3 school-activity">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <MessageSquare size={18} className="text-tm-blue" />
+            <h2 className="section-heading text-base m-0">{opts.title}</h2>
+          </div>
+          {opts.showCta !== false && canComment && (
+            <Link
+              href={`/reports/new?school_id=${encodeURIComponent(String(school.school_id))}`}
+              className="ed-btn ed-btn--primary ed-btn--sm"
             >
-              {showAllActivity
-                ? 'แสดงเฉพาะ 3 วันล่าสุด'
-                : `ดูกิจกรรมทั้งหมด (${activityGroups.length} วัน)`}
-            </button>
+              <FilePlus2 size={14} /> ส่งบันทึกตรวจเยี่ยม
+            </Link>
           )}
         </div>
-      )}
-    </section>
-  );
+        {groups.length === 0 ? (
+          <p className="school-empty-note m-0">
+            {opts.emptyText || 'ยังไม่มีบันทึกตรวจเยี่ยมในหมวดนี้'}
+          </p>
+        ) : (
+          <div className="school-activity__list">
+            {visible.map(([day, items]) => {
+              const open = expandedDays.has(day);
+              return (
+                <article key={`${opts.visitType || 'all'}-${day}`} className="school-activity__day">
+                  <button
+                    type="button"
+                    className="school-activity__day-head"
+                    aria-expanded={open}
+                    onClick={() =>
+                      setExpandedDays((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(day)) next.delete(day);
+                        else next.add(day);
+                        return next;
+                      })
+                    }
+                  >
+                    <div>
+                      <strong>{formatThaiDateWithWeekday(day)}</strong>
+                      <div className="school-activity__day-preview">
+                        {open ? 'คลิกเพื่อย่อ' : items[0]?.text.slice(0, 72) || '—'}
+                        {!open && (items[0]?.text.length ?? 0) > 72 ? '…' : ''}
+                      </div>
+                    </div>
+                    <span className="school-activity__count">{items.length} รายการ</span>
+                  </button>
+                  {open && (
+                    <ul className="school-activity__items">
+                      {items.map((c) => (
+                        <li key={c.id}>
+                          <div className="school-activity__meta">
+                            <strong>{c.staff_name}</strong>
+                            <span>{formatThaiTime(c.created_at)}</span>
+                          </div>
+                          <p>{c.text}</p>
+                          {c.image_urls && c.image_urls.length > 0 ? (
+                            <ImageThumbGrid urls={c.image_urls} />
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
+              );
+            })}
+            {groups.length > 3 && (
+              <button
+                type="button"
+                className="ed-btn ed-btn--outline ed-btn--sm w-fit"
+                onClick={() => setShowAllActivity((v) => !v)}
+              >
+                {showAllActivity
+                  ? 'แสดงเฉพาะ 3 วันล่าสุด'
+                  : `ดูบันทึกทั้งหมด (${groups.length} วัน)`}
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+    );
+  };
 
   const renderSwotLongText = () => (
     <div className="swot-long space-y-5">
@@ -848,102 +896,73 @@ export function SchoolDetailClient({
       </nav>
 
       <header className={`school-profile-card ${guestView ? 'school-profile-card--guest' : ''}`}>
-        <div
-          className="school-profile-card__photo"
-          style={{ backgroundImage: `url(${schoolCoverImage(school)})` }}
-          role="img"
-          aria-label="ภาพโรงเรียน"
-        />
+        <div className="school-profile-card__media">
+          <div
+            className="school-profile-card__photo"
+            style={{ backgroundImage: `url(${schoolCoverImage(school)})` }}
+            role="img"
+            aria-label="ภาพโรงเรียน"
+          />
+          <p className="school-profile-card__id-under m-0">
+            รหัสสถานศึกษา {school.school_id}
+          </p>
+        </div>
         <div className="school-profile-card__body">
-          <div className="school-profile-card__identity">
-            <div className="school-profile-card__seal" aria-hidden>
-              <Building2 size={28} />
+          <h1 className="school-profile-card__name">{school.school_name_th}</h1>
+          <dl className="school-profile-card__meta">
+            <div>
+              <dt>อำเภอ</dt>
+              <dd>{school.district || '—'}</dd>
             </div>
             <div>
-              <h1 className="school-profile-card__name">{school.school_name_th}</h1>
-              <p className="school-profile-card__place m-0">
-                {[school.district ? `อำเภอ${school.district}` : '', school.province ? `จังหวัด${school.province}` : '']
-                  .filter(Boolean)
-                  .join(' ') || '—'}
-              </p>
-              <p className="school-profile-card__id m-0">รหัสสถานศึกษา {school.school_id}</p>
+              <dt>จังหวัด</dt>
+              <dd>{school.province || '—'}</dd>
             </div>
-          </div>
-          <div className="school-profile-card__badges">
-            <div className="school-profile-badge">
-              <Building2 size={18} />
-              <div>
-                <em>สังกัด</em>
-                <strong>สพฐ. / โครงการกองทุนการศึกษา</strong>
-              </div>
+            <div>
+              <dt>ภาค</dt>
+              <dd>—</dd>
             </div>
-            <div className="school-profile-badge">
-              <MapPin size={18} />
-              <div>
-                <em>เขตพื้นที่การศึกษา</em>
-                <strong>{areaName || '—'}</strong>
-              </div>
+            <div className="school-profile-card__meta--wide">
+              <dt>องคมนตรี</dt>
+              <dd>
+                {overseerNames.length > 0 ? overseerNames.join(', ') : '—'}
+              </dd>
             </div>
-            <div className="school-profile-badge">
-              <span className="school-profile-badge__avatar" aria-hidden>
-                {directorPhoto ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={directorPhoto}
-                    alt=""
-                    className="school-profile-badge__avatar-img"
-                  />
-                ) : (
-                  <UserRound size={18} className="school-profile-badge__avatar-icon" />
-                )}
-              </span>
-              <div>
-                <em>ผู้อำนวยการโรงเรียน</em>
-                {school.director_id ? (
-                  <strong>
-                    <Link
-                      href={`/schools/${school.school_id}/director`}
-                      className="hover:underline text-inherit"
-                    >
-                      {directorDisplayLabel(school)}
-                    </Link>
-                  </strong>
-                ) : (
-                  <strong>{directorDisplayLabel(school) || DIRECTOR_TBA_LABEL}</strong>
-                )}
-              </div>
-            </div>
-            <div className="school-profile-badge">
-              <Phone size={18} />
-              <div>
-                <em>เบอร์ติดต่อ</em>
-                <strong>{school.phone || '—'}</strong>
-              </div>
-            </div>
-          </div>
+          </dl>
         </div>
       </header>
 
-      <div className="school-detail__tabs" role="tablist">
-        {tabs.map((t) => {
-          const Icon = t.icon;
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              className={`school-tab ${active ? 'school-tab--active' : ''} ${
-                t.id === 'pillars' ? 'school-tab--pillars' : ''
-              } ${t.id === 'scores' ? 'school-tab--scores' : ''}`}
-              onClick={() => setTab(t.id)}
+      <div className="school-detail__tabs-wrap">
+        {[tabsRow1, tabsRow2].map((row, rowIdx) =>
+          row.length ? (
+            <div
+              key={rowIdx === 0 ? 'tab-row-1' : 'tab-row-2'}
+              className="school-detail__tabs"
+              role="tablist"
+              aria-label={rowIdx === 0 ? 'แท็บหลัก' : 'แท็บคะแนนและกิจกรรม'}
             >
-              <Icon size={18} />
-              {t.label}
-            </button>
-          );
-        })}
+              {row.map((t) => {
+                const Icon = t.icon;
+                const active = tab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={`school-tab ${active ? 'school-tab--active' : ''} ${
+                      t.id === 'pillars' ? 'school-tab--pillars' : ''
+                    } ${t.id === 'scores' ? 'school-tab--scores' : ''}`}
+                    onClick={() => setTab(t.id)}
+                  >
+                    <Icon size={18} />
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null
+        )}
       </div>
 
       {tab === 'overview' && (
@@ -975,86 +994,110 @@ export function SchoolDetailClient({
             </>
           ) : (
             <>
-              <div className="kpi-grid">
-                <article className="kpi-card">
-                  <div className="kpi-card__icon">
-                    <Users size={22} />
+              <section className="panel-card school-overview-panel space-y-3">
+                <h2 className="section-heading text-base m-0">ภาพรวม</h2>
+                <dl className="school-overview-facts">
+                  <div>
+                    <dt>ผู้อำนวยการ</dt>
+                    <dd>
+                      {school.director_id ? (
+                        <Link
+                          href={`/schools/${school.school_id}/director`}
+                          className="text-tm-blue font-semibold underline"
+                        >
+                          {directorDisplayLabel(school) || DIRECTOR_TBA_LABEL}
+                        </Link>
+                      ) : (
+                        directorDisplayLabel(school) || DIRECTOR_TBA_LABEL
+                      )}
+                    </dd>
                   </div>
                   <div>
-                    <div className="kpi-card__label">นักเรียนทั้งหมด</div>
-                    <div className="kpi-card__value">{totalStudents.toLocaleString()}</div>
-                    <div className="kpi-card__hint">
-                      ชาย {totalBoys.toLocaleString()} · หญิง {totalGirls.toLocaleString()}
-                    </div>
-                  </div>
-                </article>
-                <article className="kpi-card">
-                  <div className="kpi-card__icon kpi-card__icon--seafoam">
-                    <UserCheck size={22} />
+                    <dt>เบอร์โทร</dt>
+                    <dd>{school.phone || '—'}</dd>
                   </div>
                   <div>
-                    <div className="kpi-card__label">บุคลากรทั้งหมด</div>
-                    <div className="kpi-card__value">{totalTeachers.toLocaleString()}</div>
-                    <div className="kpi-card__hint">ผู้อำนวยการ: {teacherDirector.toLocaleString()}</div>
+                    <dt>จำนวนนักเรียน</dt>
+                    <dd>{totalStudents.toLocaleString('th-TH')}</dd>
                   </div>
-                </article>
-                {showScores && (
-                  <>
-                    <article className="kpi-card">
-                      <div className="kpi-card__icon">
-                        <Award size={22} />
-                      </div>
-                      <div>
-                        <div className="kpi-card__label">คะแนนรวมตามระบบ SMS</div>
-                        <div className="kpi-card__value" style={{ color: scoreColor(overall) }}>
-                          {overall.toFixed(2)}
-                        </div>
-                        <div className="kpi-card__hint">
-                          ปี {currYearLabel}
-                          {hasSmsPrev ? ` · ปี ${prevYearLabel} ${(overallPrev as number).toFixed(2)}` : ''}
-                          {' · / 5.00'}
-                        </div>
-                      </div>
-                    </article>
-                    <article className="kpi-card">
-                      <div className="kpi-card__icon kpi-card__icon--seafoam">
-                        <Sparkles size={22} />
-                      </div>
-                      <div>
-                        <div className="kpi-card__label">คะแนนรวม 3 เสาหลัก</div>
-                        <div className="kpi-card__value" style={{ color: scoreColor(three.overall) }}>
-                          {three.overall.toFixed(1)}
-                        </div>
-                        <div className="kpi-card__hint">
-                          ปี {currYearLabel}
-                          {hasThreePrev ? ` · ปี ${prevYearLabel} ${threePrev!.overall.toFixed(1)}` : ''}
-                          {' · / 100'}
-                        </div>
-                      </div>
-                    </article>
-                  </>
-                )}
-              </div>
-
-              {school.area_special && (
-                <div className="panel-card flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold text-slate-600">พื้นที่พิเศษ:</span>
-                  <span className="school-chip school-chip--amber">{school.area_special}</span>
-                </div>
-              )}
-
-              <div className="panel-card">
-                <h2 className="section-heading text-base">ระดับชั้นที่เปิดสอน</h2>
-                {offeredLevels.length === 0 ? (
-                  <p className="text-sm text-slate-500 m-0">ยังไม่มีข้อมูลจำนวนนักเรียนรายระดับ</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {offeredLevels.map((lv) => (
-                      <span key={lv} className="school-chip">{lv}</span>
-                    ))}
+                  <div>
+                    <dt>จำนวนนักเรียนทุน</dt>
+                    <dd>{scholarshipStudents.length.toLocaleString('th-TH')}</dd>
                   </div>
-                )}
-              </div>
+                  <div>
+                    <dt>ครูและบุคลากร</dt>
+                    <dd>
+                      {(totalTeachers + teacherDirector).toLocaleString('th-TH')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>ครูอัตรจ้าง</dt>
+                    <dd>{contractTeachers.length.toLocaleString('th-TH')}</dd>
+                  </div>
+                  <div>
+                    <dt>จำนวนห้องเรียน</dt>
+                    <dd>—</dd>
+                  </div>
+                  <div className="school-overview-facts__wide">
+                    <dt>ระดับชั้นที่เปิดสอน</dt>
+                    <dd>
+                      {offeredLevels.length === 0 ? (
+                        '—'
+                      ) : (
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {offeredLevels.map((lv) => (
+                            <span key={lv} className="school-chip">
+                              {lv}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section className="panel-card school-overview-panel space-y-3">
+                <h2 className="section-heading text-base m-0">รายละเอียดพิเศษ</h2>
+                <dl className="school-overview-facts">
+                  <div>
+                    <dt>พื้นที่พิเศษ</dt>
+                    <dd>{school.area_special?.trim() || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>วันก่อตั้ง</dt>
+                    <dd>—</dd>
+                  </div>
+                  <div>
+                    <dt>งบสนับสนุน</dt>
+                    <dd>—</dd>
+                  </div>
+                  <div>
+                    <dt>ครั้งที่ลงพื้นที่</dt>
+                    <dd>
+                      {visitHistory.length > 0
+                        ? visitHistory.length.toLocaleString('th-TH')
+                        : '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>แหล่งไฟฟ้า</dt>
+                    <dd>—</dd>
+                  </div>
+                  <div>
+                    <dt>แหล่งน้ำ</dt>
+                    <dd>—</dd>
+                  </div>
+                  <div>
+                    <dt>อินเทอร์เน็ต</dt>
+                    <dd>—</dd>
+                  </div>
+                  <div>
+                    <dt>พื้นที่ดิน</dt>
+                    <dd>—</dd>
+                  </div>
+                </dl>
+              </section>
 
               {showScores && (
                 <div
@@ -1105,8 +1148,77 @@ export function SchoolDetailClient({
                 </div>
               )}
 
+              <section className="panel-card school-overview-panel space-y-3">
+                <h2 className="section-heading text-base m-0">รายละเอียดนักเรียน</h2>
+                {groups.length === 0 ? (
+                  <p className="text-sm text-slate-500 m-0">ยังไม่มีข้อมูลจำนวนนักเรียนรายระดับ</p>
+                ) : (
+                  groups.map((g) => (
+                    <div key={g.key} className="overflow-x-auto">
+                      <div className="flex justify-between items-center mb-2">
+                        <h3 className="font-bold text-tm-blue m-0 text-sm">{g.title}</h3>
+                        <span className="text-sm font-semibold text-slate-600">
+                          รวม {g.total.toLocaleString('th-TH')} คน
+                        </span>
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead style={{ background: 'var(--tm-blue-50)', color: 'var(--tm-blue)' }}>
+                          <tr>
+                            <th className="text-left p-3">ชั้น</th>
+                            <th className="text-right p-3">ชาย</th>
+                            <th className="text-right p-3">หญิง</th>
+                            <th className="text-right p-3">รวม</th>
+                            <th className="text-right p-3">ห้องเรียน</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {g.levels.map((l) => (
+                            <tr key={l.code} className="border-t border-slate-100">
+                              <td className="p-3">{l.name}</td>
+                              <td className="p-3 text-right">{l.boy.toLocaleString('th-TH')}</td>
+                              <td className="p-3 text-right">{l.girl.toLocaleString('th-TH')}</td>
+                              <td className="p-3 text-right font-semibold">
+                                {l.sum.toLocaleString('th-TH')}
+                              </td>
+                              <td className="p-3 text-right">—</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))
+                )}
+              </section>
+
+              <section className="panel-card school-overview-panel space-y-3">
+                <h2 className="section-heading text-base m-0">ครูและบุคลากร</h2>
+                <dl className="school-overview-facts">
+                  <div>
+                    <dt>ผู้อำนวยการ</dt>
+                    <dd>
+                      {teacherDirector > 0
+                        ? teacherDirector.toLocaleString('th-TH')
+                        : '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>รองผู้อำนวยการ</dt>
+                    <dd>—</dd>
+                  </div>
+                  <div>
+                    <dt>ครู</dt>
+                    <dd>
+                      {totalTeachers > 0 ? totalTeachers.toLocaleString('th-TH') : '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>ครูผู้ช่วย</dt>
+                    <dd>—</dd>
+                  </div>
+                </dl>
+              </section>
+
               {mapBlock}
-              {canViewComments && renderActivityFeed()}
             </>
           )}
         </div>
@@ -1147,40 +1259,124 @@ export function SchoolDetailClient({
         </section>
       )}
 
-      {tab === 'visits' && (
+      {tab === 'reports' && (
         <div className="space-y-4">
-          <section className="panel-card space-y-3">
-            <h2 className="section-heading text-base m-0">ประวัติปฏิทิน / นัดหมายลงพื้นที่</h2>
-            <p className="text-xs text-slate-500 m-0">
-              อ้างอิงจากปฏิทินนัดหมายเท่านั้น — ไม่สามารถแก้ไขจากหน้านี้
-            </p>
-            {visitHistory.length === 0 ? (
-              <p className="text-sm text-slate-500 m-0">ยังไม่มีนัดหมายลงพื้นที่สำหรับโรงเรียนนี้</p>
-            ) : (
-              <ul className="m-0 p-0 list-none space-y-2">
-                {visitHistory.map((v) => (
-                  <li
-                    key={v.id}
-                    className="rounded-xl border border-slate-100 px-3 py-2.5 text-sm flex flex-wrap justify-between gap-2"
-                  >
-                    <div>
-                      <strong className="text-tm-blue">
-                        {formatThaiDate(v.date)}
-                      </strong>
-                      <div className="text-slate-600">{v.activity}</div>
-                      {v.notes ? <div className="text-xs text-slate-500 mt-0.5">{v.notes}</div> : null}
-                    </div>
-                    <div className="text-right text-xs text-slate-500">
-                      <div>{v.status_th || 'นัดหมายแล้ว'}</div>
-                      {v.staff_name ? <div>{v.staff_name}</div> : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-          {renderActivityFeed()}
+          {renderActivityFeed({
+            title: 'บันทึกตรวจเยี่ยมโรงเรียน',
+            visitType: 'school',
+            showCta: true,
+            emptyText: 'ยังไม่มีบันทึกตรวจเยี่ยมโรงเรียน',
+          })}
+          {renderActivityFeed({
+            title: 'บันทึกตรวจเยี่ยมนักเรียนทุน',
+            visitType: 'scholarship',
+            showCta: false,
+            emptyText: 'ยังไม่มีบันทึกตรวจเยี่ยมนักเรียนทุน',
+          })}
         </div>
+      )}
+
+      {tab === 'calendar' && (
+        <section className="panel-card space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="section-heading text-base m-0">ประวัติปฏิทิน / นัดหมายลงพื้นที่</h2>
+            {!guestView && (
+              <Link
+                href={`/calendar/new?school_id=${encodeURIComponent(String(school.school_id))}`}
+                prefetch
+                className="ed-btn ed-btn--primary ed-btn--sm"
+              >
+                <CalendarDays size={16} /> สร้างนัดหมาย
+              </Link>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 m-0">
+            อ้างอิงจากปฏิทินนัดหมายเท่านั้น — ไม่สามารถแก้ไขจากหน้านี้
+          </p>
+          {visitHistory.length === 0 ? (
+            <p className="text-sm text-slate-500 m-0">ยังไม่มีนัดหมายลงพื้นที่สำหรับโรงเรียนนี้</p>
+          ) : (
+            <ul className="m-0 p-0 list-none space-y-2">
+              {visitHistory.map((v) => (
+                <li
+                  key={v.id}
+                  className="rounded-xl border border-slate-100 px-3 py-2.5 text-sm flex flex-wrap justify-between gap-2"
+                >
+                  <div>
+                    <strong className="text-tm-blue">
+                      {formatThaiDate(v.date)}
+                    </strong>
+                    <div className="text-slate-600">{v.activity}</div>
+                    {v.notes ? <div className="text-xs text-slate-500 mt-0.5">{v.notes}</div> : null}
+                  </div>
+                  <div className="text-right text-xs text-slate-500">
+                    <div>{v.status_th || 'นัดหมายแล้ว'}</div>
+                    {v.staff_name ? <div>{v.staff_name}</div> : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {tab === 'budget' && (
+        <section className="panel-card space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="section-heading text-base m-0">งบสนับสนุน</h2>
+            <span className="ed-badge" style={{ background: '#fef3c7', color: '#92400e' }}>
+              ข้อมูลจำลอง
+            </span>
+          </div>
+          <p className="text-sm text-slate-600 m-0">
+            แสดงตัวอย่างโครงสร้างงบประมาณสนับสนุนโรงเรียน — จะเชื่อมฐานข้อมูลจริงในระยะถัดไป
+          </p>
+          <div
+            className="grid gap-3"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}
+          >
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <div className="text-xs text-slate-500">ปีงบประมาณ</div>
+              <strong className="text-lg text-tm-blue">2568</strong>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <div className="text-xs text-slate-500">ยอดสนับสนุนรวม</div>
+              <strong className="text-lg text-tm-blue">1,250,000</strong>
+              <div className="text-xs text-slate-500">บาท</div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <div className="text-xs text-slate-500">เบิกแล้ว</div>
+              <strong className="text-lg">780,000</strong>
+              <div className="text-xs text-slate-500">บาท</div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <div className="text-xs text-slate-500">คงเหลือ</div>
+              <strong className="text-lg text-emerald-700">470,000</strong>
+              <div className="text-xs text-slate-500">บาท</div>
+            </div>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold m-0 mb-2">รายการจำลอง</h3>
+            <ul className="m-0 p-0 list-none space-y-2">
+              {[
+                { title: 'พัฒนาสื่อการเรียนรู้', amount: '350,000', status: 'เบิกแล้ว' },
+                { title: 'ปรับปรุงอาคารเรียน', amount: '430,000', status: 'เบิกแล้ว' },
+                { title: 'กิจกรรมพัฒนาผู้เรียน', amount: '470,000', status: 'รอเบิก' },
+              ].map((row) => (
+                <li
+                  key={row.title}
+                  className="rounded-xl border border-slate-100 px-3 py-2.5 text-sm flex flex-wrap justify-between gap-2"
+                >
+                  <div>
+                    <strong>{row.title}</strong>
+                    <div className="text-xs text-slate-500">{row.status}</div>
+                  </div>
+                  <strong className="text-tm-blue">{row.amount} บาท</strong>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
       )}
 
       {tab === 'basic' && (
@@ -1407,6 +1603,9 @@ export function SchoolDetailClient({
                   <th className="p-3">ชั้น</th>
                   <th className="p-3">ประเภททุน</th>
                   <th className="p-3">สถานะ</th>
+                  <th className="p-3">ผลการเรียนล่าสุด</th>
+                  <th className="p-3">ความเสี่ยงด้านการศึกษา</th>
+                  <th className="p-3">ความเสี่ยงด้านพฤติกรรม</th>
                   <th className="p-3" />
                 </tr>
               </thead>
@@ -1417,6 +1616,13 @@ export function SchoolDetailClient({
                     <td className="p-3">{s.grade_level}</td>
                     <td className="p-3">{s.scholarship_type}</td>
                     <td className="p-3">{s.status}</td>
+                    <td className="p-3">
+                      {s.average_gpa != null && Number.isFinite(s.average_gpa)
+                        ? s.average_gpa.toFixed(2)
+                        : '—'}
+                    </td>
+                    <td className="p-3">{riskBadge(s.educational_risk)}</td>
+                    <td className="p-3">{riskBadge(s.behavioral_risk)}</td>
                     <td className="p-3 text-right">
                       <Link
                         href={`/scholarship-students/${s.id}`}
@@ -1502,8 +1708,14 @@ export function SchoolDetailClient({
           <div className="panel-card school-scores-panel__card space-y-3">
             <h2 className="section-heading text-base m-0">กลุ่มผลการประเมินตามระบบ SMS</h2>
             <div className="score-grid-2">
-              {gScores.map((g) => (
-                <ScoreBar key={g.code} label={g.label} score={g.value} showCode={false} />
+              {gScores.map((g, i) => (
+                <ScoreBar
+                  key={g.code}
+                  label={g.label}
+                  score={g.value}
+                  prevScore={hasSmsPrev && gScoresPrev ? gScoresPrev[i] : null}
+                  showCode={false}
+                />
               ))}
             </div>
           </div>
@@ -1512,9 +1724,22 @@ export function SchoolDetailClient({
             <section key={grp.prefix} className="panel-card school-scores-panel__card space-y-3">
               <h2 className="section-heading text-base m-0">{grp.title}</h2>
               <div className="score-grid-2">
-                {grp.rows.map((r) => (
-                  <ScoreBar key={r.code} code={r.code} label={r.label} score={r.score} />
-                ))}
+                {grp.rows.map((r) => {
+                  const prevKey = `${r.code}_score`;
+                  const prev =
+                    prevScores != null
+                      ? num(prevScores[prevKey] ?? prevScores[r.code])
+                      : 0;
+                  return (
+                    <ScoreBar
+                      key={r.code}
+                      code={r.code}
+                      label={r.label}
+                      score={r.score}
+                      prevScore={hasSmsPrev && prev > 0 ? prev : null}
+                    />
+                  );
+                })}
               </div>
             </section>
           ))}

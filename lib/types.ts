@@ -450,6 +450,7 @@ export function parseDistrictKey(key: string): { province: string; district: str
 export const NAV_CATALOG: NavItem[] = [
   { href: '/', label: 'หน้าหลัก', roles: PUBLIC_ROLES, end: true },
   { href: '/about', label: 'เกี่ยวกับโครงการ', roles: PUBLIC_ROLES },
+  { href: '/project-overview', label: 'ภาพรวมโครงการ', roles: PUBLIC_ROLES },
   { href: '/pillars', label: 'ภาพรวม 3 เสาหลัก', roles: PUBLIC_ROLES },
   { href: '/strategy', label: 'ผลการประเมินตามระบบ SMS', roles: PUBLIC_ROLES },
   { href: '/thailand-map', label: 'แผนที่', roles: PUBLIC_ROLES },

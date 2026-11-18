@@ -85,6 +85,66 @@ export async function listDirectors(query?: string): Promise<SchoolDirector[]> {
   return (data ?? []).map((row) => mapDirectorRow(row as Record<string, unknown>));
 }
 
+/** Active station = director_school_history with ended_at NULL for given schools. */
+export type StationedDirectorForSchools = {
+  director: SchoolDirector;
+  schoolIds: string[];
+};
+
+export async function fetchActiveStationedDirectorsForSchools(
+  schoolIds: Array<string | number>
+): Promise<StationedDirectorForSchools[]> {
+  const uniqueSchoolNums = [
+    ...new Set(
+      schoolIds
+        .map((id) =>
+          typeof id === 'number' ? id : Number(String(id).trim())
+        )
+        .filter((n) => Number.isFinite(n))
+    ),
+  ];
+  if (!uniqueSchoolNums.length) return [];
+
+  const supabase = createAnonClient();
+  const { data: histRows, error: histErr } = await supabase
+    .from('director_school_history')
+    .select('director_id, school_id')
+    .in('school_id', uniqueSchoolNums)
+    .is('ended_at', null);
+  if (histErr) {
+    if (/director_school_history|schema cache/i.test(histErr.message)) {
+      return [];
+    }
+    throw histErr;
+  }
+
+  const schoolsByDirector = new Map<string, Set<string>>();
+  for (const row of histRows ?? []) {
+    const did = row.director_id != null ? String(row.director_id).trim() : '';
+    const sid = Number(row.school_id);
+    if (!did || !Number.isFinite(sid)) continue;
+    const set = schoolsByDirector.get(did) ?? new Set<string>();
+    set.add(String(sid));
+    schoolsByDirector.set(did, set);
+  }
+  if (!schoolsByDirector.size) return [];
+
+  const directorMap = await fetchDirectorsByIds([...schoolsByDirector.keys()]);
+  const out: StationedDirectorForSchools[] = [];
+  for (const [did, schoolSet] of schoolsByDirector) {
+    const director = directorMap.get(did);
+    if (!director) continue;
+    out.push({
+      director,
+      schoolIds: [...schoolSet],
+    });
+  }
+  out.sort((a, b) =>
+    (a.director.full_name || '').localeCompare(b.director.full_name || '', 'th')
+  );
+  return out;
+}
+
 export async function fetchActiveSchoolsForDirector(
   directorId: string
 ): Promise<{ school_id: number; school_name: string }[]> {

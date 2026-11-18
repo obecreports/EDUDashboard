@@ -1885,7 +1885,7 @@ export function SuperOverseerActivityPanel({
                 if (section.kind === 'role-type2') {
                   const { center, border } = splitVolunteers(section.people);
                   return (
-                    <div key="role:type2-wrap">
+                    <div key="role:type2-wrap" className="so-role-orphan-wrap">
                       {renderRoleGroup(
                         'role:vc',
                         ROLE_LABELS.volunteer_center,
@@ -2055,31 +2055,31 @@ export function SuperOverseerActivityPanel({
                                     clip,
                                     'volunteer_border'
                                   )}
+                                  {renderRoleGroup(
+                                    `role:staff:${ov.id}`,
+                                    ROLE_LABELS.staff,
+                                    'กลุ่มเจ้าหน้าที่',
+                                    section.staff,
+                                    'staff',
+                                    true,
+                                    parentSelected,
+                                    clip,
+                                    'staff'
+                                  )}
+                                  {renderRoleGroup(
+                                    `role:dir:${ov.id}`,
+                                    ROLE_LABELS.director,
+                                    'กลุ่มผู้อำนวยการ',
+                                    section.directors,
+                                    'director',
+                                    true,
+                                    parentSelected,
+                                    clip,
+                                    'director'
+                                  )}
                                 </>
                               );
                             })()}
-                            {renderRoleGroup(
-                              `role:staff:${ov.id}`,
-                              ROLE_LABELS.staff,
-                              'กลุ่มเจ้าหน้าที่',
-                              section.staff,
-                              'staff',
-                              true,
-                              parentSelected,
-                              clip,
-                              'staff'
-                            )}
-                            {renderRoleGroup(
-                              `role:dir:${ov.id}`,
-                              ROLE_LABELS.director,
-                              'กลุ่มผู้อำนวยการ',
-                              section.directors,
-                              'director',
-                              true,
-                              parentSelected,
-                              clip,
-                              'director'
-                            )}
                           </>
                         )}
                       </div>

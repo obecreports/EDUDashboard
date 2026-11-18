@@ -40,6 +40,7 @@ import {
   readStoredUsers,
 } from '@/lib/auth/user-store';
 import { fetchAllSchoolComments } from '@/lib/supabase/school-swot';
+import { fetchActiveStationedDirectorsForSchools } from '@/lib/supabase/directors';
 import { eventHasMappedReport, type ReportActivityLink } from '@/lib/activity/complete';
 import { normalizeStatus } from '@/lib/visits/labels';
 import {
@@ -47,6 +48,7 @@ import {
   canAccessSection,
   mergeContentAccess,
 } from '@/lib/auth/content-access';
+import type { ActivityPerson } from '@/components/dashboard/SuperOverseerActivityPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -175,35 +177,74 @@ async function DashboardBody() {
     return type1GeoTeamIds(profile, directory, all);
   })();
 
-  const activityPeople = useSoDashboard
-    ? fieldProfiles
-        .filter((u) => {
-          // Covert roles stay on org-map / ACL only — not SO/OS activity tree
-          if (isCovertFieldRole(u.role)) return false;
-          if (isSO) return true;
-          if (u.id === profile.id) return false;
-          return type1TeamIds?.has(u.id) ?? false;
-        })
-        .map((u) => {
-          const personSchools = schoolsActionable(u, all)
-            .map((s) => String(s.school_id))
-            .filter((id) => (isSO ? true : scopedIdSet.has(id)));
-          const provinces = controlProvinces(u, all);
+  const activitySchoolSource = useSoDashboard ? (isSO ? all : scoped) : [];
+  const activitySchoolIdList = activitySchoolSource.map((s) => s.school_id);
+
+  const stationedDirectors = useSoDashboard
+    ? await fetchActiveStationedDirectorsForSchools(activitySchoolIdList).catch(
+        () => []
+      )
+    : [];
+
+  const schoolProvinceById = new Map(
+    activitySchoolSource.map((s) => [
+      String(s.school_id),
+      (s.province ?? '').trim(),
+    ])
+  );
+
+  const activityPeople: ActivityPerson[] = useSoDashboard
+    ? [
+        ...fieldProfiles
+          .filter((u) => {
+            // Covert roles stay on org-map / ACL only — not SO/OS activity tree
+            if (isCovertFieldRole(u.role)) return false;
+            // ผู้อำนวยการ on activity tree come from directors + history, not login profiles
+            if (normalizeRole(u.role) === 'director') return false;
+            if (isSO) return true;
+            if (u.id === profile.id) return false;
+            return type1TeamIds?.has(u.id) ?? false;
+          })
+          .map((u) => {
+            const personSchools = schoolsActionable(u, all)
+              .map((s) => String(s.school_id))
+              .filter((id) => (isSO ? true : scopedIdSet.has(id)));
+            const provinces = controlProvinces(u, all);
+            return {
+              id: u.id,
+              full_name: u.full_name,
+              name_prefix: u.name_prefix ?? null,
+              role: normalizeRole(u.role),
+              overseer_tier: u.overseer_tier ?? null,
+              reports_to: u.reports_to,
+              schoolIds: personSchools,
+              controlProvinces: provinces,
+            };
+          }),
+        ...stationedDirectors.map(({ director, schoolIds }) => {
+          const provinces = [
+            ...new Set(
+              schoolIds
+                .map((id) => schoolProvinceById.get(String(id)) ?? '')
+                .filter(Boolean)
+            ),
+          ];
           return {
-            id: u.id,
-            full_name: u.full_name,
-            name_prefix: u.name_prefix ?? null,
-            role: normalizeRole(u.role),
-            overseer_tier: u.overseer_tier ?? null,
-            reports_to: u.reports_to,
-            schoolIds: personSchools,
+            id: director.director_id,
+            full_name: director.full_name,
+            name_prefix: director.name_prefix ?? null,
+            role: 'director' as const,
+            overseer_tier: null,
+            reports_to: null,
+            schoolIds,
             controlProvinces: provinces,
           };
-        })
+        }),
+      ]
     : [];
 
   const activitySchools = useSoDashboard
-    ? (isSO ? all : scoped).map((s) => ({
+    ? activitySchoolSource.map((s) => ({
         id: String(s.school_id),
         name: s.school_name_th,
         province: s.province ?? '',

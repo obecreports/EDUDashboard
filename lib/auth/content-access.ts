@@ -24,6 +24,7 @@ export type ContentAccessCell = AccessLevel | TieredAccessCell;
 export type ContentResourceId =
   | 'home'
   | 'about'
+  | 'project_overview'
   | 'pillars'
   | 'strategy'
   | 'thailand_map'
@@ -42,6 +43,9 @@ export type ContentResourceId =
   | 'school_tab_location'
   | 'school_tab_swot'
   | 'school_tab_visits'
+  | 'school_tab_reports'
+  | 'school_tab_calendar'
+  | 'school_tab_budget'
   | 'school_tab_pillars'
   | 'school_tab_scores'
   | 'school_tab_people'
@@ -98,6 +102,7 @@ const SS_SECTIONS: { id: ContentResourceId; label: string }[] = [
 export const CONTENT_PAGES: ContentPageDef[] = [
   { id: 'home', label: 'หน้าหลัก', sections: [] },
   { id: 'about', label: 'เกี่ยวกับโครงการ', sections: [] },
+  { id: 'project_overview', label: 'ภาพรวมโครงการ', sections: [] },
   { id: 'pillars', label: 'ภาพรวม 3 เสาหลัก', sections: [] },
   { id: 'strategy', label: 'ผลการประเมินตามระบบ SMS', sections: [] },
   { id: 'thailand_map', label: 'แผนที่', sections: [] },
@@ -108,16 +113,20 @@ export const CONTENT_PAGES: ContentPageDef[] = [
     supportsSensitivity: true,
     sections: [
       { id: 'school_tab_overview', label: 'ภาพรวม' },
-      { id: 'school_tab_basic', label: 'ข้อมูลพื้นฐาน' },
-      { id: 'school_tab_buildings', label: 'ข้อมูลสิ่งปลูกสร้าง' },
-      { id: 'school_tab_location', label: 'ที่ตั้งและแผนที่' },
-      { id: 'school_tab_swot', label: 'SWOT โรงเรียน' },
-      { id: 'school_tab_visits', label: 'การลงพื้นที่' },
-      { id: 'school_tab_pillars', label: '3 เสาหลัก' },
-      { id: 'school_tab_scores', label: 'ผลการประเมินตามระบบ SMS' },
-      { id: 'school_tab_people', label: 'นักเรียน / บุคลากร' },
       { id: 'school_tab_scholarship', label: 'นักเรียนทุน' },
       { id: 'school_tab_contract_teachers', label: 'ครูอัตรจ้าง' },
+      { id: 'school_tab_budget', label: 'งบสนับสนุน' },
+      { id: 'school_tab_buildings', label: 'ข้อมูลสิ่งปลูกสร้าง' },
+      { id: 'school_tab_pillars', label: '3 เสาหลัก' },
+      { id: 'school_tab_scores', label: 'ผลการประเมินตามระบบ SMS' },
+      { id: 'school_tab_swot', label: 'SWOT โรงเรียน' },
+      { id: 'school_tab_reports', label: 'รายงาน' },
+      { id: 'school_tab_calendar', label: 'ปฏิทิน' },
+      // Legacy (hidden from UI tab bar; kept for stored ACL cookies)
+      { id: 'school_tab_basic', label: 'ข้อมูลพื้นฐาน' },
+      { id: 'school_tab_location', label: 'ที่ตั้งและแผนที่' },
+      { id: 'school_tab_visits', label: 'การลงพื้นที่' },
+      { id: 'school_tab_people', label: 'นักเรียน / บุคลากร' },
     ],
   },
   {
@@ -349,6 +358,7 @@ const SCHOLARSHIP_TIER = withGuest(
 export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
   home: withGuest(fieldDefaults(VIEW), VIEW),
   about: withGuest(fieldDefaults(VIEW), VIEW),
+  project_overview: withGuest(fieldDefaults(VIEW), VIEW),
   pillars: withGuest(fieldDefaults(VIEW), VIEW),
   strategy: withGuest(fieldDefaults(VIEW), VIEW),
   thailand_map: withGuest(fieldDefaults(VIEW), VIEW),
@@ -406,6 +416,9 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
   school_tab_location: SCHOOL_TIER,
   school_tab_swot: SCHOOL_TIER,
   school_tab_visits: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
+  school_tab_reports: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
+  school_tab_calendar: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
+  school_tab_budget: SCHOOL_TIER,
   school_tab_pillars: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
   school_tab_scores: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
   school_tab_people: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
@@ -610,6 +623,9 @@ export function schoolTabResource(
     location: 'school_tab_location',
     swot: 'school_tab_swot',
     visits: 'school_tab_visits',
+    reports: 'school_tab_reports',
+    calendar: 'school_tab_calendar',
+    budget: 'school_tab_budget',
     pillars: 'school_tab_pillars',
     scores: 'school_tab_scores',
     people: 'school_tab_people',
@@ -623,9 +639,11 @@ export function schoolTabResource(
 export function resourceForHref(href: string): ContentResourceId | null {
   if (href === '/') return 'home';
   if (href === '/about' || href.startsWith('/about/')) return 'about';
+  if (href === '/project-overview' || href.startsWith('/project-overview/'))
+    return 'project_overview';
   if (href === '/pillars' || href.startsWith('/pillars/')) return 'pillars';
   if (href === '/strategy' || href.startsWith('/strategy/')) return 'strategy';
-  if (href === '/overview' || href.startsWith('/overview/')) return 'strategy';
+  if (href === '/overview' || href.startsWith('/overview/')) return 'project_overview';
   if (href.startsWith('/thailand-map')) return 'thailand_map';
   if (href === '/dashboard') return 'dashboard';
   if (href === '/calendar/new' || href.startsWith('/calendar/new'))

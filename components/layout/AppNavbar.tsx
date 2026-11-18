@@ -25,9 +25,7 @@ import {
   Menu,
   X,
   Layers,
-  Database,
   GraduationCap,
-  UserCog,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -50,6 +48,7 @@ import {
 const ICONS: Record<string, LucideIcon> = {
   '/': Home,
   '/about': Info,
+  '/project-overview': Layers,
   '/pillars': Hexagon,
   '/strategy': Hexagon,
   '/schools': School,
@@ -70,41 +69,18 @@ const ICONS: Record<string, LucideIcon> = {
   '/admin/content-access': Settings,
   '/admin/settings': Settings,
   '/scholarship-students': GraduationCap,
-  '/contract-teachers': UserCog,
 };
 
-/** ภาพรวมด้านต่างๆ — 3 pillars + SMS evaluation */
-const OVERVIEW_GROUP: NavItem[] = [
-  { href: '/pillars', label: 'ภาพรวม 3 เสาหลัก', roles: [] },
-  { href: '/strategy', label: 'ผลการประเมินตามระบบ SMS', roles: [] },
-];
-
-/** ข้อมูลรายละเอียด — map + school list */
-const DETAIL_GROUP_GUEST: NavItem[] = [
-  { href: '/thailand-map', label: 'แผนที่', roles: [] },
-  { href: '/schools', label: 'โรงเรียนในโครงการ', roles: [] },
-];
-
-/** Logged-in users keep only the public map (no guest marketing pages) */
-const DETAIL_GROUP_AUTH: NavItem[] = [
-  { href: '/thailand-map', label: 'แผนที่', roles: [] },
-];
-
-/** Main bar before/after จัดการโรงเรียน group (field roles) */
+/** Main bar before/after โรงเรียนในโครงการ group (field roles) */
 const AUTH_MAIN_BEFORE = ['/dashboard'] as const;
-/** Tickets render after ข้อมูลรายละเอียด */
-const AUTH_TICKETS_HREF = '/tickets' as const;
 
 /** บันทึกการตรวจเยี่ยม */
 const REPORTS_HREFS = ['/reports/new', '/reports'] as const;
 
-/** Scholarship / contract-teacher pages (field) */
-const PEOPLE_DATA_HREFS = [
-  '/scholarship-students',
-  '/contract-teachers',
-] as const;
+/** Scholarship (field bar) */
+const PEOPLE_DATA_HREFS = ['/scholarship-students'] as const;
 
-/** จัดการโรงเรียน — domain schools + schedule (logged-in field roles) */
+/** โรงเรียนในโครงการ — domain schools + schedule (logged-in field roles) */
 const MANAGE_SCHOOLS_HREFS = ['/schools', '/calendar', '/calendar/new'] as const;
 const MANAGE_SCHEDULE_SECTION = 'นัดหมายโรงเรียน';
 
@@ -127,7 +103,7 @@ const MANAGE_USERS_HREFS = [
   '/admin/content-access',
 ] as const;
 
-type OpenMenu = 'overview' | 'detail' | 'manage' | 'reports' | 'data' | 'users' | null;
+type OpenMenu = 'manage' | 'reports' | 'data' | 'users' | null;
 
 export function AppNavbar({
   role,
@@ -150,8 +126,6 @@ export function AppNavbar({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const accountRef = useRef<HTMLDivElement>(null);
-  const overviewRef = useRef<HTMLLIElement>(null);
-  const detailRef = useRef<HTMLLIElement>(null);
   const manageRef = useRef<HTMLLIElement>(null);
   const reportsRef = useRef<HTMLLIElement>(null);
   const dataRef = useRef<HTMLLIElement>(null);
@@ -183,18 +157,18 @@ export function AppNavbar({
 
   let mainBefore: NavItem[] = [];
   let mainAfter: NavItem[] = [];
-  let showPublicGroups = false;
-  let showOverviewGroup = false;
   let showManageGroup = false;
   let showReportsGroup = false;
   let showDataGroup = false;
   let showUsersGroup = false;
-  let overviewGroup: NavItem[] = OVERVIEW_GROUP;
-  let detailGroup: NavItem[] = DETAIL_GROUP_GUEST;
   let manageGroup: NavItem[] = [];
   let reportsGroup: NavItem[] = [];
   let dataGroup: NavItem[] = [];
   let usersGroup: NavItem[] = [];
+  /** Guest: ภาพรวมโครงการ + โรงเรียนในโครงการ (no หน้าหลัก — logo covers home) */
+  let guestOverviewItem: NavItem | undefined;
+  let guestSchoolsItem: NavItem | undefined;
+  /** Admin keeps map shortcut (field bar no longer shows map) */
   let mapItem: NavItem | undefined;
 
   const filterAdminSettings = (item: NavItem | undefined) => {
@@ -203,13 +177,10 @@ export function AppNavbar({
     return true;
   };
 
-  let ticketsItem: NavItem | undefined;
-
   let peopleDataItems: NavItem[] = [];
 
   if (isAuthenticated && isFieldRole(normalizedRole)) {
     mainBefore = AUTH_MAIN_BEFORE.map((h) => byHref(h)).filter(Boolean) as NavItem[];
-    ticketsItem = byHref(AUTH_TICKETS_HREF);
     manageGroup = MANAGE_SCHOOLS_HREFS.map((h) => byHref(h)).filter(Boolean) as NavItem[];
     showManageGroup = manageGroup.length > 0;
     reportsGroup = REPORTS_HREFS.map((h) => byHref(h)).filter(Boolean) as NavItem[];
@@ -217,9 +188,6 @@ export function AppNavbar({
     peopleDataItems = PEOPLE_DATA_HREFS.map((h) => byHref(h)).filter(
       Boolean
     ) as NavItem[];
-    mapItem = byHref('/thailand-map') ?? DETAIL_GROUP_AUTH[0];
-    showOverviewGroup = false;
-    showPublicGroups = false;
   } else if (isAuthenticated && isAdminRole(normalizedRole)) {
     mainBefore = ADMIN_MAIN_BEFORE.map((h) => byHref(h)).filter(Boolean) as NavItem[];
     mainAfter = ADMIN_MAIN_AFTER.map((h) => byHref(h)).filter(filterAdminSettings) as NavItem[];
@@ -227,18 +195,27 @@ export function AppNavbar({
     showDataGroup = dataGroup.length > 0;
     usersGroup = MANAGE_USERS_HREFS.map((h) => byHref(h)).filter(Boolean) as NavItem[];
     showUsersGroup = usersGroup.length > 0;
-    mapItem = byHref('/thailand-map') ?? DETAIL_GROUP_AUTH[0];
-    showOverviewGroup = false;
-    showPublicGroups = false;
+    mapItem =
+      byHref('/project-overview') ??
+      byHref('/thailand-map') ?? {
+        href: '/project-overview',
+        label: 'ภาพรวมโครงการ',
+        roles: [],
+      };
   } else {
-    mainBefore = [
-      byHref('/') ?? { href: '/', label: 'หน้าหลัก', roles: [], end: true },
-      byHref('/about'),
-    ].filter(Boolean) as NavItem[];
-    overviewGroup = OVERVIEW_GROUP.filter((i) => aclAllows(i.href));
-    detailGroup = DETAIL_GROUP_GUEST.filter((i) => aclAllows(i.href));
-    showPublicGroups = true;
-    showOverviewGroup = overviewGroup.length > 0;
+    mainBefore = [byHref('/about')].filter(Boolean) as NavItem[];
+    guestOverviewItem = byHref('/project-overview') ?? {
+      href: '/project-overview',
+      label: 'ภาพรวมโครงการ',
+      roles: [],
+    };
+    if (guestOverviewItem && !aclAllows(guestOverviewItem.href)) {
+      guestOverviewItem = undefined;
+    }
+    guestSchoolsItem = byHref('/schools');
+    if (guestSchoolsItem && !aclAllows(guestSchoolsItem.href)) {
+      guestSchoolsItem = undefined;
+    }
   }
 
   const showProfile = isFieldRole(normalizedRole) || isAdminRole(normalizedRole);
@@ -268,6 +245,18 @@ export function AppNavbar({
     if (href === '/calendar/new') {
       return pathname === '/calendar/new' || pathname.startsWith('/calendar/new/');
     }
+    if (href === '/project-overview') {
+      return (
+        pathname === '/project-overview' ||
+        pathname.startsWith('/project-overview/') ||
+        pathname === '/pillars' ||
+        pathname.startsWith('/pillars/') ||
+        pathname === '/strategy' ||
+        pathname.startsWith('/strategy/') ||
+        pathname.startsWith('/thailand-map') ||
+        pathname.startsWith('/overview')
+      );
+    }
     return (
       pathname === href ||
       pathname.startsWith(`${href}/`) ||
@@ -275,8 +264,6 @@ export function AppNavbar({
     );
   };
 
-  const overviewActive = overviewGroup.some((i) => isActive(i.href, i.end));
-  const detailActive = detailGroup.some((i) => isActive(i.href, i.end));
   const manageActive = manageGroup.some((i) => isActive(i.href, i.end));
   const reportsActive = reportsGroup.some((i) => isActive(i.href, i.end));
   const dataActive = dataGroup.some((i) => isActive(i.href, i.end));
@@ -302,8 +289,6 @@ export function AppNavbar({
     const onDoc = (e: MouseEvent) => {
       if (!accountRef.current?.contains(e.target as Node)) setAccountOpen(false);
       if (
-        !overviewRef.current?.contains(e.target as Node) &&
-        !detailRef.current?.contains(e.target as Node) &&
         !manageRef.current?.contains(e.target as Node) &&
         !reportsRef.current?.contains(e.target as Node) &&
         !dataRef.current?.contains(e.target as Node) &&
@@ -461,12 +446,15 @@ export function AppNavbar({
       {showManageGroup &&
         renderGroup(
           'manage',
-          'จัดการโรงเรียน',
+          'โรงเรียนในโครงการ',
           School,
           manageGroup,
           manageActive,
           manageRef
         )}
+      {peopleDataItems.map((item) => (
+        <li key={`bar-${item.href}`}>{renderLink(item, 'bar')}</li>
+      ))}
       {showReportsGroup &&
         renderGroup(
           'reports',
@@ -476,9 +464,6 @@ export function AppNavbar({
           reportsActive,
           reportsRef
         )}
-      {peopleDataItems.map((item) => (
-        <li key={`bar-${item.href}`}>{renderLink(item, 'bar')}</li>
-      ))}
       {showDataGroup &&
         renderGroup(
           'data',
@@ -500,12 +485,17 @@ export function AppNavbar({
       {mainAfter.map((item) => (
         <li key={`bar-${item.href}`}>{renderLink(item, 'bar')}</li>
       ))}
-      {showOverviewGroup &&
-        renderGroup('overview', 'ภาพรวมด้านต่างๆ', Layers, overviewGroup, overviewActive, overviewRef)}
-      {showPublicGroups &&
-        renderGroup('detail', 'ข้อมูลรายละเอียด', Database, detailGroup, detailActive, detailRef)}
       {mapItem ? <li key={`bar-${mapItem.href}`}>{renderLink(mapItem, 'bar')}</li> : null}
-      {ticketsItem ? <li key={`bar-${ticketsItem.href}`}>{renderLink(ticketsItem, 'bar')}</li> : null}
+      {guestOverviewItem ? (
+        <li key={`bar-${guestOverviewItem.href}`}>
+          {renderLink(guestOverviewItem, 'bar')}
+        </li>
+      ) : null}
+      {guestSchoolsItem ? (
+        <li key={`bar-${guestSchoolsItem.href}`}>
+          {renderLink(guestSchoolsItem, 'bar')}
+        </li>
+      ) : null}
     </ul>
   );
 
@@ -516,8 +506,16 @@ export function AppNavbar({
       ))}
       {showManageGroup && (
         <>
-          <li className="ed-nav-drawer__group-label">จัดการโรงเรียน</li>
+          <li className="ed-nav-drawer__group-label">โรงเรียนในโครงการ</li>
           {renderManageMenuItems('drawer')}
+        </>
+      )}
+      {peopleDataItems.length > 0 && (
+        <>
+          <li className="ed-nav-drawer__group-label">นักเรียนทุน</li>
+          {peopleDataItems.map((item) => (
+            <li key={`drawer-pd-${item.href}`}>{renderLink(item, 'drawer')}</li>
+          ))}
         </>
       )}
       {showReportsGroup && (
@@ -525,14 +523,6 @@ export function AppNavbar({
           <li className="ed-nav-drawer__group-label">บันทึกการตรวจเยี่ยม</li>
           {reportsGroup.map((item) => (
             <li key={`drawer-rp-${item.href}`}>{renderLink(item, 'drawer')}</li>
-          ))}
-        </>
-      )}
-      {peopleDataItems.length > 0 && (
-        <>
-          <li className="ed-nav-drawer__group-label">ข้อมูลบุคลากร / นักเรียนทุน</li>
-          {peopleDataItems.map((item) => (
-            <li key={`drawer-pd-${item.href}`}>{renderLink(item, 'drawer')}</li>
           ))}
         </>
       )}
@@ -555,27 +545,18 @@ export function AppNavbar({
       {mainAfter.map((item) => (
         <li key={`drawer-${item.href}`}>{renderLink(item, 'drawer')}</li>
       ))}
-      {showOverviewGroup && (
-        <>
-          <li className="ed-nav-drawer__group-label">ภาพรวมด้านต่างๆ</li>
-          {overviewGroup.map((item) => (
-            <li key={`drawer-ov-${item.href}`}>{renderLink(item, 'drawer')}</li>
-          ))}
-        </>
-      )}
-      {showPublicGroups && (
-        <>
-          <li className="ed-nav-drawer__group-label">ข้อมูลรายละเอียด</li>
-          {detailGroup.map((item) => (
-            <li key={`drawer-dt-${item.href}`}>{renderLink(item, 'drawer')}</li>
-          ))}
-        </>
-      )}
       {mapItem ? (
         <li key={`drawer-${mapItem.href}`}>{renderLink(mapItem, 'drawer')}</li>
       ) : null}
-      {ticketsItem ? (
-        <li key={`drawer-${ticketsItem.href}`}>{renderLink(ticketsItem, 'drawer')}</li>
+      {guestOverviewItem ? (
+        <li key={`drawer-${guestOverviewItem.href}`}>
+          {renderLink(guestOverviewItem, 'drawer')}
+        </li>
+      ) : null}
+      {guestSchoolsItem ? (
+        <li key={`drawer-${guestSchoolsItem.href}`}>
+          {renderLink(guestSchoolsItem, 'drawer')}
+        </li>
       ) : null}
     </ul>
   );

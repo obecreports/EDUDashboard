@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-/** Legacy route — strategy overview lives at /strategy */
+/** Legacy route — combined project overview */
 export default function OverviewRedirect() {
-  redirect('/strategy');
+  redirect('/project-overview');
 }

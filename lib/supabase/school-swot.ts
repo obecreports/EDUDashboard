@@ -37,6 +37,7 @@ type CommentRow = {
   onsite_reasons?: string[] | null;
   visitor_reason_map?: Record<string, string[]> | null;
   ops_notes?: string | null;
+  visit_type?: string | null;
   updated_at?: string | null;
   updated_by?: string | null;
 };
@@ -53,6 +54,9 @@ function mapSwot(row: SwotRow | null | undefined): SchoolSwot {
 
 function mapComment(row: CommentRow): SchoolComment {
   const reportDate = row.report_date ? String(row.report_date).slice(0, 10) : null;
+  const visitRaw = row.visit_type ? String(row.visit_type).trim() : '';
+  const visit_type =
+    visitRaw === 'school' || visitRaw === 'scholarship' ? visitRaw : null;
   return {
     id: row.id,
     school_id: row.school_id != null ? String(row.school_id) : undefined,
@@ -75,13 +79,14 @@ function mapComment(row: CommentRow): SchoolComment {
         ? row.visitor_reason_map
         : {},
     ops_notes: row.ops_notes ?? null,
+    visit_type,
     updated_at: row.updated_at ?? row.edited_at ?? null,
     updated_by: row.updated_by ?? null,
   };
 }
 
 const COMMENT_SELECT =
-  'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls, calendar_event_id, onsite_reasons, visitor_reason_map, ops_notes, updated_at, updated_by';
+  'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls, calendar_event_id, onsite_reasons, visitor_reason_map, ops_notes, visit_type, updated_at, updated_by';
 
 const SWOT_SELECT =
   'school_id, categories, internal_strengths, internal_weaknesses, external_strengths, external_threats, updated_at';
@@ -123,11 +128,24 @@ export async function fetchSchoolComments(
 
   try {
     const supabase = await createClient();
-    let { data, error } = await supabase
+    const primary = await supabase
       .from('school_staff_comments')
       .select(COMMENT_SELECT)
       .eq('school_id', id)
       .order('created_at', { ascending: false });
+    let rows = primary.data as CommentRow[] | null;
+    let error = primary.error;
+    if (error && /visit_type/i.test(error.message)) {
+      const withoutVisit = await supabase
+        .from('school_staff_comments')
+        .select(
+          'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls, calendar_event_id, onsite_reasons, visitor_reason_map, ops_notes, updated_at, updated_by'
+        )
+        .eq('school_id', id)
+        .order('created_at', { ascending: false });
+      rows = (withoutVisit.data as CommentRow[] | null) ?? null;
+      error = withoutVisit.error;
+    }
     if (error) {
       const legacy = await supabase
         .from('school_staff_comments')
@@ -145,8 +163,8 @@ export async function fetchSchoolComments(
       }
       return (legacy.data as CommentRow[]).map(mapComment);
     }
-    if (!data) return [];
-    return (data as CommentRow[]).map(mapComment);
+    if (!rows) return [];
+    return rows.map(mapComment);
   } catch {
     return [];
   }
@@ -317,6 +335,7 @@ export async function insertSchoolStaffComment(params: {
   onsiteReasons?: string[];
   visitorReasonMap?: Record<string, string[]>;
   opsNotes?: string | null;
+  visitType?: 'school' | 'scholarship' | null;
 }): Promise<{ ok: true; comment: SchoolComment } | { ok: false; error: string }> {
   const id = toSchoolId(params.schoolId);
   if (id == null) return { ok: false, error: 'รหัสโรงเรียนไม่ถูกต้อง' };
@@ -335,6 +354,10 @@ export async function insertSchoolStaffComment(params: {
   const onsiteReasons = (params.onsiteReasons ?? []).map((r) => r.trim()).filter(Boolean);
   const visitorReasonMap = params.visitorReasonMap ?? {};
   const opsNotes = params.opsNotes?.trim() || null;
+  const visitType =
+    params.visitType === 'school' || params.visitType === 'scholarship'
+      ? params.visitType
+      : null;
 
   try {
     const supabase = await createClient();
@@ -351,6 +374,7 @@ export async function insertSchoolStaffComment(params: {
       onsite_reasons: onsiteReasons,
       visitor_reason_map: visitorReasonMap,
       ops_notes: opsNotes,
+      visit_type: visitType,
     };
     let { data, error } = await supabase
       .from('school_staff_comments')
@@ -361,10 +385,30 @@ export async function insertSchoolStaffComment(params: {
     // Fallback if newer columns missing
     if (
       error &&
-      /image_urls|tags|report_date|calendar_event_id|onsite_reasons|visitor_reason_map|ops_notes/i.test(
+      /image_urls|tags|report_date|calendar_event_id|onsite_reasons|visitor_reason_map|ops_notes|visit_type/i.test(
         error.message
       )
     ) {
+      if (/visit_type/i.test(error.message)) {
+        delete payload.visit_type;
+        const withoutVisit = await supabase
+          .from('school_staff_comments')
+          .insert(payload)
+          .select(
+            'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls, calendar_event_id, onsite_reasons, visitor_reason_map, ops_notes, updated_at, updated_by'
+          )
+          .single();
+        if (!withoutVisit.error && withoutVisit.data) {
+          return {
+            ok: true,
+            comment: {
+              ...mapComment(withoutVisit.data as CommentRow),
+              visit_type: visitType,
+            },
+          };
+        }
+        error = withoutVisit.error ?? error;
+      }
       if (/onsite_reasons|visitor_reason_map|ops_notes/i.test(error.message)) {
         delete payload.onsite_reasons;
         delete payload.visitor_reason_map;
