@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import {
   AUTH_USERS_COOKIE,
   CALENDAR_EVENTS_COOKIE,
@@ -56,6 +57,7 @@ async function readRawUserExtras(): Promise<Partial<StoredUserProfile>[]> {
 
 /** Upsert one user override — keeps cookie small (seeds stay in code, not re-dumped). */
 async function upsertStoredUserOverride(user: StoredUserProfile) {
+  if (isDbOnlyMode()) return;
   const extras = await readRawUserExtras();
   const idx = extras.findIndex((u) => u?.id === user.id);
   const row: StoredUserProfile = normalizeStoredUser(user);
@@ -277,14 +279,66 @@ export async function updateUserProfileFields(
   return { ok: true };
 }
 
-export async function readHeroSettings(): Promise<HeroSiteSettings> {
-  const stored = await readJsonCookie<Partial<HeroSiteSettings>>(SITE_SETTINGS_COOKIE, {});
-  return { ...DEFAULT_HERO_SETTINGS, ...stored };
+async function expireSettingsCookies() {
+  try {
+    const jar = await cookies();
+    jar.delete(CONTENT_ACCESS_COOKIE);
+    jar.delete(SITE_SETTINGS_COOKIE);
+  } catch {
+    /* Server Component / no mutable jar */
+  }
 }
 
-export async function writeHeroSettings(next: Partial<HeroSiteSettings>) {
+function unwrapHeroString(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value === 'string') return value.replace(/^"|"$/g, '');
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return undefined;
+}
+
+export async function readHeroSettings(): Promise<HeroSiteSettings> {
+  const { getSiteSettingsMap } = await import('@/lib/auth/site-settings-db');
+  const map = await getSiteSettingsMap([
+    'site_title',
+    'hero_title',
+    'hero_subtitle',
+    'hero_text',
+    'hero_bg_url',
+  ]);
+  await expireSettingsCookies();
+  return {
+    ...DEFAULT_HERO_SETTINGS,
+    site_title: unwrapHeroString(map.site_title) || DEFAULT_HERO_SETTINGS.site_title,
+    hero_title: unwrapHeroString(map.hero_title) || DEFAULT_HERO_SETTINGS.hero_title,
+    hero_subtitle:
+      unwrapHeroString(map.hero_subtitle) ||
+      unwrapHeroString(map.hero_text) ||
+      DEFAULT_HERO_SETTINGS.hero_subtitle,
+    hero_bg_url:
+      unwrapHeroString(map.hero_bg_url) ?? DEFAULT_HERO_SETTINGS.hero_bg_url,
+  };
+}
+
+export async function writeHeroSettings(
+  next: Partial<HeroSiteSettings>
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { upsertSiteSettings } = await import('@/lib/auth/site-settings-db');
   const current = await readHeroSettings();
-  await writeJsonCookie(SITE_SETTINGS_COOKIE, { ...current, ...next });
+  const merged = { ...current, ...next };
+  const { getSessionProfile } = await import('@/lib/auth/session');
+  const { profile } = await getSessionProfile();
+  const res = await upsertSiteSettings(
+    [
+      { key: 'site_title', value: merged.site_title },
+      { key: 'hero_title', value: merged.hero_title },
+      { key: 'hero_subtitle', value: merged.hero_subtitle },
+      { key: 'hero_text', value: merged.hero_subtitle },
+      { key: 'hero_bg_url', value: merged.hero_bg_url },
+    ],
+    profile?.id ?? null
+  );
+  if (res.ok) await expireSettingsCookies();
+  return res;
 }
 
 export async function readContentAccessMapStored(): Promise<
@@ -295,93 +349,41 @@ export async function readContentAccessMapStored(): Promise<
     DEFAULT_CONTENT_ACCESS,
     mergeContentAccess,
   } = await import('@/lib/auth/content-access');
-  /** Dedicated ACL cookie survives logout (site-settings is purgeable). */
-  const fromAclCookie = await readJsonCookie<Record<string, unknown> | null>(
-    CONTENT_ACCESS_COOKIE,
-    null
-  );
-  if (fromAclCookie && typeof fromAclCookie === 'object') {
+  const { getSiteSetting } = await import('@/lib/auth/site-settings-db');
+  await expireSettingsCookies();
+  const value = await getSiteSetting(CONTENT_ACCESS_SETTING_KEY);
+  if (value && typeof value === 'object') {
     return mergeContentAccess(
-      fromAclCookie as import('@/lib/auth/content-access').ContentAccessMap
+      value as import('@/lib/auth/content-access').ContentAccessMap
     );
   }
-  /** Migrate legacy nest under site-settings if still present. */
-  const siteBag = await readJsonCookie<Record<string, unknown>>(
-    SITE_SETTINGS_COOKIE,
-    {}
-  );
-  const fromLegacy = siteBag[CONTENT_ACCESS_SETTING_KEY];
-  if (fromLegacy && typeof fromLegacy === 'object') {
-    return mergeContentAccess(
-      fromLegacy as import('@/lib/auth/content-access').ContentAccessMap
-    );
-  }
-  try {
-    const { createClient } = await import('@/lib/supabase/server');
-    const supabase = await createClient();
-    const { data } = await supabase
-      .from('site_settings')
-      .select('value')
-      .eq('key', CONTENT_ACCESS_SETTING_KEY)
-      .maybeSingle();
-    if (data?.value && typeof data.value === 'object') {
-      return mergeContentAccess(
-        data.value as import('@/lib/auth/content-access').ContentAccessMap
-      );
+  if (typeof value === 'string') {
+    try {
+      return mergeContentAccess(JSON.parse(value));
+    } catch {
+      /* defaults */
     }
-    if (typeof data?.value === 'string') {
-      try {
-        return mergeContentAccess(JSON.parse(data.value));
-      } catch {
-        /* ignore */
-      }
-    }
-  } catch {
-    /* cookie / defaults */
   }
   return DEFAULT_CONTENT_ACCESS;
 }
 
 export async function writeContentAccessMapStored(
   map: import('@/lib/auth/content-access').ContentAccessMap
-) {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { CONTENT_ACCESS_SETTING_KEY, compactContentAccess } = await import(
     '@/lib/auth/content-access'
   );
-  /** Sparse diffs only — full matrix overflows cookie cap (~2.4KB). */
+  const { upsertSiteSetting } = await import('@/lib/auth/site-settings-db');
   const compact = compactContentAccess(map);
-
-  let supabaseOk = false;
-  try {
-    const { createClient } = await import('@/lib/supabase/server');
-    const { getSessionProfile } = await import('@/lib/auth/session');
-    const { profile } = await getSessionProfile();
-    const supabase = await createClient();
-    const { error } = await supabase.from('site_settings').upsert({
-      key: CONTENT_ACCESS_SETTING_KEY,
-      value: compact,
-      updated_by: profile?.id?.startsWith('mock-') ? null : profile?.id ?? null,
-      updated_at: new Date().toISOString(),
-    });
-    supabaseOk = !error;
-  } catch {
-    /* mock / RLS — cookie is source of truth */
-  }
-
-  /** Dedicated ACL cookie (not logout-purged). Strip legacy key from site-settings. */
-  try {
-    await writeJsonCookie(CONTENT_ACCESS_COOKIE, compact);
-    const siteBag = await readJsonCookie<Record<string, unknown>>(
-      SITE_SETTINGS_COOKIE,
-      {}
-    );
-    if (CONTENT_ACCESS_SETTING_KEY in siteBag) {
-      const { [CONTENT_ACCESS_SETTING_KEY]: _drop, ...rest } = siteBag;
-      await writeJsonCookie(SITE_SETTINGS_COOKIE, rest);
-    }
-  } catch (e) {
-    if (!supabaseOk) throw e;
-  }
+  const { getSessionProfile } = await import('@/lib/auth/session');
+  const { profile } = await getSessionProfile();
+  const res = await upsertSiteSetting(
+    CONTENT_ACCESS_SETTING_KEY,
+    compact,
+    profile?.id ?? null
+  );
+  if (res.ok) await expireSettingsCookies();
+  return res;
 }
 
 /** Slim row for cookie storage — Thai text balloons encodeURIComponent size. */
@@ -432,6 +434,7 @@ export async function readCalendarEvents(): Promise<StaffCalendarEvent[]> {
 }
 
 export async function writeCalendarEvents(events: StaffCalendarEvent[]) {
+  if (isDbOnlyMode()) return;
   const lean = events.map(leanCalendarEvent);
   // Cap list early — keep newest
   const capped = lean.length > 60 ? lean.slice(-60) : lean;
@@ -516,6 +519,7 @@ async function readExtrasMap(): Promise<SchoolExtrasMap> {
 }
 
 async function writeExtrasMap(map: SchoolExtrasMap) {
+  if (isDbOnlyMode()) return;
   // SWOT/achievements only — comments live in SCHOOL_COMMENTS_COOKIE
   const slim: SchoolExtrasMap = {};
   for (const [key, row] of Object.entries(map)) {
@@ -551,6 +555,7 @@ async function readCommentsMap(): Promise<SchoolCommentsMap> {
 }
 
 async function writeCommentsMap(map: SchoolCommentsMap) {
+  if (isDbOnlyMode()) return;
   await writeJsonCookieWithShrink(SCHOOL_COMMENTS_COOKIE, map, (cur) => {
     // Drop oldest comment across schools, or empty school keys
     let oldestKey: string | null = null;
@@ -579,6 +584,19 @@ async function writeCommentsMap(map: SchoolCommentsMap) {
 }
 
 export async function readSchoolExtras(schoolId: string | number): Promise<SchoolExtras> {
+  if (isDbOnlyMode()) {
+    const {
+      fetchSchoolComments,
+      fetchSchoolSwot,
+      fetchSchoolAchievements,
+    } = await import('@/lib/supabase/school-swot');
+    const [swot, comments, achievements] = await Promise.all([
+      fetchSchoolSwot(schoolId),
+      fetchSchoolComments(schoolId),
+      fetchSchoolAchievements(schoolId),
+    ]);
+    return { comments, swot, achievements };
+  }
   const [extras, commentsMap] = await Promise.all([readExtrasMap(), readCommentsMap()]);
   const key = String(schoolId);
   const row = extras[key];
@@ -594,6 +612,11 @@ export async function readSchoolExtras(schoolId: string | number): Promise<Schoo
 }
 
 export async function readAllSchoolExtras(): Promise<SchoolExtrasMap> {
+  if (isDbOnlyMode()) {
+    // Prefer per-page fetchSchoolExtrasBundle with known school ids.
+    // Without a school list, return empty map (no cookie fallback).
+    return {};
+  }
   const [extras, commentsMap] = await Promise.all([readExtrasMap(), readCommentsMap()]);
   const keys = new Set([...Object.keys(extras), ...Object.keys(commentsMap)]);
   const out: SchoolExtrasMap = {};
@@ -704,6 +727,9 @@ export async function saveSchoolSwot(
   schoolId: string | number,
   swot: Partial<SchoolSwot> | SchoolSwot
 ): Promise<SchoolExtras> {
+  if (isDbOnlyMode()) {
+    throw new Error('โหมด UAT ใช้ฐานข้อมูลเท่านั้น — เรียก upsertSchoolSwot แทน');
+  }
   const map = await readExtrasMap();
   const key = String(schoolId);
   const prev = map[key] ?? emptyExtras();
@@ -723,6 +749,9 @@ export async function saveSchoolAchievements(
   schoolId: string | number,
   achievements: Partial<SchoolAchievements>
 ): Promise<SchoolExtras> {
+  if (isDbOnlyMode()) {
+    throw new Error('โหมด UAT ใช้ฐานข้อมูลเท่านั้น — เรียก upsertSchoolAchievements แทน');
+  }
   const map = await readExtrasMap();
   const key = String(schoolId);
   const prev = map[key] ?? emptyExtras();
@@ -743,6 +772,7 @@ export async function readReportDrafts(): Promise<ReportDraft[]> {
 }
 
 async function writeReportDrafts(drafts: ReportDraft[]) {
+  if (isDbOnlyMode()) return;
   await writeJsonCookieWithShrink(REPORT_DRAFTS_COOKIE, drafts, (cur) =>
     cur.length > 1 ? cur.slice(0, -1) : null
   );

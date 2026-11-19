@@ -1,6 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
 import { isDbUserId } from '@/lib/auth/mock-users';
-import type { SchoolComment, SchoolSwot } from '@/lib/auth/user-store';
+import type {
+  SchoolAchievements,
+  SchoolComment,
+  SchoolSwot,
+} from '@/lib/auth/user-store';
 import {
   emptySchoolSwot,
   flattenSwotForDb,
@@ -9,6 +13,8 @@ import {
 } from '@/lib/swot/schema';
 
 export const EMPTY_CLASSIC_SWOT: SchoolSwot = emptySchoolSwot();
+
+export const EMPTY_ACHIEVEMENTS: SchoolAchievements = { school: '', student: '' };
 
 type SwotRow = {
   school_id: number | string;
@@ -19,6 +25,8 @@ type SwotRow = {
   /** @deprecated pre-006 */
   external_opportunities?: string | null;
   external_threats?: string | null;
+  achievement_school?: string | null;
+  achievement_student?: string | null;
   updated_at?: string;
 };
 
@@ -50,6 +58,14 @@ function toSchoolId(schoolId: string | number): number | null {
 function mapSwot(row: SwotRow | null | undefined): SchoolSwot {
   if (!row) return emptySchoolSwot();
   return normalizeSchoolSwot(row);
+}
+
+function mapAchievements(row: SwotRow | null | undefined): SchoolAchievements {
+  if (!row) return { ...EMPTY_ACHIEVEMENTS };
+  return {
+    school: row.achievement_school?.trim() || '',
+    student: row.achievement_student?.trim() || '',
+  };
 }
 
 function mapComment(row: CommentRow): SchoolComment {
@@ -89,35 +105,67 @@ const COMMENT_SELECT =
   'id, school_id, staff_id, staff_name, comment_text, created_at, tags, report_date, edited_at, image_urls, calendar_event_id, onsite_reasons, visitor_reason_map, ops_notes, visit_type, updated_at, updated_by';
 
 const SWOT_SELECT =
+  'school_id, categories, internal_strengths, internal_weaknesses, external_strengths, external_threats, achievement_school, achievement_student, updated_at';
+
+const SWOT_SELECT_NO_ACHIEVEMENTS =
   'school_id, categories, internal_strengths, internal_weaknesses, external_strengths, external_threats, updated_at';
 
-export async function fetchSchoolSwot(schoolId: string | number): Promise<SchoolSwot> {
-  const id = toSchoolId(schoolId);
-  if (id == null) return emptySchoolSwot();
-
+async function fetchSwotRow(schoolId: number): Promise<SwotRow | null> {
   try {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from('school_swot')
       .select(SWOT_SELECT)
-      .eq('school_id', id)
+      .eq('school_id', schoolId)
       .maybeSingle();
+    if (error && /achievement_/i.test(error.message)) {
+      const withoutAch = await supabase
+        .from('school_swot')
+        .select(SWOT_SELECT_NO_ACHIEVEMENTS)
+        .eq('school_id', schoolId)
+        .maybeSingle();
+      if (withoutAch.error) {
+        const legacy = await supabase
+          .from('school_swot')
+          .select(
+            'school_id, categories, internal_strengths, internal_weaknesses, external_opportunities, external_threats, updated_at'
+          )
+          .eq('school_id', schoolId)
+          .maybeSingle();
+        if (legacy.error) return null;
+        return legacy.data as SwotRow | null;
+      }
+      return withoutAch.data as SwotRow | null;
+    }
     if (error) {
-      // Fallback if rename migration not applied yet
       const legacy = await supabase
         .from('school_swot')
         .select(
           'school_id, categories, internal_strengths, internal_weaknesses, external_opportunities, external_threats, updated_at'
         )
-        .eq('school_id', id)
+        .eq('school_id', schoolId)
         .maybeSingle();
-      if (legacy.error) return emptySchoolSwot();
-      return mapSwot(legacy.data as SwotRow | null);
+      if (legacy.error) return null;
+      return legacy.data as SwotRow | null;
     }
-    return mapSwot(data as SwotRow | null);
+    return data as SwotRow | null;
   } catch {
-    return emptySchoolSwot();
+    return null;
   }
+}
+
+export async function fetchSchoolSwot(schoolId: string | number): Promise<SchoolSwot> {
+  const id = toSchoolId(schoolId);
+  if (id == null) return emptySchoolSwot();
+  return mapSwot(await fetchSwotRow(id));
+}
+
+export async function fetchSchoolAchievements(
+  schoolId: string | number
+): Promise<SchoolAchievements> {
+  const id = toSchoolId(schoolId);
+  if (id == null) return { ...EMPTY_ACHIEVEMENTS };
+  return mapAchievements(await fetchSwotRow(id));
 }
 
 export async function fetchSchoolComments(
@@ -172,14 +220,26 @@ export async function fetchSchoolComments(
 
 export async function fetchSchoolExtrasBundle(
   schoolIds: Array<string | number>
-): Promise<Record<string, { swot: SchoolSwot; comments: SchoolComment[] }>> {
-  const out: Record<string, { swot: SchoolSwot; comments: SchoolComment[] }> = {};
+): Promise<
+  Record<
+    string,
+    { swot: SchoolSwot; comments: SchoolComment[]; achievements: SchoolAchievements }
+  >
+> {
+  const out: Record<
+    string,
+    { swot: SchoolSwot; comments: SchoolComment[]; achievements: SchoolAchievements }
+  > = {};
   const ids = schoolIds
     .map(toSchoolId)
     .filter((n): n is number => n != null);
 
   for (const id of ids) {
-    out[String(id)] = { swot: emptySchoolSwot(), comments: [] };
+    out[String(id)] = {
+      swot: emptySchoolSwot(),
+      comments: [],
+      achievements: { ...EMPTY_ACHIEVEMENTS },
+    };
   }
   if (!ids.length) return out;
 
@@ -215,29 +275,47 @@ export async function fetchSchoolExtrasBundle(
       }
     }
 
-    if (swotRes.error) {
+    let swotRows: SwotRow[] = [];
+    if (swotRes.error && /achievement_/i.test(swotRes.error.message)) {
+      const withoutAch = await supabase
+        .from('school_swot')
+        .select(SWOT_SELECT_NO_ACHIEVEMENTS)
+        .in('school_id', ids);
+      swotRows = (withoutAch.data ?? []) as SwotRow[];
+    } else if (swotRes.error) {
       const legacy = await supabase
         .from('school_swot')
         .select(
           'school_id, categories, internal_strengths, internal_weaknesses, external_opportunities, external_threats'
         )
         .in('school_id', ids);
-      for (const row of (legacy.data ?? []) as SwotRow[]) {
-        const key = String(row.school_id);
-        if (!out[key]) out[key] = { swot: emptySchoolSwot(), comments: [] };
-        out[key].swot = mapSwot(row);
-      }
+      swotRows = (legacy.data ?? []) as SwotRow[];
     } else {
-      for (const row of (swotRes.data ?? []) as SwotRow[]) {
-        const key = String(row.school_id);
-        if (!out[key]) out[key] = { swot: emptySchoolSwot(), comments: [] };
-        out[key].swot = mapSwot(row);
+      swotRows = (swotRes.data ?? []) as SwotRow[];
+    }
+
+    for (const row of swotRows) {
+      const key = String(row.school_id);
+      if (!out[key]) {
+        out[key] = {
+          swot: emptySchoolSwot(),
+          comments: [],
+          achievements: { ...EMPTY_ACHIEVEMENTS },
+        };
       }
+      out[key].swot = mapSwot(row);
+      out[key].achievements = mapAchievements(row);
     }
 
     for (const row of commentRows) {
       const key = String(row.school_id);
-      if (!out[key]) out[key] = { swot: emptySchoolSwot(), comments: [] };
+      if (!out[key]) {
+        out[key] = {
+          swot: emptySchoolSwot(),
+          comments: [],
+          achievements: { ...EMPTY_ACHIEVEMENTS },
+        };
+      }
       out[key].comments.push(mapComment(row));
     }
   } catch {
@@ -294,6 +372,55 @@ export async function upsertSchoolSwot(params: {
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'บันทึก SWOT ไม่สำเร็จ' };
+  }
+}
+
+export async function upsertSchoolAchievements(params: {
+  schoolId: string | number;
+  achievements: SchoolAchievements;
+  updatedBy: string | null;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const id = toSchoolId(params.schoolId);
+  if (id == null) return { ok: false, error: 'รหัสโรงเรียนไม่ถูกต้อง' };
+
+  const updatedBy = isDbUserId(params.updatedBy) ? params.updatedBy : null;
+  const payload = {
+    school_id: id,
+    achievement_school: params.achievements.school ?? '',
+    achievement_student: params.achievements.student ?? '',
+    updated_by: updatedBy,
+    updated_at: new Date().toISOString(),
+  };
+
+  try {
+    const supabase = await createClient();
+    // Preserve existing SWOT text columns on conflict
+    const existing = await fetchSwotRow(id);
+    const flat = flattenSwotForDb(mapSwot(existing));
+    const { error } = await supabase.from('school_swot').upsert(
+      {
+        ...payload,
+        categories: {},
+        internal_strengths: flat.internal_strengths,
+        internal_weaknesses: flat.internal_weaknesses,
+        external_strengths: flat.external_strengths,
+        external_threats: flat.external_threats,
+      },
+      { onConflict: 'school_id' }
+    );
+    if (error && /achievement_/i.test(error.message)) {
+      return {
+        ok: false,
+        error: 'ยังไม่มีคอลัมน์ผลงานในฐานข้อมูล — รัน migration 036',
+      };
+    }
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'บันทึกผลงานไม่สำเร็จ',
+    };
   }
 }
 

@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { fetchSchools } from '@/lib/supabase/schools';
 import { getSessionProfile } from '@/lib/auth/session';
 import { parseAreaIds } from '@/lib/auth/mock-users';
+import { isDbOnlyMode } from '@/lib/auth/db-mode';
 import { readSchoolExtras } from '@/lib/auth/user-store';
 import { fetchSchoolExtrasBundle, swotHasContent } from '@/lib/supabase/school-swot';
 import { normalizeSchoolSwot } from '@/lib/swot/schema';
@@ -30,6 +31,7 @@ async function UpdateSchoolBody({ schoolId }: { schoolId?: string }) {
 
   const editable = options.filter((o) => o.editable);
   const dbBundle = await fetchSchoolExtrasBundle(editable.map((s) => s.id));
+  const dbOnly = isDbOnlyMode();
 
   const extrasBySchool: Record<
     string,
@@ -42,10 +44,18 @@ async function UpdateSchoolBody({ schoolId }: { schoolId?: string }) {
   await Promise.all(
     editable.map(async (s) => {
       const key = String(s.id);
-      const cookie = await readSchoolExtras(s.id);
       const db = dbBundle[key];
       const dbSwot = db?.swot ? normalizeSchoolSwot(db.swot) : null;
 
+      if (dbOnly) {
+        extrasBySchool[key] = {
+          swot: dbSwot ?? normalizeSchoolSwot({}),
+          comments: db?.comments ?? [],
+        };
+        return;
+      }
+
+      const cookie = await readSchoolExtras(s.id);
       extrasBySchool[key] = {
         swot: dbSwot && swotHasContent(dbSwot) ? dbSwot : normalizeSchoolSwot(cookie.swot),
         comments: db?.comments?.length ? db.comments : cookie.comments,

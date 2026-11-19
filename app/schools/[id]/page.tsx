@@ -8,7 +8,14 @@ import {
   readSchoolExtras,
   readStoredUsers,
 } from '@/lib/auth/user-store';
-import { fetchSchoolComments, fetchSchoolSwot, swotHasContent } from '@/lib/supabase/school-swot';
+import { isDbOnlyMode } from '@/lib/auth/db-mode';
+import {
+  EMPTY_ACHIEVEMENTS,
+  fetchSchoolAchievements,
+  fetchSchoolComments,
+  fetchSchoolSwot,
+  swotHasContent,
+} from '@/lib/supabase/school-swot';
 import { normalizeSchoolSwot } from '@/lib/swot/schema';
 import { SchoolDetailClient } from '@/components/schools/SchoolDetailClient';
 import { SchoolDetailSkeleton } from '@/components/ui/PageSkeleton';
@@ -138,22 +145,28 @@ async function SchoolDetailBody({ id }: { id: string }) {
   );
   const canEdit = false;
 
-  const cookieExtras = await readSchoolExtras(school.school_id);
+  const dbOnly = isDbOnlyMode();
+  const cookieExtras = dbOnly
+    ? null
+    : await readSchoolExtras(school.school_id);
 
   const loadScores = fullAccess && allowScoresTab;
   const loadVisits = fullAccess && allowCalendarTab;
-  const [dbSwot, dbComments, pillarRow, dbVisits, cookieVisits, users] = await Promise.all([
-    fetchSchoolSwot(school.school_id),
-    commentsAllowed ? fetchSchoolComments(school.school_id) : Promise.resolve([]),
-    loadScores ? fetchPillarScoreBySchoolId(school.school_id) : Promise.resolve(null),
-    loadVisits ? fetchSiteVisitsForSchool(school.school_id) : Promise.resolve([]),
-    loadVisits ? readCalendarEvents() : Promise.resolve([]),
-    loadVisits ? Promise.resolve(usersForScope) : Promise.resolve([]),
-  ]);
+  const [dbSwot, dbComments, dbAchievements, pillarRow, dbVisits, cookieVisits, users] =
+    await Promise.all([
+      fetchSchoolSwot(school.school_id),
+      commentsAllowed ? fetchSchoolComments(school.school_id) : Promise.resolve([]),
+      fetchSchoolAchievements(school.school_id),
+      loadScores ? fetchPillarScoreBySchoolId(school.school_id) : Promise.resolve(null),
+      loadVisits ? fetchSiteVisitsForSchool(school.school_id) : Promise.resolve([]),
+      loadVisits && !dbOnly ? readCalendarEvents() : Promise.resolve([]),
+      loadVisits ? Promise.resolve(usersForScope) : Promise.resolve([]),
+    ]);
 
-  const initialSwot = swotHasContent(dbSwot)
-    ? dbSwot
-    : normalizeSchoolSwot(cookieExtras.swot);
+  const initialSwot =
+    dbOnly || swotHasContent(dbSwot)
+      ? dbSwot
+      : normalizeSchoolSwot(cookieExtras?.swot);
 
   const userName = new Map(
     users.map((u) => [
@@ -186,7 +199,7 @@ async function SchoolDetailBody({ id }: { id: string }) {
   }));
 
   const visitById = new Map<string, (typeof dbVisitMapped)[number]>();
-  for (const v of [...cookieForSchool, ...dbVisitMapped]) {
+  for (const v of [...(dbOnly ? [] : cookieForSchool), ...dbVisitMapped]) {
     visitById.set(v.id, v);
   }
   const visitHistory = [...visitById.values()].sort((a, b) => b.date.localeCompare(a.date));
@@ -239,13 +252,19 @@ async function SchoolDetailBody({ id }: { id: string }) {
         overseerNames={overseerNames}
         initialComments={
           commentsAllowed
-            ? dbComments.length
+            ? dbOnly || dbComments.length
               ? dbComments
-              : cookieExtras.comments
+              : cookieExtras?.comments ?? []
             : []
         }
         initialSwot={initialSwot}
-        initialAchievements={cookieExtras.achievements}
+        initialAchievements={
+          dbOnly
+            ? dbAchievements
+            : dbAchievements.school || dbAchievements.student
+              ? dbAchievements
+              : cookieExtras?.achievements ?? EMPTY_ACHIEVEMENTS
+        }
         visitHistory={visitHistory}
         pillarIndicators={pillarIndicators}
         scholarshipStudents={scholarshipRows}

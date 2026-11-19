@@ -19,6 +19,7 @@ async function readTicketsCookie(): Promise<DataTicket[]> {
 }
 
 async function writeTicketsCookie(tickets: DataTicket[]) {
+  if (isDbOnlyMode()) return;
   await writeJsonCookieWithShrink(TICKETS_COOKIE, tickets, (cur) =>
     cur.length > 1 ? cur.slice(0, -1) : null
   );

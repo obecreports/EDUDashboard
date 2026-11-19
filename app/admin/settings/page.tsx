@@ -3,17 +3,10 @@ import { redirect } from 'next/navigation';
 import { SiteSettingsForm } from '@/components/admin/SiteSettingsForm';
 import { getSessionProfile } from '@/lib/auth/session';
 import { readHeroSettings } from '@/lib/auth/user-store';
-import { createClient } from '@/lib/supabase/server';
 import { PageSkeleton } from '@/components/ui/PageSkeleton';
 import { normalizeRole } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
-
-function unwrap(value: unknown): string {
-  if (value == null) return '';
-  if (typeof value === 'string') return value.replace(/^"|"$/g, '');
-  return String(value);
-}
 
 async function SettingsBody() {
   const { profile, isAuthenticated, role } = await getSessionProfile();
@@ -21,25 +14,7 @@ async function SettingsBody() {
     redirect('/admin/accounts');
   }
 
-  const cookieSettings = await readHeroSettings();
-  let map: Record<string, unknown> = {};
-  try {
-    const supabase = await createClient();
-    const { data: settings } = await supabase.from('site_settings').select('*');
-    (settings ?? []).forEach((s) => {
-      map[s.key] = s.value;
-    });
-  } catch {
-    map = {};
-  }
-
-  const initial = {
-    site_title: unwrap(map.site_title) || cookieSettings.site_title,
-    hero_title: unwrap(map.hero_title) || cookieSettings.hero_title,
-    hero_subtitle:
-      unwrap(map.hero_subtitle) || unwrap(map.hero_text) || cookieSettings.hero_subtitle,
-    hero_bg_url: unwrap(map.hero_bg_url) || cookieSettings.hero_bg_url,
-  };
+  const initial = await readHeroSettings();
 
   return (
     <div className="page-shell space-y-8">

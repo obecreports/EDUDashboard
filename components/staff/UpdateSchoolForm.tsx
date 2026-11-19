@@ -132,11 +132,7 @@ export function UpdateSchoolForm({
             } else if (comment.trim()) {
               setComment('');
             }
-            setToast(
-              res.warning
-                ? `บันทึกในเครื่องแล้ว (ฐานข้อมูล: ${res.warning})`
-                : 'บันทึก SWOT และความคิดเห็นเรียบร้อยแล้ว'
-            );
+            setToast('บันทึก SWOT และความคิดเห็นเรียบร้อยแล้ว');
           });
         }}
       >

@@ -32,6 +32,7 @@ function authorDisplayName(profile: {
 import {
   insertSchoolStaffComment,
   updateSchoolStaffComment,
+  upsertSchoolAchievements,
   upsertSchoolSwot,
 } from '@/lib/supabase/school-swot';
 import { normalizeSchoolSwot } from '@/lib/swot/schema';
@@ -370,7 +371,10 @@ export async function saveSchoolSwotAction(formData: FormData) {
   if (!schoolId) return { ok: false as const, error: 'ไม่พบรหัสโรงเรียน' };
 
   const swot = readGranularSwot(formData);
-  await saveSchoolSwot(schoolId, swot);
+
+  if (!isDbOnlyMode()) {
+    await saveSchoolSwot(schoolId, swot);
+  }
 
   const db = await upsertSchoolSwot({
     schoolId,
@@ -381,7 +385,7 @@ export async function saveSchoolSwotAction(formData: FormData) {
   revalidatePath(`/schools/${schoolId}`);
   revalidatePath('/staff/update-school');
 
-  if (!db.ok) return { ok: true as const, warning: db.error };
+  if (!db.ok) return { ok: false as const, error: db.error };
   return { ok: true as const };
 }
 
@@ -396,7 +400,18 @@ export async function saveSchoolAchievementsAction(formData: FormData) {
     school: String(formData.get('school') || ''),
     student: String(formData.get('student') || ''),
   };
-  await saveSchoolAchievements(schoolId, achievements);
+
+  if (isDbOnlyMode()) {
+    const db = await upsertSchoolAchievements({
+      schoolId,
+      achievements,
+      updatedBy: gate.profile.id,
+    });
+    if (!db.ok) return { ok: false as const, error: db.error };
+  } else {
+    await saveSchoolAchievements(schoolId, achievements);
+  }
+
   revalidatePath(`/schools/${schoolId}`);
   revalidatePath('/staff/update-school');
   return { ok: true as const };
@@ -410,36 +425,42 @@ export async function saveSchoolUpdateBundleAction(formData: FormData) {
   if (!schoolId) return { ok: false as const, error: 'ไม่พบรหัสโรงเรียน' };
 
   const swot = readGranularSwot(formData);
-  await saveSchoolSwot(schoolId, swot);
+
+  if (!isDbOnlyMode()) {
+    await saveSchoolSwot(schoolId, swot);
+  }
 
   const dbSwot = await upsertSchoolSwot({
     schoolId,
     swot,
     updatedBy: gate.profile.id,
   });
+  if (!dbSwot.ok) return { ok: false as const, error: dbSwot.error };
 
   const commentText = String(formData.get('text') || formData.get('comment') || '').trim();
   let comment = null as Awaited<ReturnType<typeof addSchoolComment>> | null;
-  let commentWarning: string | undefined;
 
   if (commentText) {
     const staffName = authorDisplayName(gate.profile);
-    comment = await addSchoolComment(schoolId, {
-      staff_id: gate.profile.id,
-      staff_name: staffName,
-      text: commentText,
-    });
-
     const dbComment = await insertSchoolStaffComment({
       schoolId,
       staffId: gate.profile.id,
       staffName,
       text: commentText,
     });
-    if (dbComment.ok) {
-      comment = dbComment.comment;
-    } else {
-      commentWarning = dbComment.error;
+    if (!dbComment.ok) return { ok: false as const, error: dbComment.error };
+    comment = dbComment.comment;
+
+    if (!isDbOnlyMode()) {
+      try {
+        await addSchoolComment(schoolId, {
+          staff_id: gate.profile.id,
+          staff_name: staffName,
+          text: commentText,
+        });
+      } catch {
+        /* ignore cookie mirror */
+      }
     }
   }
 
@@ -449,10 +470,5 @@ export async function saveSchoolUpdateBundleAction(formData: FormData) {
   revalidateTag('schools');
   revalidateTag(`school-${schoolId}`);
 
-  const warnings = [!dbSwot.ok ? dbSwot.error : null, commentWarning].filter(Boolean);
-  return {
-    ok: true as const,
-    comment,
-    warning: warnings.length ? warnings.join(' · ') : undefined,
-  };
+  return { ok: true as const, comment };
 }

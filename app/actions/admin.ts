@@ -47,29 +47,8 @@ export async function saveSiteSettings(formData: FormData) {
     hero_bg_url: String(formData.get('hero_bg_url') || '').trim(),
   };
 
-  // Cookie store so mock admin can update hero without Supabase Auth
-  await writeHeroSettings(next);
-
-  try {
-    const supabase = await createClient();
-    const rows = [
-      { key: 'site_title', value: next.site_title },
-      { key: 'hero_title', value: next.hero_title },
-      { key: 'hero_subtitle', value: next.hero_subtitle },
-      { key: 'hero_text', value: next.hero_subtitle },
-      { key: 'hero_bg_url', value: next.hero_bg_url },
-    ];
-    for (const row of rows) {
-      await supabase.from('site_settings').upsert({
-        key: row.key,
-        value: row.value,
-        updated_by: gate.profile.id.startsWith('mock-') ? null : gate.profile.id,
-        updated_at: new Date().toISOString(),
-      });
-    }
-  } catch {
-    /* cookie is source of truth for mock */
-  }
+  const saved = await writeHeroSettings(next);
+  if (!saved.ok) return { ok: false as const, error: saved.error };
 
   revalidatePath('/');
   revalidatePath('/admin/settings');
@@ -98,7 +77,8 @@ export async function saveContentAccessAction(formData: FormData) {
     existing,
     incoming
   );
-  await writeContentAccessMapStored(map);
+  const saved = await writeContentAccessMapStored(map);
+  if (!saved.ok) return { ok: false as const, error: saved.error };
   revalidatePath('/admin/content-access');
   revalidatePath('/');
   return { ok: true as const };
