@@ -54,7 +54,7 @@ const PROFILE_SELECT =
   'id, email, full_name, name_prefix, position, role, overseer_tier, assigned_zone, assigned_provinces, assigned_districts, assigned_schools, reports_to, disabled, birthday, must_change_password, avatar_url';
 
 const PROFILE_SELECT_LEGACY =
-  'id, email, full_name, name_prefix, position, role, overseer_tier, assigned_zone, assigned_provinces, assigned_districts, reports_to, disabled, birthday, must_change_password';
+  'id, email, full_name, name_prefix, position, role, overseer_tier, assigned_zone, assigned_provinces, assigned_districts, reports_to, disabled, birthday, must_change_password, avatar_url';
 
 export async function fetchAllUserProfiles(): Promise<StoredUserProfile[]> {
   try {
@@ -63,7 +63,7 @@ export async function fetchAllUserProfiles(): Promise<StoredUserProfile[]> {
       .from('user_profiles')
       .select(PROFILE_SELECT)
       .order('full_name', { ascending: true });
-    if (error && (/assigned_schools|avatar_url/i.test(error.message))) {
+    if (error && /assigned_schools|avatar_url/i.test(error.message)) {
       const fallback = await supabase
         .from('user_profiles')
         .select(PROFILE_SELECT_LEGACY)
@@ -89,7 +89,7 @@ export async function fetchUserProfileById(
       .select(PROFILE_SELECT)
       .eq('id', id)
       .maybeSingle();
-    if (error && (/assigned_schools|avatar_url/i.test(error.message))) {
+    if (error && /assigned_schools|avatar_url/i.test(error.message)) {
       const fallback = await supabase
         .from('user_profiles')
         .select(PROFILE_SELECT_LEGACY)

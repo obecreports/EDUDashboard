@@ -16,6 +16,8 @@ export type DirectorUpsertInput = {
   positionName?: string | null;
   gender?: DirectorGender | null;
   pictureUrl?: string | null;
+  phone?: string | null;
+  remark?: string | null;
 };
 
 export async function upsertDirector(
@@ -30,8 +32,19 @@ export async function upsertDirector(
     position_name: (input.positionName ?? '').trim() || 'ผู้อำนวยการโรงเรียน',
     gender: input.gender ?? null,
     picture_url: input.pictureUrl !== undefined ? input.pictureUrl : undefined,
+    phone:
+      input.phone !== undefined
+        ? (input.phone ?? '').trim() || null
+        : undefined,
+    remark:
+      input.remark !== undefined
+        ? (input.remark ?? '').trim() || null
+        : undefined,
     updated_at: new Date().toISOString(),
   };
+
+  const selectCols =
+    'director_id, name_prefix, full_name, position_name, gender, picture_url, phone, remark';
 
   try {
     const supabase = await createClient();
@@ -40,29 +53,85 @@ export async function upsertDirector(
     if (existingId) {
       const updatePayload: Record<string, unknown> = { ...payload };
       if (input.pictureUrl === undefined) delete updatePayload.picture_url;
-      const { data, error } = await supabase
+      if (input.phone === undefined) delete updatePayload.phone;
+      if (input.remark === undefined) delete updatePayload.remark;
+      let { data, error } = await supabase
         .from('directors')
         .update(updatePayload)
         .eq('director_id', existingId)
-        .select('director_id, name_prefix, full_name, position_name, gender, picture_url')
+        .select(selectCols)
         .maybeSingle();
+      if (error && /remark/i.test(error.message)) {
+        delete updatePayload.remark;
+        const retry = await supabase
+          .from('directors')
+          .update(updatePayload)
+          .eq('director_id', existingId)
+          .select(
+            'director_id, name_prefix, full_name, position_name, gender, picture_url, phone'
+          )
+          .maybeSingle();
+        data = retry.data as typeof data;
+        error = retry.error;
+      }
+      if (error && /phone/i.test(error.message)) {
+        delete updatePayload.phone;
+        delete updatePayload.remark;
+        const retry = await supabase
+          .from('directors')
+          .update(updatePayload)
+          .eq('director_id', existingId)
+          .select(
+            'director_id, name_prefix, full_name, position_name, gender, picture_url'
+          )
+          .maybeSingle();
+        data = retry.data as typeof data;
+        error = retry.error;
+      }
       if (error) return { ok: false, error: error.message };
       if (!data) return { ok: false, error: 'ไม่พบผู้อำนวยการ' };
       return { ok: true, director: mapDirectorRow(data as Record<string, unknown>) };
     }
 
-    const insertPayload = {
+    const insertPayload: Record<string, unknown> = {
       name_prefix: payload.name_prefix,
       full_name: payload.full_name,
       position_name: payload.position_name,
       gender: payload.gender,
       picture_url: input.pictureUrl ?? null,
+      phone: (input.phone ?? '').trim() || null,
+      remark: (input.remark ?? '').trim() || null,
     };
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('directors')
       .insert(insertPayload)
-      .select('director_id, name_prefix, full_name, position_name, gender, picture_url')
+      .select(selectCols)
       .maybeSingle();
+    if (error && /remark/i.test(error.message)) {
+      delete insertPayload.remark;
+      const retry = await supabase
+        .from('directors')
+        .insert(insertPayload)
+        .select(
+          'director_id, name_prefix, full_name, position_name, gender, picture_url, phone'
+        )
+        .maybeSingle();
+      data = retry.data as typeof data;
+      error = retry.error;
+    }
+    if (error && /phone/i.test(error.message)) {
+      delete insertPayload.phone;
+      delete insertPayload.remark;
+      const retry = await supabase
+        .from('directors')
+        .insert(insertPayload)
+        .select(
+          'director_id, name_prefix, full_name, position_name, gender, picture_url'
+        )
+        .maybeSingle();
+      data = retry.data as typeof data;
+      error = retry.error;
+    }
     if (error) return { ok: false, error: error.message };
     if (!data) return { ok: false, error: 'สร้างผู้อำนวยการไม่สำเร็จ' };
     return { ok: true, director: mapDirectorRow(data as Record<string, unknown>) };

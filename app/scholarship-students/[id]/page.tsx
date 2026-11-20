@@ -6,7 +6,6 @@ import { normalizeRole, PAGE_BANNERS } from '@/lib/types';
 import { PageSkeleton } from '@/components/ui/PageSkeleton';
 import { PageBanner } from '@/components/layout/PageBanner';
 import { ScholarshipStudentDetailClient } from '@/components/scholarship/ScholarshipStudentDetailClient';
-import { getScholarshipStudent } from '@/lib/mock/scholarship-students';
 import { readContentAccessMapStored } from '@/lib/auth/user-store';
 import { canAccess } from '@/lib/auth/content-access';
 import {
@@ -15,6 +14,7 @@ import {
   redactScholarshipStudent,
   visibleFieldKeys,
 } from '@/lib/scholarship/access';
+import { fetchScholarshipStudentById } from '@/lib/supabase/scholarship-students';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +30,7 @@ async function Body({ id }: { id: string }) {
     redirect('/dashboard');
   }
 
-  const raw = getScholarshipStudent(id);
+  const raw = await fetchScholarshipStudentById(id);
   if (!raw) notFound();
 
   const student = redactScholarshipStudent(raw, r, acl);

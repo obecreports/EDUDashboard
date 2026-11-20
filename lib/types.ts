@@ -9,7 +9,7 @@ export type UserRole =
   /** อาสาสมัครเฉพาะกิจ — province scope; full ACL on scholarship students */
   | 'special_volunteer'
   /**
-   * องคมนตรี (ปกปิด) — province scope; display as องคมนตรี;
+   * องคมนตรี (อิสระ) — province scope; display as องคมนตรี;
    * hidden from SO/OS activity dashboard; still on admin org-map.
    */
   | 'covert_overseer'
@@ -66,7 +66,41 @@ export interface SchoolDirector {
   position_name?: string | null;
   gender?: DirectorGender | null;
   picture_url?: string | null;
+  /** Contact telephone (migration 038) */
+  phone?: string | null;
+  /** Free-text note (migration 040) */
+  remark?: string | null;
 }
+
+/** School building inventory row (migration 038; number int in 039) */
+export interface SchoolBuilding {
+  id: string;
+  school_id: string;
+  /** Integer in DB; filenames use 3-digit pad (1 → 001) */
+  building_number: number;
+  categorize: string;
+  building_type?: string | null;
+  room_plan?: number | null;
+  room_build?: number | null;
+  room_special?: number | null;
+  room_expand?: number | null;
+  build_year?: string | null;
+  building_lifetime?: string | null;
+  budget_cost?: number | null;
+  budget_origin?: string | null;
+  building_quality?: string | null;
+  building_status?: string | null;
+}
+
+export type SchoolBuildingPhoto = {
+  side: string;
+  url: string;
+};
+
+export type SchoolBuildingCard = SchoolBuilding & {
+  heroUrl: string | null;
+  additionalPhotos: SchoolBuildingPhoto[];
+};
 
 /** Shown when School_Basic.director_id is null */
 export const DIRECTOR_TBA_LABEL = 'TBA';
@@ -121,6 +155,8 @@ export interface SchoolFull {
    * When empty, UI uses `/images/school_default.jpg`.
    */
   coverImageUrl?: string | null;
+  /** Resolved public URL for `schools/{id}/ป้ายโรงเรียน.*` when present in Storage */
+  schoolSignUrl?: string | null;
   studentSummary?: {
     totalStudents: number;
     totalMale?: number;
@@ -258,7 +294,7 @@ export const ADMIN_ROLE_LABELS: Record<UserRole, string> = {
   volunteer_center: 'อาสาสมัครส่วนกลาง',
   volunteer_border: 'อาสาสมัครประจำพื้นที่',
   special_volunteer: 'อาสาสมัครเฉพาะกิจ',
-  covert_overseer: 'องคมนตรี (ปกปิด)',
+  covert_overseer: 'องคมนตรี (อิสระ)',
   director: 'ผู้อำนวยการโรงเรียน',
   super_overseer: 'ท่านประธาน',
   admin: 'ผู้ดูแลระบบ (Admin)',
@@ -427,15 +463,14 @@ export function directorDisplayLabel(
   return DIRECTOR_TBA_LABEL;
 }
 
-/** Prefer prefix for overseer-like roles; otherwise full name. */
+/** Prefix + space + full name for every role (empty prefix → name only). */
 export function formatPersonLabel(
   role: string | null | undefined,
   namePrefix: string | null | undefined,
   fullName: string | null | undefined
 ): string {
-  const name = (fullName ?? '').trim();
-  if (isOverseerLike(role)) return formatDisplayName(namePrefix, name);
-  return name;
+  void role;
+  return formatDisplayName(namePrefix, fullName);
 }
 
 export function districtKey(province: string, district: string): string {
@@ -455,7 +490,10 @@ export const NAV_CATALOG: NavItem[] = [
   { href: '/strategy', label: 'ผลการประเมินตามระบบ SMS', roles: PUBLIC_ROLES },
   { href: '/thailand-map', label: 'แผนที่', roles: PUBLIC_ROLES },
   { href: '/schools', label: 'โรงเรียนในโครงการ', roles: PUBLIC_ROLES },
-  { href: '/dashboard', label: 'แดชบอร์ด', roles: FIELD_ROLES },
+  { href: '/home', label: 'หน้าของฉัน', roles: FIELD_ROLES },
+  { href: '/dashboard', label: 'เปรียบเทียบข้อมูลโรงเรียน', roles: FIELD_ROLES },
+  { href: '/volunteers', label: 'อาสาสมัคร', roles: FIELD_ROLES },
+  { href: '/budget', label: 'งบประมาณ', roles: FIELD_ROLES },
   { href: '/calendar', label: 'สรุปปฏิทิน', roles: FIELD_ROLES },
   { href: '/calendar/new', label: 'สร้างนัดหมาย', roles: FIELD_ROLES },
   { href: '/reports/new', label: 'ส่งบันทึกการตรวจเยี่ยม', roles: FIELD_ROLES },
@@ -523,7 +561,10 @@ export function navForRoleWithAcl(
 export const PROTECTED_ROUTES: { prefix: string; roles: UserRole[] }[] = [
   { prefix: '/staff/profile', roles: [...FIELD_ROLES, ...ADMIN_ROLES] },
   { prefix: '/staff', roles: FIELD_ROLES },
+  { prefix: '/home', roles: FIELD_ROLES },
   { prefix: '/dashboard', roles: FIELD_ROLES },
+  { prefix: '/volunteers', roles: FIELD_ROLES },
+  { prefix: '/budget', roles: FIELD_ROLES },
   { prefix: '/calendar', roles: FIELD_ROLES },
   { prefix: '/reports', roles: FIELD_ROLES },
   { prefix: '/scholarship-students', roles: FIELD_ROLES },

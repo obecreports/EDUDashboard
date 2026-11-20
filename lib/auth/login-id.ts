@@ -10,11 +10,9 @@ export function loginPrefixForRole(role: UserRole | string): string {
     case 'overseer':
       return 'OS';
     case 'volunteer_center':
-      return 'ASC';
     case 'volunteer_border':
-      return 'ASB';
     case 'special_volunteer':
-      return 'ASX';
+      return 'VL';
     case 'covert_overseer':
       return 'COV';
     case 'director':
@@ -49,6 +47,7 @@ function escapeRegExp(s: string): string {
 
 /**
  * Next login id for role: `{prefix}{NNNN}` (4-digit pad).
+ * VL roles use `{prefix}{NNN}` (3-digit: VL001).
  * Pass existing profile login ids (email column).
  * Director must supply school_id as login — returns empty string.
  */
@@ -58,14 +57,15 @@ export function allocateNextLoginId(
 ): string {
   const prefix = loginPrefixForRole(role);
   if (!prefix) return '';
+  const pad = prefix === 'VL' ? 3 : 4;
   let next = maxNumericSuffix(existingLogins, prefix) + 1;
   const used = new Set(existingLogins.map((e) => e.trim().toLowerCase()));
 
   for (let attempt = 0; attempt < 50; attempt++) {
-    const candidate = `${prefix}${String(next).padStart(4, '0')}`;
+    const candidate = `${prefix}${String(next).padStart(pad, '0')}`;
     if (!used.has(candidate.toLowerCase())) return candidate;
     next += 1;
   }
 
-  return `${prefix}${String(Date.now()).slice(-4)}`;
+  return `${prefix}${String(Date.now()).slice(-pad)}`;
 }

@@ -27,10 +27,10 @@ type Tab = {
 
 const TABS: Tab[] = [
   {
-    href: '/dashboard',
-    label: 'แดชบอร์ด',
+    href: '/home',
+    label: 'หน้าของฉัน',
     icon: Briefcase,
-    match: (p) => p === '/dashboard' || p.startsWith('/dashboard/'),
+    match: (p) => p === '/home' || p.startsWith('/home/'),
   },
   {
     href: '/calendar/new',

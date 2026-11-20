@@ -15,6 +15,7 @@ import {
   normalizeRole,
   type UserRole,
 } from '@/lib/types';
+import { downloadRowsAsXlsx } from '@/lib/export/xlsx-download';
 
 type AccountRow = {
   id: string;
@@ -318,19 +319,41 @@ export function AdminAccountsManager({
     );
   }
 
+  const exportAllUsers = () => {
+    const rows = accounts.map((a) => ({
+      user_id: a.email,
+      full_name: a.full_name,
+      position: a.position,
+      role: a.role,
+      disabled: a.disabled,
+    }));
+    downloadRowsAsXlsx(rows, 'coned-users.xlsx', 'users');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-500 m-0">
           {filtered.length} / {accounts.length} บัญชี
         </p>
-        <button
-          type="button"
-          className="navbar__login"
-          onClick={() => setShowCreate((v) => !v)}
-        >
-          {showCreate ? 'ปิดฟอร์ม' : '+ สร้างผู้ใช้ใหม่'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {actorRole === 'super_admin' ? (
+            <button
+              type="button"
+              className="ed-btn ed-btn--outline ed-btn--sm"
+              onClick={exportAllUsers}
+            >
+              Export Excel (ทุกบัญชี)
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="navbar__login"
+            onClick={() => setShowCreate((v) => !v)}
+          >
+            {showCreate ? 'ปิดฟอร์ม' : '+ สร้างผู้ใช้ใหม่'}
+          </button>
+        </div>
       </div>
 
       <div className="ed-card p-4 grid gap-3 sm:grid-cols-2">

@@ -58,7 +58,10 @@ const ICONS: Record<string, LucideIcon> = {
   '/calendar/new': CalendarDays,
   '/reports/new': FilePlus2,
   '/reports': FileText,
+  '/home': Briefcase,
   '/dashboard': Briefcase,
+  '/volunteers': Users,
+  '/budget': ClipboardPen,
   '/tickets': ClipboardPen,
   '/admin/accounts': Users,
   '/admin/domain': Network,
@@ -73,7 +76,7 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 /** Main bar before/after โรงเรียนในโครงการ group (field roles) */
-const AUTH_MAIN_BEFORE = ['/dashboard'] as const;
+const AUTH_MAIN_BEFORE = ['/home'] as const;
 
 /** บันทึกการตรวจเยี่ยม */
 const REPORTS_HREFS = ['/reports/new', '/reports'] as const;
@@ -578,7 +581,7 @@ export function AppNavbar({
         </button>
 
         <Link
-          href={isAuthenticated && isFieldRole(normalizedRole) ? '/dashboard' : '/'}
+          href={isAuthenticated && isFieldRole(normalizedRole) ? '/home' : '/'}
           prefetch
           className="navbar__brand"
           onClick={closeDrawer}

@@ -109,6 +109,49 @@ export function formatThaiYearMonth(ym: string): string {
   return formatThaiMonthYear(new Date(y, m - 1, 1));
 }
 
+/** e.g. 28 สิงหาคม 2504 (Buddhist Era, Thai month name) */
+export function formatThaiBirthDateLong(
+  input: Date | string | number | null | undefined
+): string {
+  const d = parseToDate(input);
+  if (!d) return '—';
+  return `${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${toBuddhistYear(d.getFullYear())}`;
+}
+
+/**
+ * Parse Excel / UI birth like `28-สิงหาคม-2504` or `28 สิงหาคม 2504` → YYYY-MM-DD (CE).
+ */
+export function parseThaiBirthDateToYmd(input: string): string | null {
+  const raw = String(input ?? '').trim();
+  if (!raw) return null;
+  const m = raw.match(
+    /^(\d{1,2})[-\s/]+([ก-๙A-Za-z.]+)[-\s/]+(\d{4})$/u
+  );
+  if (!m) {
+    // fallback DD/MM/YYYY
+    return parseThaiDateToYmd(raw);
+  }
+  const dd = Number(m[1]);
+  const monthRaw = m[2]!.trim();
+  let yyyy = Number(m[3]);
+  if (yyyy >= 2400) yyyy -= 543;
+  const monthIndex = THAI_MONTHS.findIndex(
+    (name) => name === monthRaw || name.startsWith(monthRaw)
+  );
+  if (monthIndex < 0 || dd < 1 || dd > 31 || yyyy < 1900 || yyyy > 2200) {
+    return null;
+  }
+  const d = new Date(yyyy, monthIndex, dd);
+  if (
+    d.getFullYear() !== yyyy ||
+    d.getMonth() !== monthIndex ||
+    d.getDate() !== dd
+  ) {
+    return null;
+  }
+  return `${yyyy}-${String(monthIndex + 1).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+}
+
 /**
  * Parse UI date DD/MM/YYYY (Buddhist or Christian year) → YYYY-MM-DD (CE).
  * Years ≥ 2400 are treated as Buddhist Era and converted (−543).

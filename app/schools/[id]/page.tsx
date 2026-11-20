@@ -34,8 +34,8 @@ import {
   isOverseerType2,
   normalizeRole,
 } from '@/lib/types';
-import { scholarshipStudentsBySchool } from '@/lib/mock/scholarship-students';
 import { contractTeachersBySchool } from '@/lib/mock/contract-teachers';
+import { fetchScholarshipStudentsBySchoolId } from '@/lib/supabase/scholarship-students';
 import { MOCK_USER_SEEDS } from '@/lib/auth/mock-users';
 import {
   canAccess,
@@ -43,6 +43,10 @@ import {
   mergeContentAccess,
 } from '@/lib/auth/content-access';
 import { readContentAccessMapStored } from '@/lib/auth/user-store';
+import {
+  fetchBuildingCardsForSchool,
+  resolveSchoolSignUrl,
+} from '@/lib/supabase/school-buildings';
 
 export const revalidate = 60;
 
@@ -208,18 +212,19 @@ async function SchoolDetailBody({ id }: { id: string }) {
     ? indicatorScoresFromRow(pillarRow, school.labelLookup)
     : undefined;
 
-  const scholarshipRows = allowScholarshipTab
-    ? scholarshipStudentsBySchool(school.school_id).map((s) => ({
-        id: s.id,
-        name: [s.name_prefix, s.full_name].filter(Boolean).join(' '),
-        grade_level: s.grade_level,
-        scholarship_type: s.scholarship_type,
-        status: s.status,
-        average_gpa: s.average_gpa ?? s.gpa ?? null,
-        educational_risk: s.educational_risk ?? null,
-        behavioral_risk: s.behavioral_risk ?? null,
-      }))
+  const scholarshipDb = allowScholarshipTab
+    ? await fetchScholarshipStudentsBySchoolId(school.school_id)
     : [];
+  const scholarshipRows = scholarshipDb.map((s) => ({
+    id: s.id,
+    name: [s.name_prefix, s.full_name].filter(Boolean).join(' '),
+    grade_level: s.grade_level,
+    scholarship_type: s.scholarship_type,
+    status: s.status,
+    average_gpa: s.average_gpa ?? s.gpa ?? null,
+    educational_risk: s.educational_risk ?? null,
+    behavioral_risk: s.behavioral_risk ?? null,
+  }));
   const contractTeacherRows = allowContractTab
     ? contractTeachersBySchool(school.school_id).map((t) => ({
         id: t.id,
@@ -238,10 +243,20 @@ async function SchoolDetailBody({ id }: { id: string }) {
       u.assigned_provinces.some((p) => p.trim() === province)
   ).map((u) => [u.name_prefix, u.full_name].filter(Boolean).join(' '));
 
+  const [buildings, schoolSignUrl] = await Promise.all([
+    fetchBuildingCardsForSchool(school.school_id),
+    resolveSchoolSignUrl(school.school_id),
+  ]);
+  const schoolForClient = {
+    ...school,
+    schoolSignUrl,
+  };
+
   return (
     <div className="page-shell school-detail-shell">
       <SchoolDetailClient
-        school={school}
+        school={schoolForClient}
+        buildings={buildings}
         canEdit={canEdit}
         canViewComments={commentsAllowed}
         canComment={commentsAllowed}

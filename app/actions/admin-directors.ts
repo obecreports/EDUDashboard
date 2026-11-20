@@ -56,6 +56,8 @@ export async function upsertDirectorAction(formData: FormData): Promise<
     positionName: String(formData.get('position_name') || ''),
     gender: parseGender(String(formData.get('gender') || '')),
     pictureUrl: formData.has('picture_url') ? pictureRaw || null : undefined,
+    phone: String(formData.get('phone') || ''),
+    remark: String(formData.get('remark') || ''),
   });
   if (!res.ok) return res;
 

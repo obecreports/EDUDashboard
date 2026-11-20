@@ -29,6 +29,8 @@ export function AdminDirectorFormClient({
     initial?.position_name || 'ผู้อำนวยการโรงเรียน'
   );
   const [gender, setGender] = useState<DirectorGender | ''>(initial?.gender ?? '');
+  const [phone, setPhone] = useState(initial?.phone ?? '');
+  const [remark, setRemark] = useState(initial?.remark ?? '');
   const [pictureUrl, setPictureUrl] = useState(initial?.picture_url ?? '');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
@@ -42,6 +44,8 @@ export function AdminDirectorFormClient({
       fd.set('full_name', fullName);
       fd.set('position_name', positionName);
       fd.set('gender', gender);
+      fd.set('phone', phone);
+      fd.set('remark', remark);
       if (pictureUrl) fd.set('picture_url', pictureUrl);
       const res = await upsertDirectorAction(fd);
       if (!res.ok) {
@@ -134,6 +138,26 @@ export function AdminDirectorFormClient({
               <option value="female">หญิง</option>
               <option value="other">อื่นๆ</option>
             </select>
+          </label>
+          <label className="grid gap-1 text-sm font-semibold sm:col-span-2">
+            เบอร์โทรผู้อำนวยการ
+            <input
+              className="form-input"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="08x-xxx-xxxx"
+              inputMode="tel"
+            />
+          </label>
+          <label className="grid gap-1 text-sm font-semibold sm:col-span-2">
+            หมายเหตุ
+            <textarea
+              className="form-input"
+              rows={2}
+              value={remark}
+              onChange={(e) => setRemark(e.target.value)}
+              placeholder="บันทึกเพิ่มเติม (ถ้ามี)"
+            />
           </label>
         </div>
 

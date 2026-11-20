@@ -192,9 +192,17 @@ export function StaffVisitHubClient({
 
   const personLabel = (staffId: string) => {
     const p = peopleById.get(staffId);
-    if (!p) return { name: staffId === currentUserId ? 'ฉัน' : 'ไม่ระบุ', role: '', isMe: staffId === currentUserId };
+    if (!p) {
+      return {
+        name: staffId === currentUserId ? 'ฉัน' : 'ไม่ระบุ',
+        role: '',
+        isMe: staffId === currentUserId,
+      };
+    }
+    // full_name from page is already prefix + name via formatPersonLabel
+    const base = p.full_name;
     return {
-      name: staffId === currentUserId ? `${p.full_name} (ฉัน)` : p.full_name,
+      name: staffId === currentUserId ? `${base} (ฉัน)` : base,
       role: p.role_label,
       isMe: staffId === currentUserId,
     };

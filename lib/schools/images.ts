@@ -4,13 +4,18 @@ import type { SchoolFull } from '@/lib/types';
 export const SCHOOL_DEFAULT_IMAGE = '/images/school_default.jpg';
 
 /**
- * Resolve school cover image.
- * Prefer uploaded Supabase Storage public URL on `coverImageUrl`,
- * otherwise fall back to the shared default asset.
+ * Resolve school cover / display image.
+ * Prefer school-sign (ป้ายโรงเรียน) when resolved, then `coverImageUrl`, else default.
  */
 export function schoolCoverImage(
-  school: Pick<SchoolFull, 'coverImageUrl'> | { coverImageUrl?: string | null } | null | undefined
+  school:
+    | (Pick<SchoolFull, 'coverImageUrl'> & { schoolSignUrl?: string | null })
+    | { coverImageUrl?: string | null; schoolSignUrl?: string | null }
+    | null
+    | undefined
 ): string {
+  const sign = school?.schoolSignUrl?.trim();
+  if (sign) return sign;
   const uploaded = school?.coverImageUrl?.trim();
   if (uploaded) return uploaded;
   return SCHOOL_DEFAULT_IMAGE;

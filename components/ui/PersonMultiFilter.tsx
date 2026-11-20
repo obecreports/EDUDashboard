@@ -2,12 +2,19 @@
 
 import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { formatDisplayName } from '@/lib/types';
 
 export type PersonFilterOpt = {
   id: string;
   full_name: string;
+  /** When set, list label uses prefix + space + full_name */
+  name_prefix?: string | null;
   role_label?: string;
 };
+
+function personLabel(p: PersonFilterOpt): string {
+  return formatDisplayName(p.name_prefix, p.full_name) || p.full_name;
+}
 
 /** Parse `?person=id` or `?person=id1,id2` from search params. */
 export function parsePersonIdsParam(
@@ -46,7 +53,10 @@ export function PersonMultiFilter({
     selectedIds.length === 0
       ? 'ทั้งหมด'
       : selectedIds.length === 1
-        ? people.find((p) => p.id === selectedIds[0])?.full_name || '1 คน'
+        ? (() => {
+            const p = people.find((x) => x.id === selectedIds[0]);
+            return p ? personLabel(p) : '1 คน';
+          })()
         : `${selectedIds.length} คน`;
 
   const toggle = (id: string) => {
@@ -91,7 +101,7 @@ export function PersonMultiFilter({
                 onChange={() => toggle(p.id)}
               />
               <span>
-                {p.full_name}
+                {personLabel(p)}
                 {p.role_label ? (
                   <span className="text-slate-400"> ({p.role_label})</span>
                 ) : null}

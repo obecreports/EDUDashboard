@@ -6,9 +6,11 @@ import { normalizeRole, PAGE_BANNERS } from '@/lib/types';
 import { PageSkeleton } from '@/components/ui/PageSkeleton';
 import { PageBanner } from '@/components/layout/PageBanner';
 import { ScholarshipStudentsClient } from '@/components/scholarship/ScholarshipStudentsClient';
-import { listScholarshipStudents } from '@/lib/mock/scholarship-students';
-import { readContentAccessMapStored } from '@/lib/auth/user-store';
+import { readContentAccessMapStored, readStoredUsers } from '@/lib/auth/user-store';
 import { canAccess } from '@/lib/auth/content-access';
+import { fetchSchools } from '@/lib/supabase/schools';
+import { filterSchoolsInDomain } from '@/lib/volunteers/directory';
+import { fetchScholarshipStudents } from '@/lib/supabase/scholarship-students';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,10 +23,22 @@ async function Body() {
 
   const acl = await readContentAccessMapStored();
   if (!canAccess(r, 'scholarship_students', 'view', acl)) {
-    redirect('/dashboard');
+    redirect('/home');
   }
 
-  const students = listScholarshipStudents();
+  let students = await fetchScholarshipStudents();
+  if (isFieldRole(r) && !isAdminRole(r)) {
+    const [schools, users] = await Promise.all([
+      fetchSchools().catch(() => []),
+      readStoredUsers().catch(() => []),
+    ]);
+    const scopedIds = new Set(
+      filterSchoolsInDomain(schools, profile, users).map((s) => String(s.school_id))
+    );
+    students = students.filter(
+      (s) => s.school_id && scopedIds.has(String(s.school_id))
+    );
+  }
   const canModify = canAccess(r, 'scholarship_students', 'modify', acl);
 
   return (
@@ -32,7 +46,7 @@ async function Body() {
       <PageBanner
         src={PAGE_BANNERS.schools}
         title="นักเรียนทุน"
-        subtitle="รายชื่อนักเรียนทุนในโครงการ (ข้อมูลจำลอง)"
+        subtitle="รายชื่อนักเรียนทุนในโครงการ"
       />
       <div className="page-shell py-6">
         <ScholarshipStudentsClient students={students} canModify={canModify} />

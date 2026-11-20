@@ -36,6 +36,8 @@ export type ContentResourceId =
   | 'scholarship_students'
   | 'contract_teachers'
   | 'tickets'
+  | 'volunteers'
+  | 'budget'
   // school_detail tabs
   | 'school_tab_overview'
   | 'school_tab_basic'
@@ -161,6 +163,8 @@ export const CONTENT_PAGES: ContentPageDef[] = [
   },
   { id: 'contract_teachers', label: 'ครูอัตรจ้าง', sections: [] },
   { id: 'tickets', label: 'คำขอแก้ไขข้อมูล', sections: [] },
+  { id: 'volunteers', label: 'อาสาสมัคร', sections: [] },
+  { id: 'budget', label: 'งบประมาณ', sections: [] },
 ];
 
 /** Flat list of every resource (pages + sections) for merge/defaults. */
@@ -410,6 +414,24 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
     },
     NONE
   ),
+  volunteers: withGuest(
+    {
+      ...fieldDefaults(VIEW),
+      special_volunteer: VIEW,
+      covert_overseer: VIEW,
+      director: VIEW,
+    },
+    NONE
+  ),
+  budget: withGuest(
+    {
+      ...fieldDefaults(VIEW),
+      special_volunteer: VIEW,
+      covert_overseer: VIEW,
+      director: VIEW,
+    },
+    NONE
+  ),
   school_tab_overview: SCHOOL_TIER,
   school_tab_basic: SCHOOL_TIER,
   school_tab_buildings: SCHOOL_TIER,
@@ -645,7 +667,10 @@ export function resourceForHref(href: string): ContentResourceId | null {
   if (href === '/strategy' || href.startsWith('/strategy/')) return 'strategy';
   if (href === '/overview' || href.startsWith('/overview/')) return 'project_overview';
   if (href.startsWith('/thailand-map')) return 'thailand_map';
+  if (href === '/home' || href.startsWith('/home/')) return null;
   if (href === '/dashboard') return 'dashboard';
+  if (href.startsWith('/volunteers')) return 'volunteers';
+  if (href.startsWith('/budget')) return 'budget';
   if (href === '/calendar/new' || href.startsWith('/calendar/new'))
     return 'calendar_create';
   if (href.startsWith('/calendar')) return 'calendar_view';

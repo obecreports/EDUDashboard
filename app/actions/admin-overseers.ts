@@ -46,7 +46,7 @@ export async function updateOverseerDisplayAction(formData: FormData): Promise<
   const existing = await fetchUserProfileById(userId);
   if (!existing) return { ok: false, error: 'ไม่พบผู้ใช้' };
   if (!isDisplayOverseer(existing)) {
-    return { ok: false, error: 'บัญชีนี้ไม่ใช่องคมนตรี / องคมนตรี (ปกปิด)' };
+    return { ok: false, error: 'บัญชีนี้ไม่ใช่องคมนตรี / องคมนตรี (อิสระ)' };
   }
 
   const namePrefix = String(formData.get('name_prefix') || '').trim() || null;
@@ -79,7 +79,7 @@ export async function saveOverseerPhotoAction(formData: FormData): Promise<
   const existing = await fetchUserProfileById(userId);
   if (!existing) return { ok: false, error: 'ไม่พบผู้ใช้' };
   if (!isDisplayOverseer(existing)) {
-    return { ok: false, error: 'บัญชีนี้ไม่ใช่องคมนตรี / องคมนตรี (ปกปิด)' };
+    return { ok: false, error: 'บัญชีนี้ไม่ใช่องคมนตรี / องคมนตรี (อิสระ)' };
   }
 
   const raw = String(formData.get('avatar_url') || '').trim();

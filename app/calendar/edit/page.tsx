@@ -77,14 +77,19 @@ export default async function EditSchedulePage({
     })
     .map((u) => ({
       id: u.id,
-      full_name:
-        formatPersonLabel(u.role, u.name_prefix, u.full_name) ||
-        u.full_name ||
-        u.email,
+      full_name: u.full_name || u.email,
+      name_prefix: u.name_prefix ?? null,
       role: normalizeRole(u.role),
       overseer_tier: u.overseer_tier ?? null,
     }))
-    .sort((a, b) => a.full_name.localeCompare(b.full_name, 'th'));
+    .sort((a, b) =>
+      (
+        formatPersonLabel(a.role, a.name_prefix, a.full_name) || a.full_name
+      ).localeCompare(
+        formatPersonLabel(b.role, b.name_prefix, b.full_name) || b.full_name,
+        'th'
+      )
+    );
 
   return (
     <div>

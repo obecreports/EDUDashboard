@@ -303,12 +303,16 @@ export function scheduleInvitePeers(
 
 export function postLoginPath(role: UserRole): string {
   const r = normalizeRole(role);
-  if (r === 'special_volunteer' || r === 'covert_overseer') {
-    return '/scholarship-students';
-  }
-  if (r === 'director') return '/schools';
-  if (r === 'staff' || isOverseerLike(r) || r === 'super_overseer') return '/dashboard';
   if (r === 'admin' || r === 'super_admin') return '/admin/accounts';
+  // All non-admin field roles land on the profile/nav hub
+  if (
+    r === 'staff' ||
+    r === 'director' ||
+    r === 'super_overseer' ||
+    isOverseerLike(r)
+  ) {
+    return '/home';
+  }
   return '/';
 }
 

@@ -5,14 +5,18 @@ import { useRouter } from 'next/navigation';
 import { changeOwnPasswordAction, updateSelfProfileAction } from '@/app/actions/auth';
 import {
   isOverseerType2,
+  isVolunteerRole,
   positionDisplayLabel,
   roleDisplayLabel,
   type OverseerTier,
   type UserRole,
 } from '@/lib/types';
 import { PasswordField } from '@/components/auth/PasswordField';
+import { personAvatarUrl } from '@/lib/schools/images';
+import { uploadAndSaveSelfAvatar } from '@/components/home/upload-self-avatar';
 
 export function ProfileSettingsClient({
+  userId,
   fullName,
   namePrefix,
   position,
@@ -21,7 +25,19 @@ export function ProfileSettingsClient({
   overseerTier = null,
   domainLines,
   bossName,
+  avatarUrl = null,
+  contactAddress = '',
+  contactTel = '',
+  contactEmail = '',
+  duty = '',
+  lastPositionTitle = '',
+  lastPositionYear = '',
+  lastPositionAffiliation = '',
+  educationBachelor = '',
+  educationMaster = '',
+  birthDateDisplay = '',
 }: {
+  userId: string;
   fullName: string;
   namePrefix: string;
   position: string;
@@ -30,9 +46,22 @@ export function ProfileSettingsClient({
   overseerTier?: OverseerTier | null;
   domainLines: string[];
   bossName: string;
+  avatarUrl?: string | null;
+  contactAddress?: string;
+  contactTel?: string;
+  contactEmail?: string;
+  duty?: string;
+  lastPositionTitle?: string;
+  lastPositionYear?: string;
+  lastPositionAffiliation?: string;
+  educationBachelor?: string;
+  educationMaster?: string;
+  /** Thai BE long form e.g. 28 สิงหาคม 2504 */
+  birthDateDisplay?: string;
 }) {
   const router = useRouter();
   const isType2 = isOverseerType2(role, overseerTier);
+  const showVlBio = isVolunteerRole(role);
   const displayRole = roleDisplayLabel(role, overseerTier);
   const displayPosition = positionDisplayLabel(role, overseerTier, position);
   const [editing, setEditing] = useState(false);
@@ -40,18 +69,56 @@ export function ProfileSettingsClient({
   const [prefix, setPrefix] = useState(namePrefix);
   const [savedPrefix, setSavedPrefix] = useState(namePrefix);
   const [pos, setPos] = useState(displayPosition);
+  const [addr, setAddr] = useState(contactAddress);
+  const [tel, setTel] = useState(contactTel);
+  const [cEmail, setCEmail] = useState(contactEmail);
+  const [dutyText, setDutyText] = useState(duty);
+  const [lastTitle, setLastTitle] = useState(lastPositionTitle);
+  const [lastYear, setLastYear] = useState(lastPositionYear);
+  const [lastAff, setLastAff] = useState(lastPositionAffiliation);
+  const [eduBa, setEduBa] = useState(educationBachelor);
+  const [eduMa, setEduMa] = useState(educationMaster);
+  const [birthText, setBirthText] = useState(birthDateDisplay);
+  const [preview, setPreview] = useState(personAvatarUrl({ avatar_url: avatarUrl }));
   const [msg, setMsg] = useState<string | null>(null);
   const [pwdMsg, setPwdMsg] = useState<string | null>(null);
   const [pwdOpen, setPwdOpen] = useState(false);
   const [pending, start] = useTransition();
   const [pwdPending, startPwd] = useTransition();
+  const [avatarPending, startAvatar] = useTransition();
 
   useEffect(() => {
     setFullName(fullName);
     setPrefix(namePrefix);
     setSavedPrefix(namePrefix);
     setPos(displayPosition);
-  }, [fullName, namePrefix, displayPosition]);
+    setAddr(contactAddress);
+    setTel(contactTel);
+    setCEmail(contactEmail);
+    setDutyText(duty);
+    setLastTitle(lastPositionTitle);
+    setLastYear(lastPositionYear);
+    setLastAff(lastPositionAffiliation);
+    setEduBa(educationBachelor);
+    setEduMa(educationMaster);
+    setBirthText(birthDateDisplay);
+    setPreview(personAvatarUrl({ avatar_url: avatarUrl }));
+  }, [
+    fullName,
+    namePrefix,
+    displayPosition,
+    contactAddress,
+    contactTel,
+    contactEmail,
+    duty,
+    lastPositionTitle,
+    lastPositionYear,
+    lastPositionAffiliation,
+    educationBachelor,
+    educationMaster,
+    birthDateDisplay,
+    avatarUrl,
+  ]);
 
   const displayPrefix = savedPrefix.trim() || 'คุณ';
   void bossName;
@@ -64,6 +131,18 @@ export function ProfileSettingsClient({
       fd.set('full_name', full_name.trim());
       fd.set('name_prefix', nextPrefix);
       fd.set('position', isType2 ? displayRole : pos.trim());
+      if (showVlBio) {
+        fd.set('contact_address', addr.trim());
+        fd.set('contact_tel', tel.trim());
+        fd.set('contact_email', cEmail.trim());
+        fd.set('duty', dutyText.trim());
+        fd.set('last_position_title', lastTitle.trim());
+        fd.set('last_position_year', lastYear.trim());
+        fd.set('last_position_affiliation', lastAff.trim());
+        fd.set('education_bachelor', eduBa.trim());
+        fd.set('education_master', eduMa.trim());
+        fd.set('birth_date', birthText.trim());
+      }
       const res = await updateSelfProfileAction(fd);
       if (!res.ok) {
         setMsg(res.error || 'บันทึกไม่สำเร็จ');
@@ -81,6 +160,16 @@ export function ProfileSettingsClient({
     setFullName(fullName);
     setPos(displayPosition);
     setPrefix(savedPrefix);
+    setAddr(contactAddress);
+    setTel(contactTel);
+    setCEmail(contactEmail);
+    setDutyText(duty);
+    setLastTitle(lastPositionTitle);
+    setLastYear(lastPositionYear);
+    setLastAff(lastPositionAffiliation);
+    setEduBa(educationBachelor);
+    setEduMa(educationMaster);
+    setBirthText(birthDateDisplay);
     setEditing(false);
     setMsg(null);
   };
@@ -95,6 +184,21 @@ export function ProfileSettingsClient({
       }
       setPwdMsg('เปลี่ยนรหัสผ่านสำเร็จแล้ว');
       setPwdOpen(false);
+    });
+  };
+
+  const onPickPhoto = (file: File | null) => {
+    if (!file) return;
+    setMsg(null);
+    startAvatar(async () => {
+      const res = await uploadAndSaveSelfAvatar(userId, file);
+      if (!res.ok) {
+        setMsg(res.error);
+        return;
+      }
+      setPreview(res.url);
+      setMsg('อัปเดตรูปโปรไฟล์แล้ว');
+      router.refresh();
     });
   };
 
@@ -119,6 +223,25 @@ export function ProfileSettingsClient({
           )}
         </div>
 
+        <div className="flex flex-wrap items-center gap-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={preview}
+            alt=""
+            className="h-24 w-24 rounded-2xl object-cover border border-slate-200 bg-slate-50"
+          />
+          <label className="ed-btn ed-btn--outline ed-btn--sm cursor-pointer">
+            {avatarPending ? 'กำลังอัปโหลด…' : 'อัปโหลดรูปโปรไฟล์'}
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={avatarPending}
+              onChange={(e) => onPickPhoto(e.target.files?.[0] ?? null)}
+            />
+          </label>
+        </div>
+
         <label className="block text-sm font-semibold">
           ชื่อ–นามสกุล
           <input
@@ -130,7 +253,7 @@ export function ProfileSettingsClient({
         </label>
 
         <label className="block text-sm font-semibold">
-          คำนำหน้า (ใช้ในคำทักทายแดชบอร์ด)
+          คำนำหน้า
           <input
             className="form-input"
             value={editing ? prefix : displayPrefix}
@@ -171,6 +294,109 @@ export function ProfileSettingsClient({
             readOnly
           />
         </label>
+
+        {showVlBio ? (
+          <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+            <p className="font-semibold text-tm-blue m-0">ข้อมูลอาสาสมัคร</p>
+            <label className="block text-sm font-semibold">
+              หน้าที่
+              <textarea
+                className="form-input"
+                rows={3}
+                value={dutyText}
+                onChange={(e) => setDutyText(e.target.value)}
+                disabled={!editing}
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block text-sm font-semibold">
+                ตำแหน่งสุดท้าย
+                <input
+                  className="form-input"
+                  value={lastTitle}
+                  onChange={(e) => setLastTitle(e.target.value)}
+                  disabled={!editing}
+                />
+              </label>
+              <label className="block text-sm font-semibold">
+                ปี
+                <input
+                  className="form-input"
+                  value={lastYear}
+                  onChange={(e) => setLastYear(e.target.value)}
+                  disabled={!editing}
+                />
+              </label>
+              <label className="block text-sm font-semibold">
+                สังกัด
+                <input
+                  className="form-input"
+                  value={lastAff}
+                  onChange={(e) => setLastAff(e.target.value)}
+                  disabled={!editing}
+                />
+              </label>
+            </div>
+            <label className="block text-sm font-semibold">
+              ที่อยู่
+              <textarea
+                className="form-input"
+                rows={2}
+                value={addr}
+                onChange={(e) => setAddr(e.target.value)}
+                disabled={!editing}
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-semibold">
+                โทรศัพท์
+                <input
+                  className="form-input"
+                  value={tel}
+                  onChange={(e) => setTel(e.target.value)}
+                  disabled={!editing}
+                />
+              </label>
+              <label className="block text-sm font-semibold">
+                E-mail ติดต่อ
+                <input
+                  className="form-input"
+                  value={cEmail}
+                  onChange={(e) => setCEmail(e.target.value)}
+                  disabled={!editing}
+                />
+              </label>
+            </div>
+            <label className="block text-sm font-semibold">
+              วันเกิด (เช่น 28 สิงหาคม 2504)
+              <input
+                className="form-input"
+                value={birthText}
+                onChange={(e) => setBirthText(e.target.value)}
+                disabled={!editing}
+                placeholder="28 สิงหาคม 2504"
+              />
+            </label>
+            <label className="block text-sm font-semibold">
+              วุฒิ ป.ตรี
+              <input
+                className="form-input"
+                value={eduBa}
+                onChange={(e) => setEduBa(e.target.value)}
+                disabled={!editing}
+              />
+            </label>
+            <label className="block text-sm font-semibold">
+              วุฒิ ป.โท
+              <input
+                className="form-input"
+                value={eduMa}
+                onChange={(e) => setEduMa(e.target.value)}
+                disabled={!editing}
+              />
+            </label>
+          </div>
+        ) : null}
 
         <div className="rounded-xl border border-slate-200 bg-slate-100 p-4 text-sm space-y-2 opacity-90">
           <p className="font-semibold text-tm-blue m-0">พื้นที่รับผิดชอบ / Domain</p>

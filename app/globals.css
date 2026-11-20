@@ -1483,13 +1483,149 @@ a {
   .school-profile-card__photo { min-height: 160px; }
 }
 
-.school-building-iframe {
-  display: block;
-  width: 100%;
-  min-height: 70vh;
+.school-buildings-carousel {
+  display: grid;
+  gap: 0.75rem;
+}
+.school-buildings-carousel__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.school-buildings-carousel__nav {
+  display: flex;
+  gap: 0.35rem;
+}
+.school-buildings-carousel__track {
+  display: grid;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+.school-buildings-carousel__track--1 {
+  grid-template-columns: 1fr;
+}
+.school-buildings-carousel__track--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.school-building-card {
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border, #e2e8f0);
-  border-radius: 12px;
+  border-radius: 14px;
+  overflow: hidden;
   background: #fff;
+  min-width: 0;
+}
+.school-building-card__media {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #e2e8f0;
+}
+.school-building-card__hero {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.school-building-card__ribbon {
+  position: absolute;
+  top: 0.65rem;
+  left: 0;
+  padding: 0.28rem 0.7rem 0.28rem 0.55rem;
+  background: var(--tm-blue, #0a2a5c);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 0 8px 8px 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+.school-building-card__status {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.55rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.school-building-card__body {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem 0.9rem 1rem;
+}
+.school-building-card__title {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--tm-blue, #0a2a5c);
+}
+.school-building-card__facts {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+.school-building-card__facts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 0.35rem;
+  font-size: 0.78rem;
+}
+.school-building-card__facts dt {
+  margin: 0;
+  color: #64748b;
+  font-weight: 600;
+}
+.school-building-card__facts dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 700;
+  color: #0f172a;
+}
+.school-building-card__extras-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+}
+.school-building-card__thumbs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.school-building-card__thumbs li {
+  width: 4.25rem;
+  display: grid;
+  gap: 0.15rem;
+  justify-items: center;
+}
+.school-building-card__thumbs img {
+  width: 4.25rem;
+  height: 3.1rem;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  display: block;
+}
+.school-building-card__thumbs span {
+  font-size: 0.62rem;
+  color: #64748b;
+  text-align: center;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 767px) {
+  .school-buildings-carousel__track--3 {
+    grid-template-columns: 1fr;
+  }
 }
 
 .school-overview-facts {
@@ -3740,9 +3876,129 @@ a {
   overflow: auto;
   padding-right: 0.15rem;
 }
+/* Home hub summary cards — solid light navy / gold / white + watermark icon */
+.home-hub-stat {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  padding: 1rem 1.1rem;
+  min-height: 7.25rem;
+}
+.home-hub-stat__bg-icon {
+  position: absolute;
+  right: -0.35rem;
+  bottom: -0.55rem;
+  opacity: 0.14;
+  pointer-events: none;
+  z-index: 0;
+}
+.home-hub-stat__body {
+  position: relative;
+  z-index: 1;
+}
+.home-hub-stat__label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.home-hub-stat__value {
+  margin: 0.35rem 0 0;
+  font-size: 1.55rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+.home-hub-stat__sub {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.home-hub-stat--navy {
+  background: var(--tm-blue-50);
+  border-color: var(--tm-blue-100);
+  color: var(--tm-blue);
+}
+.home-hub-stat--navy .home-hub-stat__label,
+.home-hub-stat--navy .home-hub-stat__sub {
+  color: #475569;
+}
+.home-hub-stat--navy .home-hub-stat__bg-icon {
+  color: var(--tm-blue);
+}
+.home-hub-stat--gold {
+  background: var(--tm-gold-50);
+  border-color: #e8d9bc;
+  color: var(--tm-blue);
+}
+.home-hub-stat--gold .home-hub-stat__label,
+.home-hub-stat--gold .home-hub-stat__sub {
+  color: #6b5a3e;
+}
+.home-hub-stat--gold .home-hub-stat__bg-icon {
+  color: var(--tm-gold-dark);
+  opacity: 0.22;
+}
+.home-hub-stat--white {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  color: var(--tm-blue);
+}
+.home-hub-stat--white .home-hub-stat__label,
+.home-hub-stat--white .home-hub-stat__sub {
+  color: #64748b;
+}
+.home-hub-stat--white .home-hub-stat__bg-icon {
+  color: var(--tm-blue);
+  opacity: 0.1;
+}
+
 .thai-date-field {
+  position: relative;
   display: grid;
-  gap: 0.25rem;
+  gap: 0.35rem;
+}
+.thai-date-field__control {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+.thai-date-field__input {
+  flex: 1;
+  min-width: 0;
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+.thai-date-field__cal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-left: 0;
+  border-radius: 0 0.5rem 0.5rem 0;
+  background: #f8fafc;
+  color: var(--tm-blue, #0a2a5c);
+  cursor: pointer;
+}
+.thai-date-field__cal-btn:hover:not(:disabled) {
+  background: var(--tm-blue-50, #f4f7fb);
+}
+.thai-date-field__cal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.thai-date-field__popover {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  width: min(100%, 20rem);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+}
+.thai-date-field__popover .schedule-date-cal {
+  margin: 0;
 }
 .thai-date-field__hint {
   font-size: 0.72rem;
@@ -7632,4 +7888,53 @@ body.mfs-bottom-hidden[data-field-mobile='1'] .mfs-bottom {
   transform: translateY(calc(100% + 12px));
   opacity: 0;
   pointer-events: none;
+}
+
+/* New schedule step-2 month date picker */
+.schedule-date-cal__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+.schedule-date-cal__dow {
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #64748b;
+  padding: 0.25rem 0;
+}
+.schedule-date-cal__cell {
+  min-height: 2rem;
+}
+.schedule-date-cal__day {
+  width: 100%;
+  min-height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #0f172a;
+  cursor: pointer;
+}
+.schedule-date-cal__day:hover:not(:disabled) {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+.schedule-date-cal__day:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.schedule-date-cal__day--today {
+  border-color: #94a3b8;
+}
+.schedule-date-cal__day--selected {
+  background: #0369a1;
+  color: #fff;
+  border-color: #0369a1;
+}
+.schedule-date-cal__day--selected:hover:not(:disabled) {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #fff;
 }

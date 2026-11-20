@@ -13,13 +13,15 @@ import {
   readAuthSession,
 } from '@/lib/auth/session';
 import { updateUserProfileFields } from '@/lib/auth/user-store';
-import { isOverseerType2, normalizeRole, ROLE_LABELS } from '@/lib/types';
+import { isOverseerType2, isVolunteerRole, normalizeRole, ROLE_LABELS } from '@/lib/types';
 import { cookies } from 'next/headers';
 import {
   AUTH_SESSION_COOKIE,
   idleTimeoutMs,
   type AuthSession,
 } from '@/lib/auth/mock-users';
+import { upsertVolunteerProfile } from '@/lib/supabase/volunteer-profiles';
+import { parseThaiBirthDateToYmd } from '@/lib/format/date';
 
 export async function loginAction(
   _prev: { error?: string } | null,
@@ -123,12 +125,48 @@ export async function updateSelfProfileAction(formData: FormData): Promise<
   if (!full_name) return { ok: false, error: 'กรุณากรอกชื่อ–นามสกุล' };
   if (!position) return { ok: false, error: 'กรุณากรอกตำแหน่ง' };
 
+  const textOrNull = (key: string) => {
+    const v = String(formData.get(key) || '').trim();
+    return v.length ? v : null;
+  };
+
   const result = await updateUserProfileFields(profile.id, {
     full_name,
     name_prefix: name_prefix.length > 0 ? name_prefix : null,
     position,
   });
   if (!result.ok) return result;
+
+  const role = normalizeRole(profile.role);
+  if (
+    isVolunteerRole(role) ||
+    isOverseerType2(profile.role, profile.overseer_tier)
+  ) {
+    const birthRaw = String(formData.get('birth_date') || '').trim();
+    let birth_date: string | null = null;
+    if (birthRaw) {
+      birth_date = parseThaiBirthDateToYmd(birthRaw);
+      if (!birth_date && /^\d{4}-\d{2}-\d{2}$/.test(birthRaw)) {
+        birth_date = birthRaw;
+      }
+      if (!birth_date) {
+        return { ok: false, error: 'รูปแบบวันเกิดไม่ถูกต้อง' };
+      }
+    }
+    const vlRes = await upsertVolunteerProfile(profile.id, {
+      contact_address: textOrNull('contact_address'),
+      contact_tel: textOrNull('contact_tel'),
+      contact_email: textOrNull('contact_email'),
+      duty: textOrNull('duty'),
+      last_position_title: textOrNull('last_position_title'),
+      last_position_year: textOrNull('last_position_year'),
+      last_position_affiliation: textOrNull('last_position_affiliation'),
+      education_bachelor: textOrNull('education_bachelor'),
+      education_master: textOrNull('education_master'),
+      birth_date,
+    });
+    if (!vlRes.ok) return vlRes;
+  }
 
   const jar = await cookies();
   const nextSession: AuthSession = {
@@ -145,7 +183,29 @@ export async function updateSelfProfileAction(formData: FormData): Promise<
   });
 
   revalidatePath('/staff/profile');
+  revalidatePath('/home');
   revalidatePath('/dashboard');
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+export async function saveSelfAvatarAction(formData: FormData): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  const { profile, isAuthenticated } = await getSessionProfile();
+  if (!isAuthenticated || !profile || profile.id === 'guest') {
+    return { ok: false, error: 'ต้องเข้าสู่ระบบก่อน' };
+  }
+
+  const avatar_url = String(formData.get('avatar_url') || '').trim();
+  if (!avatar_url) return { ok: false, error: 'ไม่พบ URL รูปโปรไฟล์' };
+
+  const result = await updateUserProfileFields(profile.id, { avatar_url });
+  if (!result.ok) return result;
+
+  revalidatePath('/staff/profile');
+  revalidatePath('/home');
+  revalidatePath('/volunteers');
   revalidatePath('/', 'layout');
   return { ok: true };
 }

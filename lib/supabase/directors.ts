@@ -25,8 +25,19 @@ export function mapDirectorRow(row: Record<string, unknown>): SchoolDirector {
     position_name: row.position_name != null ? String(row.position_name) : null,
     gender,
     picture_url: row.picture_url != null ? String(row.picture_url) : null,
+    phone: row.phone != null ? String(row.phone).trim() || null : null,
+    remark: row.remark != null ? String(row.remark).trim() || null : null,
   };
 }
+
+const DIRECTOR_SELECT =
+  'director_id, name_prefix, full_name, position_name, gender, picture_url, phone, remark';
+
+const DIRECTOR_SELECT_LEGACY =
+  'director_id, name_prefix, full_name, position_name, gender, picture_url, phone';
+
+const DIRECTOR_SELECT_MIN =
+  'director_id, name_prefix, full_name, position_name, gender, picture_url';
 
 export function directorFullLabel(
   d: Pick<SchoolDirector, 'name_prefix' | 'full_name'>
@@ -42,10 +53,26 @@ export async function fetchDirectorsByIds(
   if (!unique.length) return map;
 
   const supabase = createAnonClient();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('directors')
-    .select('director_id, name_prefix, full_name, position_name, gender, picture_url')
+    .select(DIRECTOR_SELECT)
     .in('director_id', unique);
+  if (error && /remark/i.test(error.message)) {
+    const legacy = await supabase
+      .from('directors')
+      .select(DIRECTOR_SELECT_LEGACY)
+      .in('director_id', unique);
+    data = (legacy.data ?? null) as typeof data;
+    error = legacy.error;
+  }
+  if (error && /phone/i.test(error.message)) {
+    const legacy = await supabase
+      .from('directors')
+      .select(DIRECTOR_SELECT_MIN)
+      .in('director_id', unique);
+    data = (legacy.data ?? null) as typeof data;
+    error = legacy.error;
+  }
   if (error) {
     if (/directors|schema cache/i.test(error.message)) return map;
     throw error;
@@ -70,14 +97,44 @@ export async function listDirectors(query?: string): Promise<SchoolDirector[]> {
   const supabase = createAnonClient();
   let q = supabase
     .from('directors')
-    .select('director_id, name_prefix, full_name, position_name, gender, picture_url')
+    .select(DIRECTOR_SELECT)
     .order('full_name', { ascending: true })
     .limit(200);
   const needle = (query ?? '').trim();
   if (needle) {
     q = q.or(`full_name.ilike.%${needle}%,name_prefix.ilike.%${needle}%`);
   }
-  const { data, error } = await q;
+  let { data, error } = await q;
+  if (error && /remark/i.test(error.message)) {
+    let legacyQ = supabase
+      .from('directors')
+      .select(DIRECTOR_SELECT_LEGACY)
+      .order('full_name', { ascending: true })
+      .limit(200);
+    if (needle) {
+      legacyQ = legacyQ.or(
+        `full_name.ilike.%${needle}%,name_prefix.ilike.%${needle}%`
+      );
+    }
+    const legacy = await legacyQ;
+    data = (legacy.data ?? null) as typeof data;
+    error = legacy.error;
+  }
+  if (error && /phone/i.test(error.message)) {
+    let legacyQ = supabase
+      .from('directors')
+      .select(DIRECTOR_SELECT_MIN)
+      .order('full_name', { ascending: true })
+      .limit(200);
+    if (needle) {
+      legacyQ = legacyQ.or(
+        `full_name.ilike.%${needle}%,name_prefix.ilike.%${needle}%`
+      );
+    }
+    const legacy = await legacyQ;
+    data = (legacy.data ?? null) as typeof data;
+    error = legacy.error;
+  }
   if (error) {
     if (/directors|schema cache/i.test(error.message)) return [];
     throw error;

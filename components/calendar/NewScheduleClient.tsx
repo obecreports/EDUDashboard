@@ -12,6 +12,7 @@ import { VISIT_ACTIVITIES } from '@/lib/visits/labels';
 import { ThaiDateField } from '@/components/ui/ThaiDateField';
 import {
   ROLE_LABELS,
+  formatPersonLabel,
   isOverseerType1,
   isOverseerType2,
   type OverseerTier,
@@ -40,6 +41,7 @@ type SchoolOpt = {
 type TeamOpt = {
   id: string;
   full_name: string;
+  name_prefix?: string | null;
   role: UserRole;
   overseer_tier?: OverseerTier | null;
 };
@@ -467,7 +469,8 @@ export function NewScheduleClient({
                           checked={participantIds.has(t.id)}
                           onChange={() => toggleParticipant(t.id)}
                         />
-                        {t.full_name}
+                        {formatPersonLabel(t.role, t.name_prefix, t.full_name) ||
+                          t.full_name}
                       </label>
                     ))}
                   </div>

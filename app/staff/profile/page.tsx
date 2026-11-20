@@ -1,9 +1,11 @@
 import { Suspense } from 'react';
 import { getSessionProfile, listMockAccountsForAdmin } from '@/lib/auth/session';
 import { PageSkeleton } from '@/components/ui/PageSkeleton';
-import { normalizeRole } from '@/lib/types';
+import { isVolunteerRole, normalizeRole } from '@/lib/types';
 import { ProfileSettingsClient } from '@/components/staff/ProfileSettingsClient';
 import { fetchGovDomains } from '@/lib/supabase/schools';
+import { fetchVolunteerProfileByUserId } from '@/lib/supabase/volunteer-profiles';
+import { formatThaiBirthDateLong } from '@/lib/format/date';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +31,8 @@ async function ProfileBody() {
     role === 'overseer' ||
     role === 'volunteer_center' ||
     role === 'volunteer_border' ||
-    role === 'special_volunteer'
+    role === 'special_volunteer' ||
+    role === 'covert_overseer'
   ) {
     domainLines.push(`จังหวัด: ${(profile?.assigned_provinces ?? []).join(', ') || '—'}`);
   } else if (role === 'director') {
@@ -61,10 +64,16 @@ async function ProfileBody() {
     );
   }
 
+  const vl =
+    isVolunteerRole(role)
+      ? await fetchVolunteerProfileByUserId(profile.id)
+      : null;
+
   return (
     <div className="page-shell" style={{ maxWidth: 640 }}>
       <h1 className="section-heading">ตั้งค่าโปรไฟล์</h1>
       <ProfileSettingsClient
+        userId={profile.id}
         fullName={profile.full_name ?? ''}
         namePrefix={profile.name_prefix ?? ''}
         position={profile.position ?? ''}
@@ -73,6 +82,19 @@ async function ProfileBody() {
         overseerTier={profile.overseer_tier ?? null}
         domainLines={domainLines}
         bossName={boss?.full_name ?? ''}
+        avatarUrl={profile.avatar_url}
+        contactAddress={vl?.contact_address ?? ''}
+        contactTel={vl?.contact_tel ?? ''}
+        contactEmail={vl?.contact_email ?? ''}
+        duty={vl?.duty ?? ''}
+        lastPositionTitle={vl?.last_position_title ?? ''}
+        lastPositionYear={vl?.last_position_year ?? ''}
+        lastPositionAffiliation={vl?.last_position_affiliation ?? ''}
+        educationBachelor={vl?.education_bachelor ?? ''}
+        educationMaster={vl?.education_master ?? ''}
+        birthDateDisplay={
+          vl?.birth_date ? formatThaiBirthDateLong(vl.birth_date) : ''
+        }
       />
     </div>
   );

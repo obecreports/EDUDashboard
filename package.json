@@ -6,7 +6,10 @@
     "dev": "node --max-http-header-size=65536 ./node_modules/next/dist/bin/next dev",
     "build": "next build",
     "start": "node --max-http-header-size=65536 ./node_modules/next/dist/bin/next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "import:directors": "node scripts/import-directors.mjs",
+    "import:volunteers": "node scripts/import-volunteers.mjs",
+    "import:scholarship": "node scripts/import-scholarship.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",
@@ -20,7 +23,8 @@
     "react": "^19.3.0",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.3.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",

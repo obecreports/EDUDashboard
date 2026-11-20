@@ -37,9 +37,14 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import type { SchoolFull, ThreePillarScores } from '@/lib/types';
+import type {
+  SchoolBuildingCard,
+  SchoolFull,
+  ThreePillarScores,
+} from '@/lib/types';
 import { DIRECTOR_TBA_LABEL, directorDisplayLabel } from '@/lib/types';
 import { schoolCoverImage } from '@/lib/schools/images';
+import { SchoolBuildingsCarousel } from '@/components/schools/SchoolBuildingsCarousel';
 import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
 import type {
   SchoolAchievements,
@@ -397,6 +402,7 @@ export function SchoolDetailClient({
   pillarIndicators,
   scholarshipStudents = [],
   contractTeachers = [],
+  buildings = [],
 }: {
   school: SchoolFull;
   canEdit: boolean;
@@ -420,6 +426,7 @@ export function SchoolDetailClient({
   >;
   scholarshipStudents?: SchoolScholarshipRow[];
   contractTeachers?: SchoolContractTeacherRow[];
+  buildings?: SchoolBuildingCard[];
 }) {
   const [tab, setTab] = useState<TabId>('overview');
   const [mapFullscreen, setMapFullscreen] = useState(false);
@@ -702,7 +709,6 @@ export function SchoolDetailClient({
     }
   }, [tabs, tab]);
 
-  const buildingInfoUrl = `https://asset.bopp-obec.info/Home/BuildingBySchoolID?SchoolID=${encodeURIComponent(String(school.school_id))}`;
 
   const mapsUrl =
     hasCoords
@@ -1069,6 +1075,10 @@ export function SchoolDetailClient({
                     <dd>{school.phone || '—'}</dd>
                   </div>
                   <div>
+                    <dt>เบอร์โทรผู้อำนวยการ</dt>
+                    <dd>{school.director?.phone?.trim() || '—'}</dd>
+                  </div>
+                  <div>
                     <dt>จำนวนนักเรียน</dt>
                     <dd>{totalStudents.toLocaleString('th-TH')}</dd>
                   </div>
@@ -1280,27 +1290,8 @@ export function SchoolDetailClient({
 
       {tab === 'buildings' && (
         <section className="panel-card space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="section-heading text-base m-0">ข้อมูลสิ่งปลูกสร้าง</h2>
-            <a
-              href={buildingInfoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ed-btn ed-btn--outline ed-btn--sm"
-            >
-              เปิดในแท็บใหม่
-            </a>
-          </div>
-          <p className="text-xs text-slate-500 m-0">
-            ข้อมูลจากระบบทรัพย์สิน สพฐ. (รหัสสถานศึกษา {school.school_id})
-          </p>
-          <iframe
-            className="school-building-iframe"
-            src={buildingInfoUrl}
-            title={`ข้อมูลสิ่งปลูกสร้าง — ${school.school_name_th}`}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-          />
+          <h2 className="section-heading text-base m-0">ข้อมูลสิ่งปลูกสร้าง</h2>
+          <SchoolBuildingsCarousel buildings={buildings} />
         </section>
       )}
 
