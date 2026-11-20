@@ -5,24 +5,9 @@ import type {
   ScholarshipStudentStatus,
 } from '@/lib/mock/scholarship-students';
 
-const STUDENT_SELECT = `
-  id, student_code, name_prefix, full_name, photo_url, gender, grade_level,
-  generation, school_id, school_name, province, district, scholarship_type,
-  scholarship_year, status, terminated_remark_1, terminated_remark_2,
-  overseer_level, career_goal, birthday, tribe, address, travel_method,
-  personal_id, can_contact_supervisor, phone, email, facebook, line_id,
-  advisor_name, advisor_phone, supervisor_name, supervisor_phone,
-  educational_risk, behavioral_risk, risk_information, extra_work,
-  extra_work_frequency, problems_obstacles, annual_family_income,
-  family_work_assistance, welfare, contactable_guardian, friend_name_1,
-  friend_name_2, health_status, health_details, other_benefits, benefit_period,
-  average_gpa, job_history, remaining_budget, disbursed, tuition_fee_disbursed,
-  individual_disbursement, total_scholarship, origin_school, scholarship_origin,
-  notes
-`.replace(/\s+/g, ' ').trim();
-
-const FAMILY_SELECT =
-  'id, student_id, relationship, full_name, age, race, nationality, tribe, highest_education, occupation, monthly_income, current_address, national_id, phone, sort_order';
+/** Use `*` so Supabase client types resolve (long column lists → GenericStringError). */
+const STUDENT_SELECT = '*';
+const FAMILY_SELECT = '*';
 
 function text(v: unknown): string | undefined {
   if (v == null) return undefined;
@@ -162,11 +147,10 @@ async function fetchFamilyByStudentIds(
         .in('student_id', chunk)
         .order('sort_order', { ascending: true });
       if (error || !data) continue;
-      for (const row of data) {
-        const r = row as Record<string, unknown>;
-        const sid = String(r.student_id);
+      for (const row of data as unknown as Record<string, unknown>[]) {
+        const sid = String(row.student_id);
         const list = map.get(sid) ?? [];
-        list.push(mapFamily(r));
+        list.push(mapFamily(row));
         map.set(sid, list);
       }
     }
@@ -184,12 +168,10 @@ export async function fetchScholarshipStudents(): Promise<ScholarshipStudent[]> 
       .select(STUDENT_SELECT)
       .order('full_name', { ascending: true });
     if (error || !data) return [];
-    const ids = data.map((r) => String((r as { id: string }).id));
+    const rows = data as unknown as Record<string, unknown>[];
+    const ids = rows.map((r) => String(r.id));
     const familyMap = await fetchFamilyByStudentIds(ids);
-    return data.map((row) => {
-      const r = row as Record<string, unknown>;
-      return mapStudent(r, familyMap.get(String(r.id)) ?? []);
-    });
+    return rows.map((r) => mapStudent(r, familyMap.get(String(r.id)) ?? []));
   } catch {
     return [];
   }
@@ -210,7 +192,7 @@ export async function fetchScholarshipStudentById(
     if (error || !data) return null;
     const familyMap = await fetchFamilyByStudentIds([sid]);
     return mapStudent(
-      data as Record<string, unknown>,
+      data as unknown as Record<string, unknown>,
       familyMap.get(sid) ?? []
     );
   } catch {
@@ -233,12 +215,10 @@ export async function fetchScholarshipStudentsBySchoolId(
       .eq('school_id', n)
       .order('full_name', { ascending: true });
     if (error || !data) return [];
-    const ids = data.map((r) => String((r as { id: string }).id));
+    const rows = data as unknown as Record<string, unknown>[];
+    const ids = rows.map((r) => String(r.id));
     const familyMap = await fetchFamilyByStudentIds(ids);
-    return data.map((row) => {
-      const r = row as Record<string, unknown>;
-      return mapStudent(r, familyMap.get(String(r.id)) ?? []);
-    });
+    return rows.map((r) => mapStudent(r, familyMap.get(String(r.id)) ?? []));
   } catch {
     return [];
   }
