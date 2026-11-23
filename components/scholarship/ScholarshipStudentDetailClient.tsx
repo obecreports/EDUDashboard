@@ -99,6 +99,15 @@ function fmt(value: unknown): string {
   return String(value);
 }
 
+/** Display generation as "รุ่นที่ N" instead of a bare number / Gen N. */
+function formatGeneration(value: unknown): string {
+  if (value == null || value === '') return '—';
+  const raw = String(value).trim();
+  if (/^รุ่นที่\s*/.test(raw)) return raw;
+  const num = raw.replace(/^(gen|generation|รุ่น)\s*/i, '').trim();
+  return num ? `รุ่นที่ ${num}` : '—';
+}
+
 function studentValue(
   student: ScholarshipStudent,
   key: ScholarshipFieldKey
@@ -331,7 +340,7 @@ export function ScholarshipStudentDetailClient({
                 ) : null}
                 {canSee('generation') ? (
                   <span className="ss-pill ss-pill--amber">
-                    {fmt(student.generation)}
+                    {formatGeneration(student.generation)}
                   </span>
                 ) : null}
                 {canSee('school_name') ? (

@@ -73,6 +73,24 @@ export async function logoutAction() {
   // (about-page) HTML cannot soft-hydrate against the login route.
 }
 
+/** Refresh idle clock (Stay logged in from SessionIdleGuard). */
+export async function touchSessionAction(): Promise<
+  { ok: true; lastActiveAt: number } | { ok: false }
+> {
+  const session = await readAuthSession();
+  if (!session) return { ok: false };
+  const lastActiveAt = Date.now();
+  const jar = await cookies();
+  const next = { ...session, lastActiveAt };
+  jar.set(AUTH_SESSION_COOKIE, JSON.stringify(next), {
+    path: '/',
+    sameSite: 'lax',
+    httpOnly: true,
+    maxAge: Math.ceil(idleTimeoutMs(next.role) / 1000),
+  });
+  return { ok: true, lastActiveAt };
+}
+
 export async function updateAssignedZonesAction(_formData: FormData) {
   return { error: 'การมอบหมายพื้นที่ทำได้เฉพาะผู้ดูแลระบบเท่านั้น' };
 }

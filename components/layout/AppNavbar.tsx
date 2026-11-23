@@ -568,17 +568,22 @@ export function AppNavbar({
 
   return (
     <>
-      <nav className={`navbar ed-navbar ${isAuthenticated ? 'ed-navbar--auth' : ''}`} aria-label="หลัก">
-        <button
-          type="button"
-          className="ed-navbar__menu-btn"
-          aria-label={drawerOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
-          aria-expanded={drawerOpen}
-          aria-controls={drawerId}
-          onClick={() => setDrawerOpen((v) => !v)}
-        >
-          {drawerOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
+      <nav
+        className={`navbar ed-navbar ${isAuthenticated ? 'ed-navbar--auth' : 'ed-navbar--guest'}`}
+        aria-label="หลัก"
+      >
+        {isAuthenticated ? (
+          <button
+            type="button"
+            className="ed-navbar__menu-btn"
+            aria-label={drawerOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
+            aria-expanded={drawerOpen}
+            aria-controls={drawerId}
+            onClick={() => setDrawerOpen((v) => !v)}
+          >
+            {drawerOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        ) : null}
 
         <Link
           href={isAuthenticated && isFieldRole(normalizedRole) ? '/home' : '/'}
@@ -634,59 +639,65 @@ export function AppNavbar({
         </div>
       </nav>
 
-      <div
-        className={`ed-nav-backdrop ${drawerOpen ? 'is-open' : ''}`}
-        aria-hidden={!drawerOpen}
-        onClick={closeDrawer}
-      />
+      {isAuthenticated ? (
+        <>
+          <div
+            className={`ed-nav-backdrop ${drawerOpen ? 'is-open' : ''}`}
+            aria-hidden={!drawerOpen}
+            onClick={closeDrawer}
+          />
 
-      <aside
-        id={drawerId}
-        className={`ed-nav-drawer ${drawerOpen ? 'is-open' : ''}`}
-        aria-hidden={!drawerOpen}
-        aria-label="เมนูนำทาง"
-      >
-        <div className="ed-nav-drawer__head">
-          <div className="ed-nav-drawer__brand">
-            <Image
-              src="/images/Logo/EDU_Logo.png"
-              alt=""
-              width={40}
-              height={40}
-              className="navbar__brand-seal navbar__brand-logo"
-            />
-            <div>
-              <div className="navbar__brand-name">โครงการกองทุนการศึกษา</div>
-              <div className="navbar__brand-subtitle">สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน</div>
-            </div>
-          </div>
-          <button type="button" className="ed-navbar__menu-btn" aria-label="ปิดเมนู" onClick={closeDrawer}>
-            <X size={20} />
-          </button>
-        </div>
-
-        {drawerNav}
-
-        <div className="ed-nav-drawer__footer">
-          {isAuthenticated ? (
-            <div className="ed-nav-drawer__account">
-              <div className="ed-nav-drawer__user">
-                <span className="ed-profile-btn__avatar">{displayName.slice(0, 1)}</span>
+          <aside
+            id={drawerId}
+            className={`ed-nav-drawer ${drawerOpen ? 'is-open' : ''}`}
+            aria-hidden={!drawerOpen}
+            aria-label="เมนูนำทาง"
+          >
+            <div className="ed-nav-drawer__head">
+              <div className="ed-nav-drawer__brand">
+                <Image
+                  src="/images/Logo/EDU_Logo.png"
+                  alt=""
+                  width={40}
+                  height={40}
+                  className="navbar__brand-seal navbar__brand-logo"
+                />
                 <div>
-                  <strong>{displayName}</strong>
-                  <span>{roleLabel}</span>
+                  <div className="navbar__brand-name">โครงการกองทุนการศึกษา</div>
+                  <div className="navbar__brand-subtitle">
+                    สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน
+                  </div>
                 </div>
               </div>
-              <div className="ed-nav-drawer__account-links">{accountMenuLinks}</div>
+              <button
+                type="button"
+                className="ed-navbar__menu-btn"
+                aria-label="ปิดเมนู"
+                onClick={closeDrawer}
+              >
+                <X size={20} />
+              </button>
             </div>
-          ) : (
-            <a href="/login" className="navbar__login ed-nav-drawer__login" onClick={closeDrawer}>
-              <LogIn size={16} />
-              เข้าใช้งานระบบ
-            </a>
-          )}
-        </div>
-      </aside>
+
+            {drawerNav}
+
+            <div className="ed-nav-drawer__footer">
+              <div className="ed-nav-drawer__account">
+                <div className="ed-nav-drawer__user">
+                  <span className="ed-profile-btn__avatar">
+                    {displayName.slice(0, 1)}
+                  </span>
+                  <div>
+                    <strong>{displayName}</strong>
+                    <span>{roleLabel}</span>
+                  </div>
+                </div>
+                <div className="ed-nav-drawer__account-links">{accountMenuLinks}</div>
+              </div>
+            </div>
+          </aside>
+        </>
+      ) : null}
     </>
   );
 }

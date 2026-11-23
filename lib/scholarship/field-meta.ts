@@ -95,7 +95,7 @@ export const SCHOLARSHIP_FIELD_META: ScholarshipFieldMeta[] = [
   { key: 'full_name', label: 'ชื่อ-นามสกุล', section: 'ss_banner', sensitivity: 1 },
   { key: 'student_code', label: 'รหัสนักเรียน', section: 'ss_banner', sensitivity: 1 },
   { key: 'grade_level', label: 'ชั้นเรียน', section: 'ss_banner', sensitivity: 1 },
-  { key: 'generation', label: 'รุ่น (Gen)', section: 'ss_banner', sensitivity: 1 },
+  { key: 'generation', label: 'รุ่นที่', section: 'ss_banner', sensitivity: 1 },
   { key: 'school_name', label: 'โรงเรียนปัจจุบัน', section: 'ss_banner', sensitivity: 1 },
   { key: 'status', label: 'สถานะ', section: 'ss_banner', sensitivity: 1 },
   {

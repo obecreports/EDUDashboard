@@ -577,6 +577,8 @@ export interface AuthSession {
 /** Idle logout: 15 min for staff/overseer/volunteer/admin; 30 min for super_overseer */
 export const IDLE_MS_DEFAULT = 15 * 60 * 1000;
 export const IDLE_MS_SUPER_OVERSEER = 30 * 60 * 1000;
+/** Warn user this long before idle force-logout */
+export const IDLE_WARN_BEFORE_MS = 5 * 60 * 1000;
 
 export function idleTimeoutMs(role: UserRole | string | null | undefined): number {
   return role === 'super_overseer' ? IDLE_MS_SUPER_OVERSEER : IDLE_MS_DEFAULT;
