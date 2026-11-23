@@ -4,6 +4,7 @@ import {
   isOverseerLike,
   isOverseerType1,
   isOverseerType2,
+  isSchoolAdminRole,
   normalizeRole,
 } from '@/lib/types';
 import type { StoredUserProfile } from '@/lib/auth/mock-users';
@@ -51,6 +52,7 @@ export function isFieldRole(role: UserRole): boolean {
   return (
     r === 'staff' ||
     isOverseerLike(r) ||
+    r === 'school_admin' ||
     r === 'director' ||
     r === 'super_overseer'
   );
@@ -101,7 +103,7 @@ export function canAccessSchoolDetail(
   if (!isAuthenticated || !user) return false;
   const role = normalizeRole(user.role);
   if (role === 'super_overseer') return true;
-  if (role === 'staff' || isOverseerLike(role) || role === 'director') {
+  if (role === 'staff' || isOverseerLike(role) || isSchoolAdminRole(role)) {
     return isSchoolReadable(user, school, directory, opts);
   }
   return false;
@@ -307,7 +309,7 @@ export function postLoginPath(role: UserRole): string {
   // All non-admin field roles land on the profile/nav hub
   if (
     r === 'staff' ||
-    r === 'director' ||
+    isSchoolAdminRole(r) ||
     r === 'super_overseer' ||
     isOverseerLike(r)
   ) {

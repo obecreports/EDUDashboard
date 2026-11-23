@@ -91,12 +91,14 @@ export const UAT_USER_IDS = {
   cov03: 'a1111111-1111-4111-8111-111111111404',
   cov04: 'a1111111-1111-4111-8111-111111111405',
   cov05: 'a1111111-1111-4111-8111-111111111406',
-  /** Director login — email = school_id */
+  /** School admin login — email = school_id */
   director: 'a1111111-1111-4111-8111-111111111501',
+  school_admin: 'a1111111-1111-4111-8111-111111111501',
 } as const;
 
-/** Demo director login uses this school_id as both login ID and assigned_schools[0] */
+/** Demo school_admin login uses this school_id as both login ID and assigned_schools[0] */
 export const MOCK_DIRECTOR_SCHOOL_ID = '1039760340';
+export const MOCK_SCHOOL_ADMIN_SCHOOL_ID = MOCK_DIRECTOR_SCHOOL_ID;
 
 /**
  * Demo / UAT accounts — `email` stores short login ID (not a mailbox).
@@ -509,16 +511,16 @@ export const MOCK_USER_SEEDS: MockUserSeed[] = [
     mustChangePassword: false,
   },
   {
-    id: UAT_USER_IDS.director,
-    email: MOCK_DIRECTOR_SCHOOL_ID,
+    id: UAT_USER_IDS.school_admin,
+    email: MOCK_SCHOOL_ADMIN_SCHOOL_ID,
     name_prefix: 'นาย',
-    full_name: 'วิชัย ผู้อำนวยการ',
-    position: 'ผู้อำนวยการโรงเรียน',
-    role: 'director',
+    full_name: 'วิชัย ผู้ดูแลโรงเรียน',
+    position: 'ผู้ดูแลโรงเรียน',
+    role: 'school_admin',
     assigned_zone: null,
     assigned_provinces: [],
     assigned_districts: [],
-    assigned_schools: [MOCK_DIRECTOR_SCHOOL_ID],
+    assigned_schools: [MOCK_SCHOOL_ADMIN_SCHOOL_ID],
     reports_to: null,
     password: MOCK_LOGIN_PASSWORD,
     tempPassword: null,
@@ -601,6 +603,8 @@ export type StoredUserProfile = {
   birthday?: string | null;
   /** Public photo URL (About / admin OS display) */
   avatar_url?: string | null;
+  /** From user_profiles.must_change_password (DB-only / UAT). */
+  mustChangePassword?: boolean;
 };
 
 export type ReportDraftBox = {
@@ -654,6 +658,9 @@ export function normalizeStoredUser(
     disabled: Boolean(raw.disabled),
     birthday: raw.birthday ?? null,
     avatar_url: avatar,
+    mustChangePassword: Boolean(
+      (raw as { mustChangePassword?: boolean }).mustChangePassword
+    ),
   };
 }
 

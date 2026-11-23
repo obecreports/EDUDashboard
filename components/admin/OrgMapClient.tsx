@@ -106,14 +106,6 @@ export function OrgMapClient({
     [accounts]
   );
 
-  const specialVolunteers = useMemo(
-    () =>
-      accounts
-        .filter((a) => a.role === 'special_volunteer')
-        .sort((a, b) => labelOf(a).localeCompare(labelOf(b), 'th')),
-    [accounts]
-  );
-
   const overseerBlocks = useMemo(() => {
     return type1.map((ov) => {
       const scopeOv = toScope(ov);
@@ -194,15 +186,6 @@ export function OrgMapClient({
     for (const u of covertOverseers) {
       rows.push({
         level: ADMIN_ROLE_LABELS.covert_overseer,
-        name: labelOf(u),
-        role: u.role,
-        provinces: provincesCell(u.assigned_provinces),
-        parent: ROLE_LABELS.super_overseer,
-      });
-    }
-    for (const u of specialVolunteers) {
-      rows.push({
-        level: ADMIN_ROLE_LABELS.special_volunteer,
         name: labelOf(u),
         role: u.role,
         provinces: provincesCell(u.assigned_provinces),
@@ -361,47 +344,27 @@ export function OrgMapClient({
             </ul>
           </div>
 
-          {(covertOverseers.length > 0 || specialVolunteers.length > 0) && (
+          {covertOverseers.length > 0 && (
             <div className="space-y-3 border-t border-slate-100 pt-3">
               <p className="text-sm text-slate-600 m-0">
                 บทบาทเฉพาะกิจภายใต้{ROLE_LABELS.super_overseer} (ไม่แสดงในแดชบอร์ดกิจกรรม
                 SO/OS)
               </p>
-              {covertOverseers.length > 0 && (
-                <div>
-                  <div className="text-sm font-semibold mb-1">
-                    {ADMIN_ROLE_LABELS.covert_overseer} ({covertOverseers.length})
-                  </div>
-                  <ul className="text-sm m-0 pl-5 space-y-0.5">
-                    {covertOverseers.map((u) => (
-                      <li key={u.id}>
-                        {labelOf(u)}
-                        {u.assigned_provinces.length
-                          ? provinceScopeText(u.assigned_provinces)
-                          : ' · ยังไม่มอบหมายจังหวัด'}
-                      </li>
-                    ))}
-                  </ul>
+              <div>
+                <div className="text-sm font-semibold mb-1">
+                  {ADMIN_ROLE_LABELS.covert_overseer} ({covertOverseers.length})
                 </div>
-              )}
-              {specialVolunteers.length > 0 && (
-                <div>
-                  <div className="text-sm font-semibold mb-1">
-                    {ADMIN_ROLE_LABELS.special_volunteer} (
-                    {specialVolunteers.length})
-                  </div>
-                  <ul className="text-sm m-0 pl-5 space-y-0.5">
-                    {specialVolunteers.map((u) => (
-                      <li key={u.id}>
-                        {labelOf(u)}
-                        {u.assigned_provinces.length
-                          ? provinceScopeText(u.assigned_provinces)
-                          : ' · ยังไม่มอบหมายจังหวัด'}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                <ul className="text-sm m-0 pl-5 space-y-0.5">
+                  {covertOverseers.map((u) => (
+                    <li key={u.id}>
+                      {labelOf(u)}
+                      {u.assigned_provinces.length
+                        ? provinceScopeText(u.assigned_provinces)
+                        : ' · ยังไม่มอบหมายจังหวัด'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           )}
         </section>

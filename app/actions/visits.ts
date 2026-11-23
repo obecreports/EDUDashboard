@@ -25,12 +25,86 @@ import {
   statusToLegacy,
   type VisitStatusThai,
 } from '@/lib/visits/labels';
-import { normalizeRole } from '@/lib/types';
+import { normalizeRole, type OverseerTier } from '@/lib/types';
 import {
   assertSchoolInActionScope,
   assertSchoolsInActionScope,
   isFieldRole,
+  scheduleInvitePeers,
+  toScopeDirectory,
+  type ScopeUser,
 } from '@/lib/auth/scope';
+import { canAccessSection } from '@/lib/auth/content-access';
+import { readContentAccessMapStored } from '@/lib/auth/user-store';
+
+async function requireCalendarCreateModify() {
+  const { profile, isAuthenticated, role } = await getSessionProfile();
+  if (!isAuthenticated || !profile || !isFieldRole(normalizeRole(role))) {
+    return { ok: false as const, error: 'เฉพาะเจ้าหน้าที่สนามเท่านั้น' };
+  }
+  const acl = await readContentAccessMapStored().catch(() => null);
+  if (!canAccessSection(role, 'calendar', 'calendar_create', 'modify', acl ?? undefined)) {
+    return {
+      ok: false as const,
+      error: 'ไม่มีสิทธิ์สร้างหรือจัดการนัดหมาย',
+    };
+  }
+  return { ok: true as const, profile, role };
+}
+
+/** Clip invites to scheduleInvitePeers (+ keep non-SO → SO block). */
+async function clipInviteParticipantIds(
+  profile: {
+    id: string;
+    role: string;
+    overseer_tier?: OverseerTier | string | null;
+    assigned_provinces?: string[];
+    assigned_districts?: string[];
+    reports_to?: string | null;
+  },
+  role: string,
+  participantIds: string[]
+): Promise<{ ok: true; ids: string[] } | { ok: false; error: string }> {
+  if (!participantIds.length) return { ok: true, ids: [] };
+
+  const { fetchAllUserProfiles } = await import('@/lib/supabase/profiles');
+  const { readStoredUsers } = await import('@/lib/auth/user-store');
+  const { fetchSchools } = await import('@/lib/supabase/schools');
+  const users = isDbOnlyMode()
+    ? await fetchAllUserProfiles().catch(() => [])
+    : await readStoredUsers().catch(() => []);
+  const schools = await fetchSchools().catch(() => []);
+  const directory = toScopeDirectory(users);
+  const me: ScopeUser = directory.find((u) => u.id === profile.id) ?? {
+    id: profile.id,
+    role: normalizeRole(role),
+    overseer_tier: (profile.overseer_tier as OverseerTier | null | undefined) ?? null,
+    assigned_provinces: profile.assigned_provinces ?? [],
+    assigned_districts: profile.assigned_districts ?? [],
+    reports_to: profile.reports_to ?? null,
+  };
+  const allowed = new Set(scheduleInvitePeers(me, directory, schools));
+  const creatorRole = normalizeRole(role);
+  const soIds = new Set(
+    users.filter((u) => normalizeRole(u.role) === 'super_overseer').map((u) => u.id)
+  );
+
+  if (creatorRole !== 'super_overseer' && participantIds.some((id) => soIds.has(id))) {
+    return {
+      ok: false,
+      error: 'ไม่สามารถเชิญประธานโครงการ (SO) เป็นผู้ร่วมได้',
+    };
+  }
+
+  const clipped = [
+    ...new Set(
+      participantIds.filter(
+        (id) => id !== profile.id && allowed.has(id) && (creatorRole === 'super_overseer' || !soIds.has(id))
+      )
+    ),
+  ];
+  return { ok: true, ids: clipped };
+}
 
 export async function createVisitLog(formData: FormData) {
   const schoolId = Number(formData.get('school_id'));
@@ -100,10 +174,9 @@ function parseJsonStringArray(raw: FormDataEntryValue | null): string[] {
 }
 
 export async function createCalendarEventAction(formData: FormData) {
-  const { profile, isAuthenticated, role } = await getSessionProfile();
-  if (!isAuthenticated || !profile || !isFieldRole(normalizeRole(role))) {
-    return { ok: false as const, error: 'เฉพาะเจ้าหน้าที่ที่เข้าสู่ระบบแล้ว' };
-  }
+  const gate = await requireCalendarCreateModify();
+  if (!gate.ok) return gate;
+  const { profile, role } = gate;
 
   const date = String(formData.get('date') || '');
   const notes = String(formData.get('notes') || '');
@@ -148,25 +221,9 @@ export async function createCalendarEventAction(formData: FormData) {
   const schoolGate = await assertSchoolsInActionScope(profile, schoolIdsRaw);
   if (!schoolGate.ok) return { ok: false as const, error: schoolGate.error };
 
-  // Non-SO cannot invite SO users as participants
-  const creatorRole = normalizeRole(role);
-  if (creatorRole !== 'super_overseer' && participantIds.length) {
-    const { fetchAllUserProfiles } = await import('@/lib/supabase/profiles');
-    const { readStoredUsers } = await import('@/lib/auth/user-store');
-    const users = isDbOnlyMode()
-      ? await fetchAllUserProfiles().catch(() => [])
-      : await readStoredUsers().catch(() => []);
-    const soIds = new Set(
-      users.filter((u) => normalizeRole(u.role) === 'super_overseer').map((u) => u.id)
-    );
-    if (participantIds.some((id) => soIds.has(id))) {
-      return {
-        ok: false as const,
-        error: 'ไม่สามารถเลือกผู้กำกับดูแลสูงสุด (SO) เป็นสมาชิกทีมได้',
-      };
-    }
-    participantIds = participantIds.filter((id) => !soIds.has(id));
-  }
+  const inviteGate = await clipInviteParticipantIds(profile, role, participantIds);
+  if (!inviteGate.ok) return { ok: false as const, error: inviteGate.error };
+  participantIds = inviteGate.ids;
 
   try {
     const slimNotes = notes.trim().slice(0, 280);
@@ -234,10 +291,9 @@ export async function createCalendarEventAction(formData: FormData) {
 
 /** Owner-only update of an existing schedule. */
 export async function updateCalendarEventAction(formData: FormData) {
-  const { profile, isAuthenticated, role } = await getSessionProfile();
-  if (!isAuthenticated || !profile || !isFieldRole(normalizeRole(role))) {
-    return { ok: false as const, error: 'เฉพาะเจ้าหน้าที่ที่เข้าสู่ระบบแล้ว' };
-  }
+  const gate = await requireCalendarCreateModify();
+  if (!gate.ok) return gate;
+  const { profile, role } = gate;
 
   const id = String(formData.get('id') || '');
   if (!id) return { ok: false as const, error: 'ไม่พบนัดหมาย' };
@@ -277,24 +333,9 @@ export async function updateCalendarEventAction(formData: FormData) {
   const schoolGate = await assertSchoolsInActionScope(profile, schoolIdsRaw);
   if (!schoolGate.ok) return { ok: false as const, error: schoolGate.error };
 
-  const creatorRole = normalizeRole(role);
-  if (creatorRole !== 'super_overseer' && participantIds.length) {
-    const { fetchAllUserProfiles } = await import('@/lib/supabase/profiles');
-    const { readStoredUsers } = await import('@/lib/auth/user-store');
-    const users = isDbOnlyMode()
-      ? await fetchAllUserProfiles().catch(() => [])
-      : await readStoredUsers().catch(() => []);
-    const soIds = new Set(
-      users.filter((u) => normalizeRole(u.role) === 'super_overseer').map((u) => u.id)
-    );
-    if (participantIds.some((pid) => soIds.has(pid))) {
-      return {
-        ok: false as const,
-        error: 'ไม่สามารถเลือกผู้กำกับดูแลสูงสุด (SO) เป็นสมาชิกทีมได้',
-      };
-    }
-    participantIds = participantIds.filter((pid) => !soIds.has(pid));
-  }
+  const inviteGate = await clipInviteParticipantIds(profile, role, participantIds);
+  if (!inviteGate.ok) return { ok: false as const, error: inviteGate.error };
+  participantIds = inviteGate.ids;
 
   const allParticipants = [...new Set([profile.id, ...participantIds])];
   const slimNotes = notes.trim().slice(0, 280);
@@ -408,27 +449,25 @@ export async function listCalendarEventsForStaffIds(
 }
 
 export async function markVisitCompletedAction(formData: FormData) {
-  const { profile, isAuthenticated } = await getSessionProfile();
-  if (
-    !isAuthenticated ||
-    !profile ||
-    ![
-      'staff',
-      'overseer',
-      'volunteer_center',
-      'volunteer_border',
-      'special_volunteer',
-      'director',
-      'super_overseer',
-    ].includes(profile.role)
-  ) {
-    return { ok: false, error: 'เฉพาะเจ้าหน้าที่ที่เข้าสู่ระบบแล้ว' };
-  }
+  const gate = await requireCalendarCreateModify();
+  if (!gate.ok) return gate;
+  const { profile } = gate;
+
   const id = String(formData.get('id') || '');
-  if (!id) return { ok: false, error: 'ไม่พบรายการ' };
+  if (!id) return { ok: false as const, error: 'ไม่พบรายการ' };
+
+  const event = await fetchSiteVisitById(id);
+  if (!event) return { ok: false as const, error: 'ไม่พบนัดหมาย' };
+  const parts = event.participant_ids ?? [];
+  const isOwner = event.staff_id === profile.id;
+  const isParticipant = parts.includes(profile.id);
+  if (!isOwner && !isParticipant) {
+    return { ok: false as const, error: 'ไม่มีสิทธิ์อัปเดตนัดหมายนี้' };
+  }
 
   const status: VisitStatusThai = 'เยี่ยมชมเสร็จสิ้น';
-  await updateSiteVisitStatus({ id, status });
+  const res = await updateSiteVisitStatus({ id, status });
+  if (!res.ok) return { ok: false as const, error: res.error };
 
   revalidatePath('/calendar');
   revalidatePath('/dashboard');
@@ -437,10 +476,9 @@ export async function markVisitCompletedAction(formData: FormData) {
 
 /** Owner cancels — event disappears for all participants. */
 export async function cancelVisitEventAction(formData: FormData) {
-  const { profile, isAuthenticated, role } = await getSessionProfile();
-  if (!isAuthenticated || !profile || !isFieldRole(normalizeRole(role))) {
-    return { ok: false as const, error: 'เฉพาะเจ้าหน้าที่ที่เข้าสู่ระบบแล้ว' };
-  }
+  const gate = await requireCalendarCreateModify();
+  if (!gate.ok) return gate;
+  const { profile } = gate;
   const id = String(formData.get('id') || '');
   if (!id) return { ok: false as const, error: 'ไม่พบรายการ' };
 

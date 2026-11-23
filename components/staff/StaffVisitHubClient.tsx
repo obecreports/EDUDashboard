@@ -86,6 +86,8 @@ export function StaffVisitHubClient({
   focusDate = '',
   initialView = 'month',
   initialPersonIds = [],
+  canCreateSchedule = true,
+  canCreateReport = true,
 }: {
   events: StaffCalendarEvent[];
   schools: SchoolOpt[];
@@ -96,6 +98,8 @@ export function StaffVisitHubClient({
   focusDate?: string;
   initialView?: CalViewMode;
   initialPersonIds?: string[];
+  canCreateSchedule?: boolean;
+  canCreateReport?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -441,18 +445,20 @@ export function StaffVisitHubClient({
                 }
               }}
             />
-            <div className="pt-1">
-              <Link
-                href={
-                  range.from === range.to
-                    ? `/calendar/new?date=${encodeURIComponent(range.from)}`
-                    : '/calendar/new'
-                }
-                className="ed-btn ed-btn--primary ed-btn--sm"
-              >
-                <CalendarDays size={14} /> เพิ่มนัดหมาย
-              </Link>
-            </div>
+            {canCreateSchedule ? (
+              <div className="pt-1">
+                <Link
+                  href={
+                    range.from === range.to
+                      ? `/calendar/new?date=${encodeURIComponent(range.from)}`
+                      : '/calendar/new'
+                  }
+                  className="ed-btn ed-btn--primary ed-btn--sm"
+                >
+                  <CalendarDays size={14} /> เพิ่มนัดหมาย
+                </Link>
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <strong className="text-sm">รูปแบบ</strong>
@@ -752,23 +758,25 @@ export function StaffVisitHubClient({
                           ) : null}
 
                           <div className="visit-booking-card__actions">
-                            <Link
-                              href={`/reports/new?event_id=${encodeURIComponent(e.id)}${
-                                e.school_id
-                                  ? `&school_id=${encodeURIComponent(e.school_id)}`
-                                  : ''
-                              }&date=${encodeURIComponent(e.date)}`}
-                              className="ed-btn ed-btn--primary ed-btn--sm"
-                            >
-                              <MessageSquarePlus size={14} /> เขียนสรุปรายงาน
-                            </Link>
+                            {canCreateReport ? (
+                              <Link
+                                href={`/reports/new?event_id=${encodeURIComponent(e.id)}${
+                                  e.school_id
+                                    ? `&school_id=${encodeURIComponent(e.school_id)}`
+                                    : ''
+                                }&date=${encodeURIComponent(e.date)}`}
+                                className="ed-btn ed-btn--primary ed-btn--sm"
+                              >
+                                <MessageSquarePlus size={14} /> เขียนสรุปรายงาน
+                              </Link>
+                            ) : null}
                             <Link
                               href={e.school_id ? `/schools/${e.school_id}` : '/schools'}
                               className="ed-btn ed-btn--outline ed-btn--sm"
                             >
                               ดูรายละเอียดโรงเรียน
                             </Link>
-                            {isOwner ? (
+                            {canCreateSchedule && isOwner ? (
                               <Link
                                 href={`/calendar/edit?id=${encodeURIComponent(e.id)}`}
                                 className="ed-btn ed-btn--outline ed-btn--sm"
@@ -776,7 +784,7 @@ export function StaffVisitHubClient({
                                 <Pencil size={14} /> แก้ไขนัดหมาย
                               </Link>
                             ) : null}
-                            {isOwner ? (
+                            {canCreateSchedule && isOwner ? (
                               <button
                                 type="button"
                                 className="ed-btn ed-btn--danger ed-btn--sm"
@@ -1016,23 +1024,25 @@ export function StaffVisitHubClient({
                           <p className="visit-booking-card__notes">{e.notes}</p>
                         ) : null}
                         <div className="visit-booking-card__actions">
-                          <Link
-                            href={`/reports/new?event_id=${encodeURIComponent(e.id)}${
-                              e.school_id
-                                ? `&school_id=${encodeURIComponent(e.school_id)}`
-                                : ''
-                            }&date=${encodeURIComponent(e.date)}`}
-                            className="ed-btn ed-btn--primary ed-btn--sm"
-                          >
-                            <MessageSquarePlus size={14} /> เขียนสรุปรายงาน
-                          </Link>
+                          {canCreateReport ? (
+                            <Link
+                              href={`/reports/new?event_id=${encodeURIComponent(e.id)}${
+                                e.school_id
+                                  ? `&school_id=${encodeURIComponent(e.school_id)}`
+                                  : ''
+                              }&date=${encodeURIComponent(e.date)}`}
+                              className="ed-btn ed-btn--primary ed-btn--sm"
+                            >
+                              <MessageSquarePlus size={14} /> เขียนสรุปรายงาน
+                            </Link>
+                          ) : null}
                           <Link
                             href={e.school_id ? `/schools/${e.school_id}` : '/schools'}
                             className="ed-btn ed-btn--outline ed-btn--sm"
                           >
                             ดูรายละเอียดโรงเรียน
                           </Link>
-                          {isOwner ? (
+                          {canCreateSchedule && isOwner ? (
                             <Link
                               href={`/calendar/edit?id=${encodeURIComponent(e.id)}`}
                               className="ed-btn ed-btn--outline ed-btn--sm"
@@ -1040,7 +1050,7 @@ export function StaffVisitHubClient({
                               <Pencil size={14} /> แก้ไขนัดหมาย
                             </Link>
                           ) : null}
-                          {isOwner ? (
+                          {canCreateSchedule && isOwner ? (
                             <button
                               type="button"
                               className="ed-btn ed-btn--danger ed-btn--sm"

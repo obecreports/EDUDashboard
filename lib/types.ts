@@ -13,7 +13,15 @@ export type UserRole =
    * hidden from SO/OS activity dashboard; still on admin org-map.
    */
   | 'covert_overseer'
-  /** ผู้อำนวยการโรงเรียน — school-scoped login (separate from SchoolDirector master) */
+  /**
+   * ผู้ดูแลโรงเรียน — school-scoped login (10-digit school_id).
+   * Separate from SchoolDirector person master and from reserved `director` role.
+   */
+  | 'school_admin'
+  /**
+   * Reserved for a future director meaning (not school login).
+   * Legacy school logins migrate to `school_admin`.
+   */
   | 'director'
   | 'super_overseer'
   | 'admin'
@@ -198,8 +206,8 @@ export interface UserProfile {
    */
   assigned_districts: string[];
   /**
-   * Director (school-admin login) scope — school_id strings.
-   * Empty for non-director roles.
+   * School-admin login scope — school_id strings.
+   * Empty for non–school-admin roles.
    */
   assigned_schools?: string[];
   reports_to: string | null;
@@ -242,6 +250,7 @@ export const ALL_ROLES: UserRole[] = [
   'volunteer_border',
   'special_volunteer',
   'covert_overseer',
+  'school_admin',
   'director',
   'super_overseer',
   'admin',
@@ -255,6 +264,7 @@ export const FIELD_ROLES: UserRole[] = [
   'volunteer_border',
   'special_volunteer',
   'covert_overseer',
+  'school_admin',
   'director',
   'super_overseer',
 ];
@@ -267,6 +277,7 @@ export const PUBLIC_ROLES: UserRole[] = [
   'volunteer_border',
   'special_volunteer',
   'covert_overseer',
+  'school_admin',
   'director',
   'super_overseer',
   'admin',
@@ -295,7 +306,8 @@ export const ADMIN_ROLE_LABELS: Record<UserRole, string> = {
   volunteer_border: 'อาสาสมัครประจำพื้นที่',
   special_volunteer: 'อาสาสมัครเฉพาะกิจ',
   covert_overseer: 'องคมนตรี (อิสระ)',
-  director: 'ผู้อำนวยการโรงเรียน',
+  school_admin: 'ผู้ดูแลโรงเรียน',
+  director: 'ผู้อำนวยการ (สำรอง)',
   super_overseer: 'ประธานโครงการ',
   admin: 'ผู้ดูแลระบบ (Admin)',
   super_admin: 'ผู้ดูแลระบบสูงสุด (Super Admin)',
@@ -310,7 +322,8 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   special_volunteer: 'อาสาสมัครเฉพาะกิจ',
   /** Same display name as overseer */
   covert_overseer: 'องคมนตรี',
-  director: 'ผู้อำนวยการโรงเรียน',
+  school_admin: 'ผู้ดูแลโรงเรียน',
+  director: 'ผู้อำนวยการ',
   super_overseer: 'ประธานโครงการ',
   admin: 'ผู้ดูแลระบบ (Admin)',
   super_admin: 'ผู้ดูแลระบบสูงสุด (Super Admin)',
@@ -322,6 +335,15 @@ export function normalizeRole(role: string | null | undefined): UserRole {
   if (role === 'volunteer') return 'volunteer_border';
   if (role && (ALL_ROLES as string[]).includes(role)) return role as UserRole;
   return 'guest';
+}
+
+/**
+ * School-scoped login role (`school_admin`).
+ * Also treats legacy `director` school logins the same until fully migrated.
+ */
+export function isSchoolAdminRole(role: string | null | undefined): boolean {
+  const r = normalizeRole(role);
+  return r === 'school_admin' || r === 'director';
 }
 
 /** องคมนตรี + covert + อาสาสมัคร variants — province scope / field perspective */

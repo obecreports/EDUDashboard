@@ -35,7 +35,7 @@ async function ProfileBody() {
     role === 'covert_overseer'
   ) {
     domainLines.push(`จังหวัด: ${(profile?.assigned_provinces ?? []).join(', ') || '—'}`);
-  } else if (role === 'director') {
+  } else if (role === 'school_admin' || role === 'director') {
     domainLines.push(
       `โรงเรียน: ${(profile?.assigned_schools ?? []).join(', ') || '—'}`
     );

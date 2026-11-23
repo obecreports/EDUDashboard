@@ -9,6 +9,12 @@ import {
 } from '@/lib/types';
 import { fetchAllUserProfiles } from '@/lib/supabase/profiles';
 import { readStoredUsers } from '@/lib/auth/user-store';
+import { getSiteSetting } from '@/lib/auth/site-settings-db';
+import {
+  OVERSEER_DISPLAY_ORDER_KEY,
+  parseOverseerDisplayOrder,
+  sortByOverseerDisplayOrder,
+} from '@/lib/auth/overseer-display-order';
 import { PageSkeleton } from '@/components/ui/PageSkeleton';
 import { AdminOverseersListClient } from '@/components/admin/AdminOverseersListClient';
 
@@ -26,45 +32,48 @@ async function Body() {
     ? dbProfiles
     : await readStoredUsers().catch(() => []);
 
-  const overseers = profiles
-    .filter((u) => {
-      if (u.disabled) return false;
-      const r = normalizeRole(u.role);
-      if (r === 'covert_overseer') return true;
-      return isOverseerType1(u.role, u.overseer_tier);
-    })
-    .map((u) => {
-      const provinces = (u.assigned_provinces ?? [])
-        .map((p) => p.trim())
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b, 'th'));
-      const rawPosition = (u.position ?? '').trim();
-      return {
-        id: u.id,
-        full_name: u.full_name,
-        name_prefix: u.name_prefix ?? null,
-        position:
-          rawPosition ||
-          positionDisplayLabel(u.role, u.overseer_tier, u.position) ||
-          '',
-        avatar_url: u.avatar_url ?? null,
-        provinceCount: provinces.length,
-        provinces,
-      };
-    })
-    .sort((a, b) => {
-      const aChair = a.position === 'ประธานองคมนตรี' ? 0 : 1;
-      const bChair = b.position === 'ประธานองคมนตรี' ? 0 : 1;
-      if (aChair !== bChair) return aChair - bChair;
-      return a.full_name.localeCompare(b.full_name, 'th');
-    });
+  const orderRaw = await getSiteSetting(OVERSEER_DISPLAY_ORDER_KEY).catch(
+    () => null
+  );
+  const displayOrder = parseOverseerDisplayOrder(orderRaw);
+
+  const overseers = sortByOverseerDisplayOrder(
+    profiles
+      .filter((u) => {
+        if (u.disabled) return false;
+        const ur = normalizeRole(u.role);
+        if (ur === 'covert_overseer') return true;
+        return isOverseerType1(u.role, u.overseer_tier);
+      })
+      .map((u) => {
+        const provinces = (u.assigned_provinces ?? [])
+          .map((p) => p.trim())
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b, 'th'));
+        const rawPosition = (u.position ?? '').trim();
+        return {
+          id: u.id,
+          full_name: u.full_name,
+          name_prefix: u.name_prefix ?? null,
+          position:
+            rawPosition ||
+            positionDisplayLabel(u.role, u.overseer_tier, u.position) ||
+            '',
+          avatar_url: u.avatar_url ?? null,
+          provinceCount: provinces.length,
+          provinces,
+        };
+      }),
+    displayOrder
+  );
 
   return (
     <div className="page-shell space-y-4 py-5" style={{ maxWidth: 880 }}>
       <div>
         <h1 className="section-heading">แก้ไขการแสดงผลองคมนตรี</h1>
         <p className="text-slate-500 mt-[-0.5rem]">
-          รวมองคมนตรี Type 1 และองคมนตรี (อิสระ) · ปรับชื่อ ตำแหน่ง และรูปโปรไฟล์ที่แสดงในหน้าเกี่ยวกับโครงการ · จังหวัดจัดการที่มอบหมายพื้นที่
+          รวมองคมนตรี Type 1 และองคมนตรี (อิสระ) · ลากเรียงลำดับการแสดงในหน้าเกี่ยวกับโครงการ ·
+          ปรับชื่อ ตำแหน่ง และรูปโปรไฟล์ · จังหวัดจัดการที่มอบหมายพื้นที่
         </p>
       </div>
       <AdminOverseersListClient overseers={overseers} />

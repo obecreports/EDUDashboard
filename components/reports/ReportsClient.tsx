@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ChevronDown, FilePlus2, MessageSquare, Pencil } from 'lucide-react';
-import { updateSchoolCommentAction } from '@/app/actions/school-extras';
+import { ChevronDown, FilePlus2, MessageSquare, Pencil, Trash2 } from 'lucide-react';
+import {
+  deleteSchoolCommentAction,
+  updateSchoolCommentAction,
+} from '@/app/actions/school-extras';
 import type { SchoolSize } from '@/lib/types';
 import type { ReportDraft } from '@/lib/auth/mock-users';
 import { ImageThumbGrid } from '@/components/media/ImageThumbGrid';
@@ -59,6 +62,10 @@ function canEditReport(row: ReportRow, userId: string) {
   return false;
 }
 
+function canDeleteReport(row: ReportRow, userId: string) {
+  return row.staff_id === userId;
+}
+
 function groupByDate(rows: ReportRow[]) {
   const map = new Map<string, ReportRow[]>();
   for (const r of rows) {
@@ -101,12 +108,14 @@ export function ReportsClient({
   drafts = [],
   people = [],
   initialPersonIds = [],
+  canCreateReport = true,
 }: {
   rows: ReportRow[];
   currentUserId: string;
   drafts?: ReportDraft[];
   people?: PersonFilterOpt[];
   initialPersonIds?: string[];
+  canCreateReport?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -230,21 +239,43 @@ export function ReportsClient({
     });
   };
 
+  const deleteReport = (r: ReportRow) => {
+    if (!window.confirm('ลบบันทึกการตรวจเยี่ยมนี้ถาวร?')) return;
+    start(async () => {
+      const fd = new FormData();
+      fd.set('school_id', r.school_id);
+      fd.set('comment_id', r.id);
+      const res = await deleteSchoolCommentAction(fd);
+      if (!res.ok) return;
+      setRows((prev) => prev.filter((x) => x.id !== r.id));
+      if (editingId === r.id) setEditingId(null);
+    });
+  };
+
   return (
     <div className="page-shell py-5 grid gap-5">
-      <section className="ed-card p-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="ed-section-title text-base m-0">ส่งบันทึกการตรวจเยี่ยม</h2>
+      {canCreateReport ? (
+        <section className="ed-card p-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="ed-section-title text-base m-0">ส่งบันทึกการตรวจเยี่ยม</h2>
+            <p className="text-sm text-slate-600 m-0 mt-1">
+              บันทึกความคิดเห็นหรือกิจกรรมของโรงเรียนของฉัน
+            </p>
+          </div>
+          <Link href="/reports/new" className="ed-btn ed-btn--primary">
+            <FilePlus2 size={16} /> ฉันจะส่งบันทึก
+          </Link>
+        </section>
+      ) : (
+        <section className="ed-card p-5">
+          <h2 className="ed-section-title text-base m-0">บันทึกการตรวจเยี่ยม</h2>
           <p className="text-sm text-slate-600 m-0 mt-1">
-            บันทึกความคิดเห็นหรือกิจกรรมของโรงเรียนของฉัน
+            ดูประวัติบันทึกของโรงเรียนในขอบเขตของคุณ (ดูอย่างเดียว)
           </p>
-        </div>
-        <Link href="/reports/new" className="ed-btn ed-btn--primary">
-          <FilePlus2 size={16} /> ฉันจะส่งบันทึก
-        </Link>
-      </section>
+        </section>
+      )}
 
-      {drafts.length > 0 && (
+      {canCreateReport && drafts.length > 0 && (
         <section className="ed-card p-4 space-y-3">
           <div>
             <h2 className="ed-section-title text-base m-0">ร่างบันทึกของฉัน</h2>
@@ -570,13 +601,23 @@ export function ReportsClient({
                                   >
                                     เปิดรายละเอียดโรงเรียน
                                   </Link>
-                                  {editable && (
+                                  {canCreateReport && editable && (
                                     <button
                                       type="button"
                                       className="ed-btn ed-btn--outline ed-btn--sm"
                                       onClick={() => startEdit(c)}
                                     >
                                       <Pencil size={14} /> แก้ไข
+                                    </button>
+                                  )}
+                                  {canCreateReport && canDeleteReport(c, currentUserId) && (
+                                    <button
+                                      type="button"
+                                      className="ed-btn ed-btn--danger ed-btn--sm"
+                                      disabled={pending}
+                                      onClick={() => deleteReport(c)}
+                                    >
+                                      <Trash2 size={14} /> ลบ
                                     </button>
                                   )}
                                 </div>

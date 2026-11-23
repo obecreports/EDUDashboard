@@ -27,7 +27,7 @@ import { isDbOnlyMode } from '@/lib/auth/db-mode';
 
 export type { ReportDraft };
 import type { UserRole } from '@/lib/types';
-import { ALL_ROLES, normalizeRole } from '@/lib/types';
+import { ALL_ROLES, isSchoolAdminRole, normalizeRole } from '@/lib/types';
 import { allocateNextLoginId } from '@/lib/auth/login-id';
 import {
   emptySchoolSwot,
@@ -174,18 +174,49 @@ export async function createMockUser(input: {
   const manualLogin = input.email?.trim();
   let loginId = manualLogin || '';
   if (!loginId) {
-    if (role === 'director') {
+    if (isSchoolAdminRole(role)) {
       return {
         ok: false,
-        error: 'บัญชีผู้อำนวยการต้องระบุรหัสผู้ใช้เป็นรหัสโรงเรียน (school ID)',
+        error: 'บัญชีผู้ดูแลโรงเรียนต้องระบุรหัสผู้ใช้เป็นรหัสโรงเรียน (school ID 10 หลัก)',
       };
     }
     const existing = (await readStoredUsers()).map((u) => u.email).filter(Boolean);
     loginId = allocateNextLoginId(role, existing);
   }
+
+  if (isSchoolAdminRole(role)) {
+    const schoolId = loginId.trim();
+    if (!/^\d{10}$/.test(schoolId)) {
+      return {
+        ok: false,
+        error: 'รหัสผู้ใช้ผู้ดูแลโรงเรียนต้องเป็นรหัสโรงเรียน 10 หลัก',
+      };
+    }
+    const { fetchSchoolById } = await import('@/lib/supabase/schools');
+    const school = await fetchSchoolById(schoolId).catch(() => null);
+    if (!school) {
+      return { ok: false, error: `ไม่พบรหัสโรงเรียน ${schoolId} ใน School_Basic` };
+    }
+    const users = await readStoredUsers();
+    const taken = users.find(
+      (u) =>
+        isSchoolAdminRole(u.role) &&
+        (loginIdsMatch(u.email, schoolId) ||
+          (u.assigned_schools ?? []).some((s) => String(s).trim() === schoolId))
+    );
+    if (taken) {
+      return {
+        ok: false,
+        error: `โรงเรียน ${schoolId} มีบัญชีผู้ดูแลอยู่แล้ว (${taken.email})`,
+      };
+    }
+    loginId = schoolId;
+  }
+
   if (await findUserByEmail(loginId)) return { ok: false, error: 'รหัสผู้ใช้นี้มีอยู่แล้ว' };
 
   const tempPassword = MOCK_LOGIN_PASSWORD;
+  const assignedSchools = isSchoolAdminRole(role) && loginId ? [loginId] : [];
 
   if (isDbOnlyMode()) {
     const created = await createUserInDb({
@@ -197,6 +228,17 @@ export async function createMockUser(input: {
       name_prefix,
     });
     if (!created.ok) return created;
+    if (assignedSchools.length) {
+      const patched = await updateUserProfileInDb(created.user.id, {
+        assigned_schools: assignedSchools,
+      });
+      if (!patched.ok) return patched;
+      return {
+        ok: true,
+        user: { ...created.user, assigned_schools: assignedSchools },
+        tempPassword,
+      };
+    }
     return { ok: true, user: created.user, tempPassword };
   }
 
@@ -212,7 +254,7 @@ export async function createMockUser(input: {
     assigned_zone: null,
     assigned_provinces: [],
     assigned_districts: [],
-    assigned_schools: role === 'director' && loginId ? [loginId] : [],
+    assigned_schools: assignedSchools,
     reports_to: null,
     disabled: false,
   };

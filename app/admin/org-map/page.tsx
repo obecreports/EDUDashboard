@@ -24,8 +24,8 @@ export default async function AdminOrgMapPage() {
       'overseer',
       'volunteer_center',
       'volunteer_border',
-      'special_volunteer',
       'covert_overseer',
+      'school_admin',
       'director',
       'super_overseer',
     ].includes(a.role)
@@ -40,7 +40,7 @@ export default async function AdminOrgMapPage() {
       </div>
       <h1 className="ed-section-title mb-2">แผนผังสายบังคับบัญชา</h1>
       <p className="text-slate-600 mb-4 text-sm">
-        ภาพรวมสายงาน (ดูอย่างเดียว) — ท่านประธาน → องคมนตรี → สาขาอาสาสมัคร /
+        ภาพรวมสายงาน (ดูอย่างเดียว) — ประธานโครงการ → องคมนตรี → สาขาอาสาสมัคร /
         ศึกษานิเทศก์ ตามจังหวัดที่ซ้อนทับ · มอบหมายพื้นที่ที่หน้ามอบหมายพื้นที่จัดการ
       </p>
       <OrgMapClient accounts={fieldAccounts} schools={schools} />

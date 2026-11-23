@@ -1,12 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { loginAction } from '@/app/actions/auth';
 import { PasswordField } from '@/components/auth/PasswordField';
 
 const INVALID_LOGIN_MSG = 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองอีกครั้ง';
 
-export function LoginFormClient() {
+function LoginFormInner() {
+  const searchParams = useSearchParams();
+  const timedOut = searchParams.get('timeout') === '1';
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +72,11 @@ export function LoginFormClient() {
         value={password}
         onChange={(e) => setPassword(e.target.value)}
       />
+      {timedOut && !error ? (
+        <p className="text-sm font-medium" style={{ color: '#b45309' }}>
+          เซสชันหมดอายุเนื่องจากไม่มีการใช้งาน — กรุณาเข้าสู่ระบบอีกครั้ง
+        </p>
+      ) : null}
       {error && (
         <p className="text-sm font-medium" style={{ color: '#b91c1c' }}>
           {error}
@@ -82,5 +90,13 @@ export function LoginFormClient() {
         {submitting ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบ'}
       </button>
     </form>
+  );
+}
+
+export function LoginFormClient() {
+  return (
+    <Suspense fallback={null}>
+      <LoginFormInner />
+    </Suspense>
   );
 }

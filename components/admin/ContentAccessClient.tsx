@@ -5,26 +5,28 @@ import { saveContentAccessAction } from '@/app/actions/admin';
 import {
   CONTENT_PAGES,
   DEFAULT_CONTENT_ACCESS,
-  accessLevelLabel,
+  accessLevelLabelDetailed,
   accessOf,
   aclEditableRoles,
   aclRoleLabel,
+  binaryAccessLabel,
   getAccessCell,
   normalizeAccessCell,
-  resourceSupportsSensitivity,
   sensitivityLevelLabel,
   tierCell,
   type AccessLevel,
   type ContentAccessCell,
   type ContentAccessMap,
+  type ContentPageDef,
   type ContentResourceId,
-  type SensitivityLevel,
   type TieredAccessCell,
+  type VisibilityLevel,
 } from '@/lib/auth/content-access';
 import { normalizeRole, type UserRole } from '@/lib/types';
 
-const LEVELS: AccessLevel[] = ['none', 'view', 'modify'];
-const SENSITIVITY: SensitivityLevel[] = [1, 2, 3];
+const VIEW_EDIT_LEVELS: AccessLevel[] = ['none', 'view', 'modify'];
+const VIS_WITH_HIDDEN: VisibilityLevel[] = [0, 1, 2, 3];
+const VIS_L1_L3: VisibilityLevel[] = [1, 2, 3];
 
 function cellOf(
   map: ContentAccessMap,
@@ -34,102 +36,184 @@ function cellOf(
   return getAccessCell(map, resource, role);
 }
 
-function AccessControls({
-  resource,
+function binaryValue(access: AccessLevel): 'none' | 'on' {
+  return access === 'none' ? 'none' : 'on';
+}
+
+function BinaryAccessSelect({
+  access,
+  disabled,
+  storesModify,
+  onChange,
+}: {
+  access: AccessLevel;
+  disabled?: boolean;
+  storesModify?: boolean;
+  onChange: (next: ContentAccessCell) => void;
+}) {
+  return (
+    <label className="grid gap-1 text-xs font-semibold">
+      สิทธิ์
+      <select
+        className="form-input text-sm py-1.5 min-w-[10rem]"
+        value={binaryValue(access)}
+        disabled={disabled}
+        onChange={(e) => {
+          if (e.target.value === 'none') onChange('none');
+          else onChange(storesModify ? 'modify' : 'view');
+        }}
+      >
+        <option value="none">{binaryAccessLabel('none')}</option>
+        <option value="on">{binaryAccessLabel('view')}</option>
+      </select>
+    </label>
+  );
+}
+
+function ViewEditAccessSelect({
   cell,
   disabled,
   onChange,
 }: {
-  resource: ContentResourceId;
   cell: TieredAccessCell;
   disabled?: boolean;
   onChange: (next: ContentAccessCell) => void;
 }) {
-  const tiered = resourceSupportsSensitivity(resource);
-  const access = cell.access;
+  return (
+    <label className="grid gap-1 text-xs font-semibold">
+      สิทธิ์
+      <select
+        className="form-input text-sm py-1.5 min-w-[10rem]"
+        value={cell.access}
+        disabled={disabled}
+        onChange={(e) => {
+          const next = e.target.value as AccessLevel;
+          if (next === 'none') onChange(tierCell('none'));
+          else if (next === 'view')
+            onChange(tierCell('view', cell.viewUpTo && cell.viewUpTo > 0 ? cell.viewUpTo : 1));
+          else
+            onChange(
+              tierCell('modify', cell.viewUpTo && cell.viewUpTo > 0 ? cell.viewUpTo : 3)
+            );
+        }}
+      >
+        {VIEW_EDIT_LEVELS.map((lv) => (
+          <option key={lv} value={lv}>
+            {accessLevelLabelDetailed(lv)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function VisibilitySelect({
+  cell,
+  includeHidden,
+  disabled,
+  onChange,
+}: {
+  cell: TieredAccessCell;
+  includeHidden: boolean;
+  disabled?: boolean;
+  onChange: (next: ContentAccessCell) => void;
+}) {
+  const options = includeHidden ? VIS_WITH_HIDDEN : VIS_L1_L3;
+  const value = clampVis(cell.viewUpTo, includeHidden ? 0 : 1, includeHidden);
+
+  return (
+    <label className="grid gap-1 text-xs font-semibold">
+      ระดับการมองเห็น
+      <select
+        className="form-input text-sm py-1.5 min-w-[11rem]"
+        value={value}
+        disabled={disabled || cell.access === 'none'}
+        onChange={(e) => {
+          const v = Number(e.target.value) as VisibilityLevel;
+          if (cell.access === 'none') return;
+          onChange(tierCell(cell.access, v));
+        }}
+      >
+        {options.map((lv) => (
+          <option key={lv} value={lv}>
+            {sensitivityLevelLabel(lv)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function clampVis(
+  v: number | undefined,
+  fallback: VisibilityLevel,
+  allowZero: boolean
+): VisibilityLevel {
+  if (v == null) return fallback;
+  if (!allowZero && v === 0) return 1;
+  return Math.max(0, Math.min(3, v)) as VisibilityLevel;
+}
+
+function PageAccessControls({
+  page,
+  cell,
+  onChange,
+}: {
+  page: ContentPageDef;
+  cell: TieredAccessCell;
+  onChange: (next: ContentAccessCell) => void;
+}) {
+  const mode = page.accessMode ?? 'binary';
+  const showVis = Boolean(page.pageVisibility);
+  const includeHidden = Boolean(page.visibilityIncludesHidden);
 
   return (
     <div className="flex flex-wrap items-end gap-2">
-      <label className="grid gap-1 text-xs font-semibold">
-        สิทธิ์
-        <select
-          className="form-input text-sm py-1.5 min-w-[9rem]"
-          value={access}
-          disabled={disabled}
-          onChange={(e) => {
-            const next = e.target.value as AccessLevel;
-            if (!tiered) {
+      {mode === 'view_edit' ? (
+        <ViewEditAccessSelect cell={cell} onChange={onChange} />
+      ) : (
+        <BinaryAccessSelect
+          access={cell.access}
+          storesModify={page.binaryStoresModify}
+          onChange={(next) => {
+            if (!showVis) {
               onChange(next);
               return;
             }
-            if (next === 'none') onChange(tierCell('none'));
-            else if (next === 'view')
-              onChange(tierCell('view', cell.viewUpTo ?? 1));
-            else
-              onChange(
-                tierCell(
-                  'modify',
-                  cell.viewUpTo ?? 3,
-                  Math.min(cell.viewUpTo ?? 3, cell.modifyUpTo ?? 1) as SensitivityLevel
-                )
-              );
+            // Preserve visibility when toggling binary page access
+            if (typeof next === 'string') {
+              if (next === 'none') onChange(tierCell('none'));
+              else onChange(tierCell('view', cell.viewUpTo ?? 3));
+            } else onChange(next);
           }}
-        >
-          {LEVELS.map((lv) => (
-            <option key={lv} value={lv}>
-              {accessLevelLabel(lv)}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {tiered && access !== 'none' ? (
-        <label className="grid gap-1 text-xs font-semibold">
-          ดูได้ถึง
-          <select
-            className="form-input text-sm py-1.5 min-w-[9rem]"
-            value={cell.viewUpTo ?? 1}
-            disabled={disabled}
-            onChange={(e) => {
-              const v = Number(e.target.value) as SensitivityLevel;
-              if (access === 'view') onChange(tierCell('view', v));
-              else {
-                const m = Math.min(v, cell.modifyUpTo ?? 1) as SensitivityLevel;
-                onChange(tierCell('modify', v, m));
-              }
-            }}
-          >
-            {SENSITIVITY.map((lv) => (
-              <option key={lv} value={lv}>
-                {sensitivityLevelLabel(lv)}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-
-      {tiered && access === 'modify' ? (
-        <label className="grid gap-1 text-xs font-semibold">
-          แก้ไขได้ถึง
-          <select
-            className="form-input text-sm py-1.5 min-w-[9rem]"
-            value={Math.min(cell.modifyUpTo ?? 1, cell.viewUpTo ?? 1)}
-            disabled={disabled}
-            onChange={(e) => {
-              const m = Number(e.target.value) as SensitivityLevel;
-              const v = (cell.viewUpTo ?? 3) as SensitivityLevel;
-              onChange(tierCell('modify', v, Math.min(v, m) as SensitivityLevel));
-            }}
-          >
-            {SENSITIVITY.filter((lv) => lv <= (cell.viewUpTo ?? 3)).map((lv) => (
-              <option key={lv} value={lv}>
-                {sensitivityLevelLabel(lv)}
-              </option>
-            ))}
-          </select>
-        </label>
+        />
+      )}
+      {showVis && cell.access !== 'none' ? (
+        <VisibilitySelect
+          cell={normalizeAccessCell(cell)}
+          includeHidden={includeHidden}
+          onChange={onChange}
+        />
       ) : null}
     </div>
+  );
+}
+
+function ChildBinaryControls({
+  access,
+  disabled,
+  onChange,
+}: {
+  access: AccessLevel;
+  disabled?: boolean;
+  onChange: (next: ContentAccessCell) => void;
+}) {
+  return (
+    <BinaryAccessSelect
+      access={access}
+      disabled={disabled}
+      onChange={onChange}
+    />
   );
 }
 
@@ -223,8 +307,9 @@ export function ContentAccessClient({
 
       <p className="text-sm text-slate-600 m-0">
         เลือกบทบาทแล้วกำหนดสิทธิ์รายหน้า · Global = ผู้ใช้ที่ยังไม่ล็อกอิน ·
-        หน้ารายละเอียดโรงเรียน / นักเรียนทุน ใช้ระดับความลับ 1–3 เพิ่มเติม ·
-        ส่วนย่อยใช้ได้เมื่อหน้านั้นไม่ใช่「ไม่มีสิทธิ์」
+        หน้ารายละเอียดโรงเรียน / นักเรียนทุน / ครูอัตรจ้าง ตั้งระดับการมองเห็นที่หน้าหลัก
+        แล้วใช้กับทุกส่วนย่อย · ส่วนย่อยเป็นเข้าถึงได้/ไม่ได้เท่านั้น ·
+        สิทธิ์แก้ไข = ระดับการมองเห็นเดียวกัน (ไม่มีแยกระดับแก้ไข)
         {normalizeRole(actorRole) !== 'super_admin'
           ? ' · Admin ไม่สามารถแก้ไขสิทธิ์ Super Admin ได้'
           : ''}
@@ -239,14 +324,14 @@ export function ContentAccessClient({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="ed-section-title text-base m-0">{page.label}</h2>
-                  {page.supportsSensitivity ? (
+                  {page.pageVisibility ? (
                     <p className="text-xs text-slate-500 m-0 mt-1">
-                      รองรับระดับความลับ (ทั่วไป / ลับ / จำกัด)
+                      ระดับการมองเห็นใช้กับทุกส่วนย่อย / ฟิลด์ในหน้านี้
                     </p>
                   ) : null}
                 </div>
-                <AccessControls
-                  resource={page.id}
+                <PageAccessControls
+                  page={page}
                   cell={normalizeAccessCell(pageCell)}
                   onChange={(next) => setCell(page.id, next)}
                 />
@@ -268,9 +353,8 @@ export function ContentAccessClient({
                       className="flex flex-wrap items-start justify-between gap-2 pl-2 border-l-2 border-amber-200"
                     >
                       <span className="text-sm font-medium pt-1.5">{sec.label}</span>
-                      <AccessControls
-                        resource={sec.id}
-                        cell={cellOf(map, sec.id, role)}
+                      <ChildBinaryControls
+                        access={accessOf(cellOf(map, sec.id, role))}
                         disabled={pageOff}
                         onChange={(next) => setCell(sec.id, next)}
                       />

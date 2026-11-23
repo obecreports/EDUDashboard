@@ -26,6 +26,11 @@ import {
   parseT2ViewType1Cookie,
   T2_VIEW_TYPE1S_COOKIE,
 } from '@/lib/auth/province-radar';
+import {
+  canAccessSection,
+  mergeContentAccess,
+} from '@/lib/auth/content-access';
+import { readContentAccessMapStored } from '@/lib/auth/user-store';
 
 export const revalidate = 120;
 
@@ -151,6 +156,17 @@ async function SchoolsBody({
     }
   }
 
+  const acl = mergeContentAccess(
+    await readContentAccessMapStored().catch(() => null)
+  );
+  const canCreateSchedule = canAccessSection(
+    r,
+    'calendar',
+    'calendar_create',
+    'modify',
+    acl
+  );
+
   return (
     <ManagedSchoolsClient
       schools={staffMode ? scoped : schools}
@@ -171,6 +187,7 @@ async function SchoolsBody({
       scopeOnly={staffMode}
       domainPeople={domainPeople}
       domainPeopleLabel={domainPeopleLabel}
+      canCreateSchedule={canCreateSchedule}
     />
   );
 }

@@ -18,6 +18,8 @@ import {
   upsertReportDraftInDb,
 } from '@/lib/supabase/report-drafts';
 import { assertSchoolInActionScope, isFieldRole } from '@/lib/auth/scope';
+import { canAccessSection } from '@/lib/auth/content-access';
+import { readContentAccessMapStored } from '@/lib/auth/user-store';
 import { normalizeRole } from '@/lib/types';
 
 async function requireFieldUser() {
@@ -26,7 +28,28 @@ async function requireFieldUser() {
   if (!isAuthenticated || !profile || !isFieldRole(r)) {
     return { ok: false as const, error: 'เฉพาะเจ้าหน้าที่ที่เข้าสู่ระบบแล้ว' };
   }
-  return { ok: true as const, profile };
+  return { ok: true as const, profile, role };
+}
+
+async function requireReportsCreateModify() {
+  const gate = await requireFieldUser();
+  if (!gate.ok) return gate;
+  const acl = await readContentAccessMapStored().catch(() => null);
+  if (
+    !canAccessSection(
+      gate.role,
+      'reports',
+      'reports_create',
+      'modify',
+      acl ?? undefined
+    )
+  ) {
+    return {
+      ok: false as const,
+      error: 'ไม่มีสิทธิ์ส่งหรือจัดการบันทึกการตรวจเยี่ยม',
+    };
+  }
+  return gate;
 }
 
 export async function listMyReportDraftsAction(): Promise<ReportDraft[]> {
@@ -39,7 +62,7 @@ export async function listMyReportDraftsAction(): Promise<ReportDraft[]> {
 export async function saveReportDraftAction(formData: FormData): Promise<
   { ok: true; draft: ReportDraft } | { ok: false; error: string }
 > {
-  const gate = await requireFieldUser();
+  const gate = await requireReportsCreateModify();
   if (!gate.ok) return gate;
 
   const school_id = String(formData.get('school_id') || '').trim();
@@ -105,7 +128,7 @@ export async function saveReportDraftAction(formData: FormData): Promise<
 export async function deleteReportDraftAction(formData: FormData): Promise<
   { ok: true } | { ok: false; error: string }
 > {
-  const gate = await requireFieldUser();
+  const gate = await requireReportsCreateModify();
   if (!gate.ok) return gate;
   const draft_id = String(formData.get('draft_id') || '').trim();
   if (!draft_id) return { ok: false, error: 'ไม่พบร่างรายงาน' };

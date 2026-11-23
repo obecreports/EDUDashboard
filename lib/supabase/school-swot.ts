@@ -708,4 +708,51 @@ export async function updateSchoolStaffComment(params: {
   }
 }
 
+/** Hard-delete published comment. Owner or admin only. */
+export async function deleteSchoolStaffComment(params: {
+  commentId: string;
+  schoolId: string | number;
+  requesterId: string;
+  asAdmin?: boolean;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const schoolNum = toSchoolId(params.schoolId);
+  if (schoolNum == null) return { ok: false, error: 'รหัสโรงเรียนไม่ถูกต้อง' };
+  if (!isDbUserId(params.requesterId) && !params.asAdmin) {
+    return { ok: false, error: 'บัญชียังไม่อยู่ในฐานข้อมูล' };
+  }
+
+  try {
+    const supabase = await createClient();
+    const existing = await supabase
+      .from('school_staff_comments')
+      .select('id, staff_id')
+      .eq('id', params.commentId)
+      .eq('school_id', schoolNum)
+      .maybeSingle();
+
+    if (existing.error || !existing.data) {
+      return { ok: false, error: existing.error?.message || 'ไม่พบความคิดเห็น' };
+    }
+
+    const ownerId = (existing.data as { staff_id?: string | null }).staff_id ?? '';
+    if (!params.asAdmin && ownerId !== params.requesterId) {
+      return { ok: false, error: 'ลบได้เฉพาะเจ้าของรายงาน' };
+    }
+
+    const { error } = await supabase
+      .from('school_staff_comments')
+      .delete()
+      .eq('id', params.commentId)
+      .eq('school_id', schoolNum);
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'ลบไม่สำเร็จ',
+    };
+  }
+}
+
 export { swotHasContent };

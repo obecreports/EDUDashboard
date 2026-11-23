@@ -193,7 +193,10 @@ export async function loginWithPassword(email: string, password: string): Promis
       ? fromCookie.tempPassword
       : (seed?.tempPassword ?? null);
   const mustChangePassword = Boolean(
-    fromCookie?.mustChangePassword ?? seed?.mustChangePassword ?? false
+    fromCookie?.mustChangePassword ??
+      seed?.mustChangePassword ??
+      user.mustChangePassword ??
+      false
   );
   if (resolvedPassword == null && resolvedTemp == null) {
     resolvedPassword = MOCK_LOGIN_PASSWORD;
@@ -203,8 +206,19 @@ export async function loginWithPassword(email: string, password: string): Promis
   if (!input) {
     return { ok: false, error: 'รหัสผ่านไม่ถูกต้อง' };
   }
-  const matchedPassword = resolvedPassword != null && resolvedPassword === input;
+  let matchedPassword = resolvedPassword != null && resolvedPassword === input;
   const matchedTemp = resolvedTemp != null && resolvedTemp === input;
+
+  // DB-only: accept password stored in auth.users (after user/admin reset)
+  if (!matchedPassword && !matchedTemp) {
+    const { isDbOnlyMode } = await import('@/lib/auth/db-mode');
+    if (isDbOnlyMode()) {
+      const { verifyConedUserPasswordInDb } = await import(
+        '@/lib/supabase/profiles'
+      );
+      matchedPassword = await verifyConedUserPasswordInDb(user.id, input);
+    }
+  }
 
   if (!matchedPassword && !matchedTemp) {
     return { ok: false, error: 'รหัสผ่านไม่ถูกต้อง' };
@@ -251,6 +265,31 @@ export async function loginWithPassword(email: string, password: string): Promis
 
 export type ChangePasswordResult = { ok: true } | { ok: false; error: string };
 
+/** Cookie credentials + DB auth.users / must_change_password when DB-only. */
+async function persistPasswordState(
+  userId: string,
+  password: string,
+  mustChangePassword: boolean
+): Promise<ChangePasswordResult> {
+  const next = password.trim();
+  const creds = await readCredentials();
+  creds[userId] = {
+    password: next,
+    tempPassword: null,
+    mustChangePassword,
+  };
+  await writeCredentials(creds);
+
+  const { isDbOnlyMode } = await import('@/lib/auth/db-mode');
+  if (isDbOnlyMode()) {
+    const { setConedUserPasswordInDb } = await import('@/lib/supabase/profiles');
+    const db = await setConedUserPasswordInDb(userId, next, mustChangePassword);
+    if (!db.ok) return db;
+  }
+
+  return { ok: true };
+}
+
 export async function changePasswordForced(nextPassword: string): Promise<ChangePasswordResult> {
   const session = await readAuthSession();
   if (!session) return { ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' };
@@ -275,12 +314,8 @@ export async function changePasswordForced(nextPassword: string): Promise<Change
     return { ok: false, error: 'รหัสผ่านใหม่ต้องแตกต่างจากรหัสเดิม' };
   }
 
-  creds[session.id] = {
-    password: next,
-    tempPassword: null,
-    mustChangePassword: false,
-  };
-  await writeCredentials(creds);
+  const persist = await persistPasswordState(session.id, next, false);
+  if (!persist.ok) return persist;
   await writeAuthSession({
     ...session,
     mustChangePassword: false,
@@ -304,27 +339,30 @@ export async function changePassword(
 
   const creds = await readCredentials();
   const state = creds[session.id];
-  if (!state) return { ok: false, error: 'ไม่พบข้อมูลบัญชี' };
-
   const input = currentOrTemp.trim();
-  const okCurrent =
-    (state.password != null && state.password === input) ||
-    (state.tempPassword != null && state.tempPassword === input);
+  let okCurrent =
+    (state?.password != null && state.password === input) ||
+    (state?.tempPassword != null && state.tempPassword === input);
+
+  if (!okCurrent) {
+    const { isDbOnlyMode } = await import('@/lib/auth/db-mode');
+    if (isDbOnlyMode()) {
+      const { verifyConedUserPasswordInDb } = await import('@/lib/supabase/profiles');
+      okCurrent = await verifyConedUserPasswordInDb(session.id, input);
+    }
+  }
 
   if (!okCurrent) {
     return { ok: false, error: 'รหัสผ่านปัจจุบัน / OTP ไม่ถูกต้อง' };
   }
 
-  if (nextPassword.trim() === state.password || nextPassword.trim() === state.tempPassword) {
+  const next = nextPassword.trim();
+  if (next === state?.password || next === state?.tempPassword) {
     return { ok: false, error: 'รหัสผ่านใหม่ต้องแตกต่างจากรหัสเดิม' };
   }
 
-  creds[session.id] = {
-    password: nextPassword.trim(),
-    tempPassword: null,
-    mustChangePassword: false,
-  };
-  await writeCredentials(creds);
+  const persist = await persistPasswordState(session.id, next, false);
+  if (!persist.ok) return persist;
   await writeAuthSession({
     ...session,
     mustChangePassword: false,
@@ -333,6 +371,17 @@ export async function changePassword(
   });
 
   return { ok: true };
+}
+
+/**
+ * Admin: reset to training default password12345 and force change on next login.
+ */
+export async function forceDefaultPasswordReset(
+  userId: string
+): Promise<ChangePasswordResult> {
+  const user = await findUserById(userId);
+  if (!user) return { ok: false, error: 'ไม่พบผู้ใช้' };
+  return persistPasswordState(userId, MOCK_LOGIN_PASSWORD, true);
 }
 
 /** @deprecated self-serve zones removed — admin assigns via /admin/assignments */
@@ -360,7 +409,7 @@ export async function adminAssignGeo(
       | 'volunteer'
       | null;
     overseerTier?: OverseerTier | null;
-    /** Director school-admin scope */
+    /** School-admin login scope (school_id strings) */
     schools?: string[];
   }
 ): Promise<ChangePasswordResult> {
@@ -625,6 +674,12 @@ export async function issueTemporaryPassword(
     mustChangePassword: true,
   };
   await writeCredentials(creds);
+
+  const { isDbOnlyMode } = await import('@/lib/auth/db-mode');
+  if (isDbOnlyMode()) {
+    const { updateUserProfileInDb } = await import('@/lib/supabase/profiles');
+    await updateUserProfileInDb(userId, { must_change_password: true });
+  }
   return { ok: true };
 }
 
@@ -638,15 +693,9 @@ export async function registerUserCredentials(userId: string, tempPassword: stri
   await writeCredentials(creds);
 }
 
-/** First password for admin-created users (same UX as shared demo password). */
+/** First password for admin-created users — force change on next login (training default). */
 export async function registerInitialPassword(userId: string, password: string) {
-  const creds = await readCredentials();
-  creds[userId] = {
-    password: password.trim(),
-    tempPassword: null,
-    mustChangePassword: false,
-  };
-  await writeCredentials(creds);
+  await persistPasswordState(userId, password.trim() || MOCK_LOGIN_PASSWORD, true);
 }
 
 export async function logoutSession() {
@@ -677,7 +726,9 @@ export async function listMockAccountsForAdmin() {
       disabled: Boolean(u.disabled),
       hasPassword: Boolean(c?.password),
       hasTempPassword: Boolean(c?.tempPassword),
-      mustChangePassword: Boolean(c?.mustChangePassword),
+      mustChangePassword: Boolean(
+        c?.mustChangePassword ?? u.mustChangePassword ?? false
+      ),
       hintPassword: c?.password ?? null,
       hintTemp: c?.tempPassword ?? null,
       status: u.disabled ? ('disabled' as const) : ('active' as const),

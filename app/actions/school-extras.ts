@@ -8,12 +8,14 @@ import {
   addSchoolComment,
   addSchoolComments,
   CookieTooLargeError,
+  readContentAccessMapStored,
   updateSchoolComment,
   saveSchoolAchievements,
   saveSchoolSwot,
   type SchoolAchievements,
 } from '@/lib/auth/user-store';
 import { assertSchoolInActionScope, isFieldRole } from '@/lib/auth/scope';
+import { canAccessSection } from '@/lib/auth/content-access';
 import { formatPersonLabel, normalizeRole } from '@/lib/types';
 
 function authorDisplayName(profile: {
@@ -30,6 +32,7 @@ function authorDisplayName(profile: {
   );
 }
 import {
+  deleteSchoolStaffComment,
   insertSchoolStaffComment,
   updateSchoolStaffComment,
   upsertSchoolAchievements,
@@ -45,12 +48,42 @@ async function requireAuthProfile() {
   return { ok: true as const, profile, role };
 }
 
-/** Comments: field roles only */
+/** Comments: field roles with reports_create modify */
 async function requireCommentAccess() {
   const gate = await requireAuthProfile();
   if (!gate.ok) return gate;
   if (!isFieldRole(normalizeRole(gate.role))) {
     return { ok: false as const, error: 'เฉพาะเจ้าหน้าที่และผู้กำกับดูแล' };
+  }
+  const acl = await readContentAccessMapStored().catch(() => null);
+  if (
+    !canAccessSection(
+      gate.role,
+      'reports',
+      'reports_create',
+      'modify',
+      acl ?? undefined
+    )
+  ) {
+    return { ok: false as const, error: 'ไม่มีสิทธิ์ส่งหรือจัดการบันทึกการตรวจเยี่ยม' };
+  }
+  return gate;
+}
+
+/** Update/delete: create-modify for field, or admin roles. */
+async function requireCommentManageAccess() {
+  const gate = await requireAuthProfile();
+  if (!gate.ok) return gate;
+  const r = normalizeRole(gate.role);
+  if (r === 'admin' || r === 'super_admin') return gate;
+  if (!isFieldRole(r)) {
+    return { ok: false as const, error: 'เฉพาะเจ้าหน้าที่และผู้กำกับดูแล' };
+  }
+  const acl = await readContentAccessMapStored().catch(() => null);
+  if (
+    !canAccessSection(gate.role, 'reports', 'reports_create', 'modify', acl ?? undefined)
+  ) {
+    return { ok: false as const, error: 'ไม่มีสิทธิ์จัดการบันทึกการตรวจเยี่ยม' };
   }
   return gate;
 }
@@ -209,6 +242,12 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
   } catch {
     visitorReasonMap = {};
   }
+  // Always include submitting user in visitor_reason_map on publish
+  if (!visitorReasonMap[gate.profile.id]) {
+    visitorReasonMap[gate.profile.id] = onsiteReasons.length
+      ? [...onsiteReasons]
+      : [];
+  }
 
   const opsNotes = String(formData.get('ops_notes') || '').trim();
   const visitTypeRaw = String(formData.get('visit_type') || '').trim();
@@ -306,7 +345,7 @@ export async function postSchoolCommentsBatchAction(formData: FormData) {
 }
 
 export async function updateSchoolCommentAction(formData: FormData) {
-  const gate = await requireCommentAccess();
+  const gate = await requireCommentManageAccess();
   if (!gate.ok) return gate;
 
   const schoolId = String(formData.get('school_id') || '');
@@ -361,6 +400,33 @@ export async function updateSchoolCommentAction(formData: FormData) {
     ok: false as const,
     error: db.error || 'แก้ไขได้เฉพาะเจ้าของรายงานหรือสมาชิกทีม',
   };
+}
+
+/** Owner (or admin) hard-deletes a published school_staff_comments row. */
+export async function deleteSchoolCommentAction(formData: FormData) {
+  const gate = await requireCommentManageAccess();
+  if (!gate.ok) return gate;
+
+  const schoolId = String(formData.get('school_id') || '');
+  const commentId = String(formData.get('comment_id') || '');
+  if (!schoolId || !commentId) {
+    return { ok: false as const, error: 'ข้อมูลไม่ครบ' };
+  }
+
+  const r = normalizeRole(gate.role);
+  const asAdmin = r === 'admin' || r === 'super_admin';
+  const db = await deleteSchoolStaffComment({
+    commentId,
+    schoolId,
+    requesterId: gate.profile.id,
+    asAdmin,
+  });
+  if (!db.ok) return { ok: false as const, error: db.error };
+
+  revalidatePath(`/schools/${schoolId}`);
+  revalidatePath('/reports');
+  revalidatePath('/staff/reports');
+  return { ok: true as const };
 }
 
 export async function saveSchoolSwotAction(formData: FormData) {

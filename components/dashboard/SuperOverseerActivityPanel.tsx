@@ -144,7 +144,9 @@ function roleRowClass(role: UserRole | string): string {
   if (r === 'volunteer_center') return 'so-role-row so-role-row--center';
   if (r === 'volunteer_border') return 'so-role-row so-role-row--border';
   if (r === 'staff') return 'so-role-row so-role-row--staff';
-  if (r === 'director') return 'so-role-row so-role-row--director';
+  if (r === 'director' || r === 'school_admin') {
+    return 'so-role-row so-role-row--director';
+  }
   return 'so-role-row';
 }
 

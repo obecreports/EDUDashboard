@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import {
   createAccountAction,
+  forceDefaultPasswordAction,
   generateOtpForUserAction,
   toggleAccountStatusAction,
   updateAdminUserAction,
@@ -41,7 +42,7 @@ const CREATE_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: 'volunteer_center', label: ADMIN_ROLE_LABELS.volunteer_center },
   { value: 'volunteer_border', label: ADMIN_ROLE_LABELS.volunteer_border },
   { value: 'special_volunteer', label: ADMIN_ROLE_LABELS.special_volunteer },
-  { value: 'director', label: ADMIN_ROLE_LABELS.director },
+  { value: 'school_admin', label: ADMIN_ROLE_LABELS.school_admin },
   { value: 'super_overseer', label: ADMIN_ROLE_LABELS.super_overseer },
   { value: 'admin', label: ADMIN_ROLE_LABELS.admin },
 ];
@@ -68,7 +69,7 @@ function rolesAssignableBy(actorRole: UserRole): UserRole[] {
     'volunteer_center',
     'volunteer_border',
     'special_volunteer',
-    'director',
+    'school_admin',
     'super_overseer',
   ] as UserRole[];
   if (actorRole === 'super_admin') {
@@ -309,6 +310,31 @@ export function AdminAccountsManager({
             <button
               type="button"
               className="ed-btn ed-btn--outline ed-btn--sm"
+              disabled={pending}
+              onClick={() => {
+                const ok = window.confirm(
+                  `บังคับเปลี่ยน password ของ ${a.full_name}?\nจะรีเซ็ตรหัสผ่านเป็น password12345 และบังคับเปลี่ยนรหัสผ่านเมื่อล็อกอินครั้งถัดไป`
+                );
+                if (!ok) return;
+                start(async () => {
+                  const fd = new FormData();
+                  fd.set('userId', a.id);
+                  const res = await forceDefaultPasswordAction(fd);
+                  if (!res.ok) {
+                    setMsg(('error' in res && res.error) || 'ไม่สำเร็จ');
+                    return;
+                  }
+                  setMsg(
+                    `รีเซ็ตรหัสผ่าน ${a.full_name} เป็น password12345 แล้ว — ผู้ใช้ต้องเปลี่ยนรหัสผ่านหลังล็อกอิน`
+                  );
+                });
+              }}
+            >
+              บังคับเปลี่ยน password
+            </button>
+            <button
+              type="button"
+              className="ed-btn ed-btn--outline ed-btn--sm"
               onClick={cancelEdit}
             >
               ยกเลิก
@@ -426,12 +452,12 @@ export function AdminAccountsManager({
               name="email"
               type="text"
               className="form-input"
-              placeholder="staff0001 / OS0015 / ASB0001 · ผอ. = รหัสโรงเรียน"
+              placeholder="staff0001 / OS0015 / VL001 · ผู้ดูแลโรงเรียน = รหัส 10 หลัก"
               autoCapitalize="off"
               spellCheck={false}
             />
             <span className="text-xs text-slate-500 font-normal">
-              ตามบทบาท + เลข 4 หลัก · ผู้อำนวยการต้องใส่รหัสโรงเรียน (school ID)
+              ตามบทบาท + เลขอัตโนมัติ · ผู้ดูแลโรงเรียนต้องใส่รหัสโรงเรียน 10 หลัก
             </span>
           </label>
           <label className="block text-sm">

@@ -144,6 +144,20 @@ export default async function CalendarPage({
         focusDate={sp.date ?? ''}
         initialView={initialView}
         initialPersonIds={initialPersonIds}
+        canCreateSchedule={canAccessSection(
+          r,
+          'calendar',
+          'calendar_create',
+          'modify',
+          acl
+        )}
+        canCreateReport={canAccessSection(
+          r,
+          'reports',
+          'reports_create',
+          'modify',
+          acl
+        )}
       />
     </div>
   );

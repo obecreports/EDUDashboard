@@ -86,6 +86,8 @@ type Props = {
   /** Tag-picker: filter by responsible person's territory */
   domainPeople?: DomainPersonOption[];
   domainPeopleLabel?: string;
+  /** ACL calendar_create modify — hide schedule CTAs when false */
+  canCreateSchedule?: boolean;
 };
 
 function parseInitialVisit(raw?: string): Set<VisitFilter> {
@@ -119,6 +121,7 @@ export function ManagedSchoolsClient({
   scopeOnly = false,
   domainPeople = [],
   domainPeopleLabel = 'ผู้รับผิดชอบพื้นที่',
+  canCreateSchedule = true,
 }: Props) {
   const bootStatus = parseInitialStatus(initialStatus);
   const bootVisit = parseInitialVisit(initialVisit);
@@ -819,7 +822,7 @@ export function ManagedSchoolsClient({
                         >
                           ดูข้อมูล
                         </Link>
-                        {showScores ? (
+                        {showScores && canCreateSchedule ? (
                           <Link
                             href={`/calendar/new?school_id=${encodeURIComponent(String(s.school_id))}`}
                             className="ed-btn ed-btn--primary ed-btn--sm"
@@ -954,7 +957,7 @@ export function ManagedSchoolsClient({
                           >
                             ดูข้อมูล
                           </Link>
-                          {showScores ? (
+                          {showScores && canCreateSchedule ? (
                             <Link
                               href={`/calendar/new?school_id=${encodeURIComponent(String(s.school_id))}`}
                               className="ed-btn ed-btn--primary ed-btn--sm"

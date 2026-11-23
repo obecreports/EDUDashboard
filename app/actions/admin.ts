@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import {
+  forceDefaultPasswordReset,
   getSessionProfile,
   issueTemporaryPassword,
   registerInitialPassword,
@@ -201,10 +202,17 @@ export async function createAccountAction(formData: FormData) {
     return { ok: false as const, error: 'Admin ไม่สามารถสร้างบัญชี Admin / Super Admin ได้' };
   }
 
-  if (role === 'director' && !email?.trim()) {
+  if (role === 'school_admin' && !email?.trim()) {
     return {
       ok: false as const,
-      error: 'บัญชีผู้อำนวยการต้องระบุรหัสผู้ใช้เป็นรหัสโรงเรียน (school ID)',
+      error: 'บัญชีผู้ดูแลโรงเรียนต้องระบุรหัสผู้ใช้เป็นรหัสโรงเรียน (school ID 10 หลัก)',
+    };
+  }
+  // Do not create new school logins as reserved `director`
+  if (role === 'director') {
+    return {
+      ok: false as const,
+      error: 'ใช้บทบาทผู้ดูแลโรงเรียน (school_admin) สำหรับ login รหัสโรงเรียน',
     };
   }
 
@@ -215,8 +223,8 @@ export async function createAccountAction(formData: FormData) {
         ? ROLE_LABELS.volunteer_border
         : role === 'special_volunteer'
           ? ROLE_LABELS.special_volunteer
-          : role === 'director'
-            ? ROLE_LABELS.director
+          : role === 'school_admin'
+            ? ROLE_LABELS.school_admin
             : position;
 
   const created = await createMockUser({
@@ -294,6 +302,33 @@ export async function generateOtpForUserAction(formData: FormData) {
   revalidatePath('/admin/accounts');
   revalidatePath('/admin/settings');
   return { ok: true as const, tempPassword: temp };
+}
+
+/** Reset to password12345 and force must_change_password on next login. */
+export async function forceDefaultPasswordAction(formData: FormData) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+
+  const userId = String(formData.get('userId') || '');
+  const { findUserById } = await import('@/lib/auth/user-store');
+  const target = await findUserById(userId);
+  if (!target) return { ok: false as const, error: 'ไม่พบผู้ใช้' };
+  if (
+    !canActorManageTarget(
+      normalizeRole(gate.profile.role),
+      gate.profile.id,
+      normalizeRole(target.role),
+      target.id
+    )
+  ) {
+    return { ok: false as const, error: 'ไม่มีสิทธิ์จัดการบัญชีนี้' };
+  }
+
+  const result = await forceDefaultPasswordReset(userId);
+  if (!result.ok) return result;
+  revalidatePath('/admin/accounts');
+  revalidatePath('/admin/settings');
+  return { ok: true as const };
 }
 
 export async function getHeroSettingsAction() {

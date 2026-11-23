@@ -42,6 +42,7 @@ export default async function AdminDomainPage() {
       'volunteer_border',
       'special_volunteer',
       'covert_overseer',
+      'school_admin',
       'director',
       'super_overseer',
     ].includes(a.role)

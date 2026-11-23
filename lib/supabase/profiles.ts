@@ -47,7 +47,63 @@ function mapRow(row: ProfileRow): StoredUserProfile {
     disabled: Boolean(row.disabled),
     birthday: row.birthday ?? null,
     avatar_url: row.avatar_url ?? null,
+    mustChangePassword: Boolean(row.must_change_password),
   });
+}
+
+/** Persist password to auth.users + optional must_change_password (SECURITY DEFINER RPC). */
+export async function setConedUserPasswordInDb(
+  userId: string,
+  password: string,
+  mustChangePassword: boolean
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const pwd = password.trim();
+  if (!userId || !pwd) return { ok: false, error: 'ข้อมูลไม่ครบ' };
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.rpc('set_coned_user_password', {
+      p_user_id: userId,
+      p_password: pwd,
+      p_must_change: mustChangePassword,
+    });
+    if (error) {
+      const msg = error.message || 'อัปเดตรหัสผ่านในฐานข้อมูลไม่สำเร็จ';
+      if (/function .*set_coned_user_password.* does not exist|Could not find the function/i.test(msg)) {
+        return {
+          ok: false,
+          error:
+            'ยังไม่มีฟังก์ชัน set_coned_user_password — รัน migration 045 ใน Supabase',
+        };
+      }
+      return { ok: false, error: msg };
+    }
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'อัปเดตรหัสผ่านในฐานข้อมูลไม่สำเร็จ',
+    };
+  }
+}
+
+/** Verify password against auth.users (for DB-only logins after password change). */
+export async function verifyConedUserPasswordInDb(
+  userId: string,
+  password: string
+): Promise<boolean> {
+  const pwd = password.trim();
+  if (!userId || !pwd) return false;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc('verify_coned_user_password', {
+      p_user_id: userId,
+      p_password: pwd,
+    });
+    if (error) return false;
+    return Boolean(data);
+  } catch {
+    return false;
+  }
 }
 
 const PROFILE_SELECT =

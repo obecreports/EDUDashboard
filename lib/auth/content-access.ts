@@ -9,13 +9,20 @@ import {
 /** Access depth for a content resource */
 export type AccessLevel = 'none' | 'view' | 'modify';
 
-/** Field sensitivity clearance (scholarship / school detail tiered pages) */
+/** Field sensitivity tags on data fields (L1–L3) */
 export type SensitivityLevel = 1 | 2 | 3;
+
+/**
+ * Page-level visibility clearance.
+ * 0 = มองไม่เห็น (no sensitive fields); 1–3 = view up to that level.
+ */
+export type VisibilityLevel = 0 | 1 | 2 | 3;
 
 export type TieredAccessCell = {
   access: AccessLevel;
-  viewUpTo?: SensitivityLevel;
-  modifyUpTo?: SensitivityLevel;
+  viewUpTo?: VisibilityLevel;
+  /** Always synced to viewUpTo when access is modify (edit = view clearance). */
+  modifyUpTo?: VisibilityLevel;
 };
 
 /** Plain level (legacy) or tiered cell with clearance */
@@ -82,7 +89,20 @@ export type ContentPageDef = {
   id: ContentResourceId;
   label: string;
   sections: { id: ContentResourceId; label: string }[];
-  /** Hide/View/Modify + Level 1–3 clearance dropdowns */
+  /** binary = เข้าถึงได้/ไม่ได้; view_edit = ไม่มี/ดู/แก้ไข */
+  accessMode?: 'binary' | 'view_edit';
+  /** Page-level visibility dropdown (applies to all children/fields) */
+  pageVisibility?: boolean;
+  /** Include มองไม่เห็น (0) in visibility options */
+  visibilityIncludesHidden?: boolean;
+  /** Child rows: binary only when sections present */
+  childMode?: 'none' | 'binary';
+  /**
+   * When accessMode is binary, “เข้าถึงได้” stores `modify` instead of `view`
+   * (needed for pages whose write actions check page-level modify).
+   */
+  binaryStoresModify?: boolean;
+  /** @deprecated Prefer pageVisibility — kept for older callers */
   supportsSensitivity?: boolean;
 };
 
@@ -100,48 +120,61 @@ const SS_SECTIONS: { id: ContentResourceId; label: string }[] = [
   { id: 'ss_family', label: 'ครอบครัว' },
 ];
 
-/** Page cards with nested section toggles (admin UI). */
+const SCHOOL_TAB_SECTIONS: { id: ContentResourceId; label: string }[] = [
+  { id: 'school_tab_overview', label: 'ภาพรวม' },
+  { id: 'school_tab_scholarship', label: 'นักเรียนทุน' },
+  { id: 'school_tab_contract_teachers', label: 'ครูอัตรจ้าง' },
+  { id: 'school_tab_budget', label: 'งบสนับสนุน' },
+  { id: 'school_tab_buildings', label: 'ข้อมูลสิ่งปลูกสร้าง' },
+  { id: 'school_tab_pillars', label: '3 เสาหลัก' },
+  { id: 'school_tab_scores', label: 'ผลการประเมินตามระบบ SMS' },
+  { id: 'school_tab_swot', label: 'SWOT โรงเรียน' },
+  { id: 'school_tab_reports', label: 'บันทึกตรวจเยี่ยม' },
+  { id: 'school_tab_calendar', label: 'นัดหมายลงพื้นที่' },
+];
+
+/** Legacy school tabs — kept in storage map, hidden from admin UI. */
+const LEGACY_SCHOOL_TABS: { id: ContentResourceId; label: string }[] = [
+  { id: 'school_tab_basic', label: 'ข้อมูลพื้นฐาน' },
+  { id: 'school_tab_location', label: 'ที่ตั้งและแผนที่' },
+  { id: 'school_tab_visits', label: 'การลงพื้นที่' },
+  { id: 'school_tab_people', label: 'นักเรียน / บุคลากร' },
+];
+
+/** Page cards shown in admin Content Access UI. */
 export const CONTENT_PAGES: ContentPageDef[] = [
-  { id: 'home', label: 'หน้าหลัก', sections: [] },
-  { id: 'about', label: 'เกี่ยวกับโครงการ', sections: [] },
-  { id: 'project_overview', label: 'ภาพรวมโครงการ', sections: [] },
-  { id: 'pillars', label: 'ภาพรวม 3 เสาหลัก', sections: [] },
-  { id: 'strategy', label: 'ผลการประเมินตามระบบ SMS', sections: [] },
-  { id: 'thailand_map', label: 'แผนที่', sections: [] },
-  { id: 'schools', label: 'รายการโรงเรียน', sections: [] },
+  { id: 'home', label: 'หน้าหลัก', sections: [], accessMode: 'binary' },
+  {
+    id: 'about',
+    label: 'เกี่ยวกับโครงการ',
+    sections: [],
+    accessMode: 'view_edit',
+    pageVisibility: true,
+    visibilityIncludesHidden: false,
+  },
+  {
+    id: 'project_overview',
+    label: 'ภาพรวมโครงการ',
+    sections: [],
+    accessMode: 'binary',
+  },
+  { id: 'schools', label: 'รายการโรงเรียน', sections: [], accessMode: 'binary' },
   {
     id: 'school_detail',
     label: 'รายละเอียดโรงเรียน',
+    accessMode: 'binary',
+    pageVisibility: true,
+    visibilityIncludesHidden: true,
+    childMode: 'binary',
     supportsSensitivity: true,
-    sections: [
-      { id: 'school_tab_overview', label: 'ภาพรวม' },
-      { id: 'school_tab_scholarship', label: 'นักเรียนทุน' },
-      { id: 'school_tab_contract_teachers', label: 'ครูอัตรจ้าง' },
-      { id: 'school_tab_budget', label: 'งบสนับสนุน' },
-      { id: 'school_tab_buildings', label: 'ข้อมูลสิ่งปลูกสร้าง' },
-      { id: 'school_tab_pillars', label: '3 เสาหลัก' },
-      { id: 'school_tab_scores', label: 'ผลการประเมินตามระบบ SMS' },
-      { id: 'school_tab_swot', label: 'SWOT โรงเรียน' },
-      { id: 'school_tab_reports', label: 'รายงาน' },
-      { id: 'school_tab_calendar', label: 'ปฏิทิน' },
-      // Legacy (hidden from UI tab bar; kept for stored ACL cookies)
-      { id: 'school_tab_basic', label: 'ข้อมูลพื้นฐาน' },
-      { id: 'school_tab_location', label: 'ที่ตั้งและแผนที่' },
-      { id: 'school_tab_visits', label: 'การลงพื้นที่' },
-      { id: 'school_tab_people', label: 'นักเรียน / บุคลากร' },
-    ],
+    sections: SCHOOL_TAB_SECTIONS,
   },
-  {
-    id: 'dashboard',
-    label: 'แดชบอร์ด',
-    sections: [
-      { id: 'dashboard_activity', label: 'ภาพรวมกิจกรรม' },
-      { id: 'dashboard_radar', label: 'เรดาร์ / เปรียบเทียบ' },
-    ],
-  },
+  { id: 'dashboard', label: 'แดชบอร์ด', sections: [], accessMode: 'binary' },
   {
     id: 'calendar',
     label: 'ปฏิทิน / นัดหมาย',
+    accessMode: 'binary',
+    childMode: 'binary',
     sections: [
       { id: 'calendar_view', label: 'ดูปฏิทิน' },
       { id: 'calendar_create', label: 'สร้างนัดหมาย' },
@@ -150,6 +183,8 @@ export const CONTENT_PAGES: ContentPageDef[] = [
   {
     id: 'reports',
     label: 'บันทึกการตรวจเยี่ยม',
+    accessMode: 'binary',
+    childMode: 'binary',
     sections: [
       { id: 'reports_list', label: 'ดูรายการ' },
       { id: 'reports_create', label: 'ส่งบันทึก' },
@@ -158,13 +193,56 @@ export const CONTENT_PAGES: ContentPageDef[] = [
   {
     id: 'scholarship_students',
     label: 'นักเรียนทุน',
+    accessMode: 'view_edit',
+    pageVisibility: true,
+    visibilityIncludesHidden: true,
+    childMode: 'binary',
     supportsSensitivity: true,
     sections: SS_SECTIONS,
   },
-  { id: 'contract_teachers', label: 'ครูอัตรจ้าง', sections: [] },
-  { id: 'tickets', label: 'คำขอแก้ไขข้อมูล', sections: [] },
-  { id: 'volunteers', label: 'อาสาสมัคร', sections: [] },
-  { id: 'budget', label: 'งบประมาณ', sections: [] },
+  {
+    id: 'contract_teachers',
+    label: 'ครูอัตรจ้าง',
+    sections: [],
+    accessMode: 'view_edit',
+    pageVisibility: true,
+    visibilityIncludesHidden: true,
+    supportsSensitivity: true,
+  },
+  {
+    id: 'tickets',
+    label: 'คำขอแก้ไขข้อมูล',
+    sections: [],
+    accessMode: 'binary',
+    /** Binary “เข้าถึงได้” stores modify so ticket create still works */
+    binaryStoresModify: true,
+  },
+  { id: 'volunteers', label: 'อาสาสมัคร', sections: [], accessMode: 'binary' },
+  { id: 'budget', label: 'งบประมาณ', sections: [], accessMode: 'binary' },
+];
+
+/**
+ * Merged / legacy pages kept for href gates + stored ACL, not shown in admin.
+ */
+const HIDDEN_STORAGE_PAGES: {
+  id: ContentResourceId;
+  label: string;
+  pageId: ContentResourceId;
+}[] = [
+  { id: 'pillars', label: 'ภาพรวม 3 เสาหลัก', pageId: 'pillars' },
+  { id: 'strategy', label: 'ผลการประเมินตามระบบ SMS', pageId: 'strategy' },
+  { id: 'thailand_map', label: 'แผนที่', pageId: 'thailand_map' },
+  {
+    id: 'dashboard_activity',
+    label: 'ภาพรวมกิจกรรม',
+    pageId: 'dashboard',
+  },
+  { id: 'dashboard_radar', label: 'เรดาร์ / เปรียบเทียบ', pageId: 'dashboard' },
+  ...LEGACY_SCHOOL_TABS.map((s) => ({
+    id: s.id,
+    label: s.label,
+    pageId: 'school_detail' as ContentResourceId,
+  })),
 ];
 
 /** Flat list of every resource (pages + sections) for merge/defaults. */
@@ -172,24 +250,46 @@ export const CONTENT_RESOURCES: {
   id: ContentResourceId;
   label: string;
   pageId: ContentResourceId;
-}[] = CONTENT_PAGES.flatMap((page) => [
-  { id: page.id, label: page.label, pageId: page.id },
-  ...page.sections.map((s) => ({
-    id: s.id,
-    label: s.label,
-    pageId: page.id,
-  })),
-]);
+}[] = [
+  ...CONTENT_PAGES.flatMap((page) => [
+    { id: page.id, label: page.label, pageId: page.id },
+    ...page.sections.map((s) => ({
+      id: s.id,
+      label: s.label,
+      pageId: page.id,
+    })),
+  ]),
+  ...HIDDEN_STORAGE_PAGES,
+];
 
-const TIERED_PAGE_IDS = new Set<ContentResourceId>(
-  CONTENT_PAGES.filter((p) => p.supportsSensitivity).map((p) => p.id)
-);
+const PAGE_DEF_BY_ID = new Map(CONTENT_PAGES.map((p) => [p.id, p]));
 
+/** Pages that store tiered cells (permission + viewUpTo). */
+export function resourceStoresTiered(resource: ContentResourceId): boolean {
+  const def = PAGE_DEF_BY_ID.get(resource);
+  if (!def) return false;
+  return Boolean(
+    def.pageVisibility ||
+      def.accessMode === 'view_edit' ||
+      def.supportsSensitivity
+  );
+}
+
+/** Sensitivity clearance is read from the page resource, not children. */
 export function resourceSupportsSensitivity(
   resource: ContentResourceId
 ): boolean {
   const pageId = pageIdForResource(resource);
-  return TIERED_PAGE_IDS.has(pageId);
+  const def = PAGE_DEF_BY_ID.get(pageId);
+  return Boolean(
+    def?.pageVisibility || def?.supportsSensitivity || pageId === 'about'
+  );
+}
+
+export function getPageDef(
+  resource: ContentResourceId
+): ContentPageDef | undefined {
+  return PAGE_DEF_BY_ID.get(resource) ?? PAGE_DEF_BY_ID.get(pageIdForResource(resource));
 }
 
 /** Roles in ACL dropdown: Global (guest) first, then field + admin. */
@@ -202,6 +302,7 @@ export const ACL_MATRIX_ROLES: UserRole[] = [
   'volunteer_center',
   'volunteer_border',
   'staff',
+  'school_admin',
   'director',
   'admin',
   'super_admin',
@@ -232,7 +333,7 @@ export function mergeContentAccessForActor(
       super_admin:
         existing[res.id]?.super_admin ??
         DEFAULT_CONTENT_ACCESS[res.id]?.super_admin ??
-        (resourceSupportsSensitivity(res.id)
+        (resourceStoresTiered(res.id)
           ? tierCell('modify', 3, 3)
           : 'modify'),
     };
@@ -250,18 +351,24 @@ const FULL: AccessLevel = 'modify';
 const VIEW: AccessLevel = 'view';
 const NONE: AccessLevel = 'none';
 
+function clampVisibility(v: number | undefined, fallback: VisibilityLevel): VisibilityLevel {
+  if (v == null || Number.isNaN(Number(v))) return fallback;
+  const n = Math.max(0, Math.min(3, Math.floor(Number(v)))) as VisibilityLevel;
+  return n;
+}
+
 export function tierCell(
   access: AccessLevel,
-  viewUpTo?: SensitivityLevel,
-  modifyUpTo?: SensitivityLevel
+  viewUpTo?: VisibilityLevel,
+  _modifyUpTo?: VisibilityLevel
 ): TieredAccessCell {
   if (access === 'none') return { access: 'none' };
   if (access === 'view') {
-    return { access: 'view', viewUpTo: (viewUpTo ?? 1) as SensitivityLevel };
+    return { access: 'view', viewUpTo: clampVisibility(viewUpTo, 1) };
   }
-  const v = (viewUpTo ?? 3) as SensitivityLevel;
-  const m = Math.min(v, modifyUpTo ?? v) as SensitivityLevel;
-  return { access: 'modify', viewUpTo: v, modifyUpTo: m };
+  // Edit clearance always equals view clearance
+  const v = clampVisibility(viewUpTo, 3);
+  return { access: 'modify', viewUpTo: v, modifyUpTo: v };
 }
 
 export function isTieredCell(cell: ContentAccessCell): cell is TieredAccessCell {
@@ -281,11 +388,10 @@ export function normalizeAccessCell(
   const access = cell.access ?? 'none';
   if (access === 'none') return { access: 'none' };
   if (access === 'view') {
-    return { access: 'view', viewUpTo: (cell.viewUpTo ?? 3) as SensitivityLevel };
+    return { access: 'view', viewUpTo: clampVisibility(cell.viewUpTo, 3) };
   }
-  const v = (cell.viewUpTo ?? 3) as SensitivityLevel;
-  const m = Math.min(v, (cell.modifyUpTo ?? v) as SensitivityLevel) as SensitivityLevel;
-  return { access: 'modify', viewUpTo: v, modifyUpTo: m };
+  const v = clampVisibility(cell.viewUpTo, 3);
+  return { access: 'modify', viewUpTo: v, modifyUpTo: v };
 }
 
 export function accessOf(cell: ContentAccessCell | null | undefined): AccessLevel {
@@ -316,19 +422,22 @@ function fieldDefaults(
 
 function fieldDefaultsTiered(
   access: AccessLevel,
-  viewUpTo: SensitivityLevel,
-  modifyUpTo?: SensitivityLevel
+  viewUpTo: VisibilityLevel,
+  _modifyUpTo?: VisibilityLevel
 ): Partial<Record<UserRole, ContentAccessCell>> {
   const out: Partial<Record<UserRole, ContentAccessCell>> = {};
   for (const r of FIELD_ROLES) {
-    out[r] = tierCell(
-      access,
-      viewUpTo,
-      access === 'modify' ? (modifyUpTo ?? 1) : undefined
-    );
+    out[r] = tierCell(access, viewUpTo);
   }
-  for (const r of ADMIN_ROLES) out[r] = tierCell('modify', 3, 3);
+  for (const r of ADMIN_ROLES) out[r] = tierCell('modify', 3);
   return out;
+}
+
+/** Binary section defaults (view/none) — no per-section sensitivity. */
+function fieldDefaultsBinary(
+  level: AccessLevel
+): Partial<Record<UserRole, ContentAccessCell>> {
+  return fieldDefaults(level);
 }
 
 function withGuest(
@@ -341,27 +450,43 @@ function withGuest(
 /** School detail prepare: L3 view so existing UI stays fully visible until tagged. */
 const SCHOOL_TIER = withGuest(fieldDefaultsTiered('view', 3), tierCell('view', 3));
 
-/** Scholarship: field roles view L1; special/covert modify view L3 / modify L2. */
+/** Scholarship page: field roles view L1; special/covert can edit (view clearance L3). */
 const SCHOLARSHIP_TIER = withGuest(
   {
     ...fieldDefaultsTiered('view', 1),
-    special_volunteer: tierCell('modify', 3, 2),
-    covert_overseer: tierCell('modify', 3, 2),
+    special_volunteer: tierCell('modify', 3),
+    covert_overseer: tierCell('modify', 3),
+    school_admin: tierCell('view', 1),
     director: tierCell('view', 1),
   },
   tierCell('none')
 );
+
+/** Scholarship / school child sections: binary on/off only. */
+const SCHOLARSHIP_SECTION = withGuest(
+  {
+    ...fieldDefaultsBinary(VIEW),
+    special_volunteer: VIEW,
+    covert_overseer: VIEW,
+    school_admin: VIEW,
+    director: VIEW,
+  },
+  NONE
+);
+
+const SCHOOL_SECTION = withGuest(fieldDefaultsBinary(VIEW), VIEW);
+const SCHOOL_SECTION_AUTH = withGuest(fieldDefaultsBinary(VIEW), NONE);
 
 /**
  * Default ACL:
  * - Global (guest): public pages view; field pages none; guest school tabs
  * - SO / admin: full
  * - special_volunteer / covert_overseer: strong on scholarship
- * - director: school surfaces
+ * - school_admin: school surfaces (director kept as legacy alias)
  */
 export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
   home: withGuest(fieldDefaults(VIEW), VIEW),
-  about: withGuest(fieldDefaults(VIEW), VIEW),
+  about: withGuest(fieldDefaultsTiered('view', 3), tierCell('view', 3)),
   project_overview: withGuest(fieldDefaults(VIEW), VIEW),
   pillars: withGuest(fieldDefaults(VIEW), VIEW),
   strategy: withGuest(fieldDefaults(VIEW), VIEW),
@@ -373,6 +498,7 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
       ...fieldDefaults(VIEW),
       special_volunteer: VIEW,
       covert_overseer: VIEW,
+      school_admin: VIEW,
       director: VIEW,
     },
     NONE
@@ -382,6 +508,7 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
       ...fieldDefaults(FULL),
       special_volunteer: VIEW,
       covert_overseer: VIEW,
+      school_admin: VIEW,
       director: VIEW,
     },
     NONE
@@ -391,6 +518,7 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
       ...fieldDefaults(FULL),
       special_volunteer: VIEW,
       covert_overseer: VIEW,
+      school_admin: VIEW,
       director: VIEW,
     },
     NONE
@@ -398,18 +526,20 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
   scholarship_students: SCHOLARSHIP_TIER,
   contract_teachers: withGuest(
     {
-      ...fieldDefaults(VIEW),
-      special_volunteer: VIEW,
-      covert_overseer: VIEW,
-      director: VIEW,
+      ...fieldDefaultsTiered('view', 3),
+      special_volunteer: tierCell('view', 3),
+      covert_overseer: tierCell('view', 3),
+      school_admin: tierCell('view', 3),
+      director: tierCell('view', 3),
     },
-    NONE
+    tierCell('none')
   ),
   tickets: withGuest(
     {
       ...fieldDefaults(FULL),
       special_volunteer: NONE,
       covert_overseer: NONE,
+      school_admin: FULL,
       director: FULL,
     },
     NONE
@@ -419,6 +549,7 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
       ...fieldDefaults(VIEW),
       special_volunteer: VIEW,
       covert_overseer: VIEW,
+      school_admin: VIEW,
       director: VIEW,
     },
     NONE
@@ -428,27 +559,25 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
       ...fieldDefaults(VIEW),
       special_volunteer: VIEW,
       covert_overseer: VIEW,
+      school_admin: VIEW,
       director: VIEW,
     },
     NONE
   ),
-  school_tab_overview: SCHOOL_TIER,
-  school_tab_basic: SCHOOL_TIER,
-  school_tab_buildings: SCHOOL_TIER,
-  school_tab_location: SCHOOL_TIER,
-  school_tab_swot: SCHOOL_TIER,
-  school_tab_visits: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
-  school_tab_reports: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
-  school_tab_calendar: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
-  school_tab_budget: SCHOOL_TIER,
-  school_tab_pillars: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
-  school_tab_scores: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
-  school_tab_people: withGuest(fieldDefaultsTiered('view', 3), tierCell('none')),
-  school_tab_scholarship: SCHOLARSHIP_TIER,
-  school_tab_contract_teachers: withGuest(
-    fieldDefaultsTiered('view', 3),
-    tierCell('none')
-  ),
+  school_tab_overview: SCHOOL_SECTION,
+  school_tab_basic: SCHOOL_SECTION,
+  school_tab_buildings: SCHOOL_SECTION,
+  school_tab_location: SCHOOL_SECTION,
+  school_tab_swot: SCHOOL_SECTION,
+  school_tab_visits: SCHOOL_SECTION_AUTH,
+  school_tab_reports: SCHOOL_SECTION_AUTH,
+  school_tab_calendar: SCHOOL_SECTION_AUTH,
+  school_tab_budget: SCHOOL_SECTION,
+  school_tab_pillars: SCHOOL_SECTION_AUTH,
+  school_tab_scores: SCHOOL_SECTION_AUTH,
+  school_tab_people: SCHOOL_SECTION_AUTH,
+  school_tab_scholarship: SCHOLARSHIP_SECTION,
+  school_tab_contract_teachers: SCHOOL_SECTION_AUTH,
   dashboard_activity: withGuest(fieldDefaults(VIEW), NONE),
   dashboard_radar: withGuest(fieldDefaults(VIEW), NONE),
   calendar_view: withGuest(
@@ -456,6 +585,7 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
       ...fieldDefaults(FULL),
       special_volunteer: VIEW,
       covert_overseer: VIEW,
+      school_admin: VIEW,
       director: VIEW,
     },
     NONE
@@ -465,6 +595,7 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
       ...fieldDefaults(FULL),
       special_volunteer: NONE,
       covert_overseer: NONE,
+      school_admin: NONE,
       director: NONE,
     },
     NONE
@@ -474,6 +605,7 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
       ...fieldDefaults(FULL),
       special_volunteer: VIEW,
       covert_overseer: VIEW,
+      school_admin: VIEW,
       director: VIEW,
     },
     NONE
@@ -483,21 +615,22 @@ export const DEFAULT_CONTENT_ACCESS: ContentAccessMap = {
       ...fieldDefaults(FULL),
       special_volunteer: NONE,
       covert_overseer: NONE,
+      school_admin: NONE,
       director: NONE,
     },
     NONE
   ),
-  ss_banner: SCHOLARSHIP_TIER,
-  ss_general: SCHOLARSHIP_TIER,
-  ss_contact: SCHOLARSHIP_TIER,
-  ss_teacher: SCHOLARSHIP_TIER,
-  ss_performance: SCHOLARSHIP_TIER,
-  ss_behavior: SCHOLARSHIP_TIER,
-  ss_health: SCHOLARSHIP_TIER,
-  ss_fund: SCHOLARSHIP_TIER,
-  ss_project: SCHOLARSHIP_TIER,
-  ss_friends: SCHOLARSHIP_TIER,
-  ss_family: SCHOLARSHIP_TIER,
+  ss_banner: SCHOLARSHIP_SECTION,
+  ss_general: SCHOLARSHIP_SECTION,
+  ss_contact: SCHOLARSHIP_SECTION,
+  ss_teacher: SCHOLARSHIP_SECTION,
+  ss_performance: SCHOLARSHIP_SECTION,
+  ss_behavior: SCHOLARSHIP_SECTION,
+  ss_health: SCHOLARSHIP_SECTION,
+  ss_fund: SCHOLARSHIP_SECTION,
+  ss_project: SCHOLARSHIP_SECTION,
+  ss_friends: SCHOLARSHIP_SECTION,
+  ss_family: SCHOLARSHIP_SECTION,
 };
 
 export const CONTENT_ACCESS_SETTING_KEY = 'content_access_map';
@@ -548,7 +681,7 @@ export function compactContentAccess(
       if (level == null) continue;
       const r = role as UserRole;
       if (!cellsEqual(defaults[r], level)) {
-        diff[r] = compactCell(level, resourceSupportsSensitivity(res.id));
+        diff[r] = compactCell(level, resourceStoresTiered(res.id));
       }
     }
     if (Object.keys(diff).length > 0) {
@@ -570,7 +703,7 @@ function compactCell(
   return {
     access: 'modify',
     viewUpTo: n.viewUpTo,
-    modifyUpTo: n.modifyUpTo,
+    modifyUpTo: n.viewUpTo,
   };
 }
 
@@ -602,6 +735,10 @@ export function canAccessSection(
   return canAccess(role, sectionId, level, map);
 }
 
+/**
+ * Field sensitivity check. Pass the **page** resource
+ * (e.g. scholarship_students / school_detail), not a child section.
+ */
 export function canViewSensitivity(
   role: string | null | undefined,
   resource: ContentResourceId,
@@ -609,14 +746,19 @@ export function canViewSensitivity(
   map: ContentAccessMap = DEFAULT_CONTENT_ACCESS
 ): boolean {
   const r = normalizeRole(role);
-  if (!canAccess(r, resource, 'view', map)) return false;
-  if (!resourceSupportsSensitivity(resource)) return true;
+  const pageId = pageIdForResource(resource);
+  if (!canAccess(r, pageId, 'view', map)) return false;
+  if (!resourceSupportsSensitivity(pageId)) return true;
   if (r === 'super_admin' || r === 'admin') return true;
-  const cell = getAccessCell(map, resource, r);
+  const cell = getAccessCell(map, pageId, r);
   const upTo = cell.viewUpTo ?? 0;
   return upTo >= fieldLevel;
 }
 
+/**
+ * Edit clearance = view clearance (modifyUpTo ignored; uses viewUpTo).
+ * Pass the **page** resource for tiered pages.
+ */
 export function canModifySensitivity(
   role: string | null | undefined,
   resource: ContentResourceId,
@@ -624,13 +766,15 @@ export function canModifySensitivity(
   map: ContentAccessMap = DEFAULT_CONTENT_ACCESS
 ): boolean {
   const r = normalizeRole(role);
-  if (!canAccess(r, resource, 'modify', map)) return false;
-  if (!resourceSupportsSensitivity(resource)) {
-    return canAccess(r, resource, 'modify', map);
+  const pageId = pageIdForResource(resource);
+  if (!canAccess(r, pageId, 'modify', map)) return false;
+  if (!resourceSupportsSensitivity(pageId)) {
+    return canAccess(r, pageId, 'modify', map);
   }
-  const cell = getAccessCell(map, resource, r);
+  const cell = getAccessCell(map, pageId, r);
   if (cell.access !== 'modify') return false;
-  const upTo = cell.modifyUpTo ?? 0;
+  if (r === 'super_admin' || r === 'admin') return true;
+  const upTo = cell.viewUpTo ?? 0;
   return upTo >= fieldLevel;
 }
 
@@ -713,12 +857,23 @@ export function canAccessHref(
 
 export function accessLevelLabel(level: AccessLevel): string {
   if (level === 'modify') return 'แก้ไขได้';
+  if (level === 'view') return 'เข้าถึงได้';
+  return 'ไม่สามารถเข้าถึง';
+}
+
+export function accessLevelLabelDetailed(level: AccessLevel): string {
+  if (level === 'modify') return 'แก้ไขได้';
   if (level === 'view') return 'ดูได้อย่างเดียว';
   return 'ไม่มีสิทธิ์';
 }
 
-export function sensitivityLevelLabel(level: SensitivityLevel): string {
-  if (level === 1) return 'ระดับ 1 ทั่วไป';
-  if (level === 2) return 'ระดับ 2 ลับ';
-  return 'ระดับ 3 จำกัด';
+export function binaryAccessLabel(level: AccessLevel): string {
+  return level === 'none' ? 'ไม่สามารถเข้าถึง' : 'เข้าถึงได้';
+}
+
+export function sensitivityLevelLabel(level: SensitivityLevel | VisibilityLevel): string {
+  if (level === 0) return 'ไม่สามารถเห็นได้';
+  if (level === 1) return 'view level 1';
+  if (level === 2) return 'view level 2';
+  return 'view level 3';
 }

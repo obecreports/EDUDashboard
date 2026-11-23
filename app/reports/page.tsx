@@ -179,6 +179,13 @@ export default async function ReportsPage({
         drafts={drafts}
         people={people}
         initialPersonIds={initialPersonIds}
+        canCreateReport={canAccessSection(
+          r,
+          'reports',
+          'reports_create',
+          'modify',
+          acl
+        )}
       />
     </div>
   );

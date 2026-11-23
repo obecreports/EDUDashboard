@@ -680,12 +680,12 @@ export function SchoolDetailClient({
     { id: 'scholarship', label: 'นักเรียนทุน', icon: GraduationCap },
     { id: 'contract_teachers', label: 'ครูอัตรจ้าง', icon: UserCheck },
     { id: 'budget', label: 'งบสนับสนุน', icon: Wallet },
-    { id: 'buildings', label: 'สิ่งปลูกสร้าง', icon: Building2 },
+    { id: 'buildings', label: 'ข้อมูลสิ่งปลูกสร้าง', icon: Building2 },
     { id: 'pillars', label: '3 เสาหลัก', icon: Sparkles },
-    { id: 'scores', label: 'SMS Score', icon: Award },
-    { id: 'swot', label: 'SWOT', icon: ClipboardPen },
+    { id: 'scores', label: 'ผลการประเมินตามระบบ SMS', icon: Award },
+    { id: 'swot', label: 'SWOT โรงเรียน', icon: ClipboardPen },
     { id: 'reports', label: 'บันทึกตรวจเยี่ยม', icon: FileText },
-    { id: 'calendar', label: 'ปฏิทิน', icon: CalendarDays },
+    { id: 'calendar', label: 'นัดหมายลงพื้นที่', icon: CalendarDays },
   ];
 
   const tabs = ALL_TABS.filter((t) => {
@@ -735,7 +735,15 @@ export function SchoolDetailClient({
             <MessageSquare size={18} className="text-tm-blue" />
             <h2 className="section-heading text-base m-0">{opts.title}</h2>
           </div>
-          {opts.showCta !== false && canComment && (
+          {opts.showCta !== false &&
+            canComment &&
+            canAccessSection(
+              viewerRole,
+              'reports',
+              'reports_create',
+              'modify',
+              contentAccess
+            ) && (
             <Link
               href={`/reports/new?school_id=${encodeURIComponent(String(school.school_id))}`}
               className="ed-btn ed-btn--primary ed-btn--sm"
@@ -1323,7 +1331,14 @@ export function SchoolDetailClient({
         <section className="panel-card space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="section-heading text-base m-0">ประวัติปฏิทิน / นัดหมายลงพื้นที่</h2>
-            {!guestView && (
+            {!guestView &&
+              canAccessSection(
+                viewerRole,
+                'calendar',
+                'calendar_create',
+                'modify',
+                contentAccess
+              ) && (
               <Link
                 href={`/calendar/new?school_id=${encodeURIComponent(String(school.school_id))}`}
                 prefetch

@@ -3,6 +3,7 @@ import {
   districtKey,
   isOverseerLike,
   isOverseerType2,
+  isSchoolAdminRole,
   normalizeRole,
 } from '@/lib/types';
 import type { StoredUserProfile } from '@/lib/auth/mock-users';
@@ -88,7 +89,7 @@ function staffSchoolMatch(user: PermissionUser, school: SchoolFull): boolean {
   return Boolean(key) && assigned.includes(key!);
 }
 
-function directorSchoolMatch(
+function schoolAdminSchoolMatch(
   user: PermissionUser,
   school: SchoolFull
 ): boolean {
@@ -110,7 +111,7 @@ export function isSchoolReadable(
   if (role === 'super_overseer') return true;
   if (role === 'admin' || role === 'super_admin' || role === 'guest') return false;
 
-  if (role === 'director') return directorSchoolMatch(user, school);
+  if (isSchoolAdminRole(role)) return schoolAdminSchoolMatch(user, school);
 
   if (isOverseerLike(role)) {
     if (isGlobalDomainScope(user.assigned_provinces)) return true;
@@ -134,7 +135,7 @@ export function isSchoolActionable(
   if (role === 'super_overseer') return true;
   if (role === 'admin' || role === 'super_admin' || role === 'guest') return false;
 
-  if (role === 'director') return directorSchoolMatch(user, school);
+  if (isSchoolAdminRole(role)) return schoolAdminSchoolMatch(user, school);
 
   if (isOverseerLike(role)) {
     if (isGlobalDomainScope(user.assigned_provinces)) return true;

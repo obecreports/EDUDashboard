@@ -15,8 +15,9 @@ export function loginPrefixForRole(role: UserRole | string): string {
       return 'VL';
     case 'covert_overseer':
       return 'COV';
+    case 'school_admin':
     case 'director':
-      // Director login ID = school_id (no auto-prefix); caller must supply email
+      // School admin login ID = school_id (no auto-prefix); caller must supply email
       return '';
     case 'super_overseer':
       return 'SO';
@@ -49,7 +50,7 @@ function escapeRegExp(s: string): string {
  * Next login id for role: `{prefix}{NNNN}` (4-digit pad).
  * VL roles use `{prefix}{NNN}` (3-digit: VL001).
  * Pass existing profile login ids (email column).
- * Director must supply school_id as login — returns empty string.
+ * School admin must supply school_id as login — returns empty string.
  */
 export function allocateNextLoginId(
   role: UserRole | string,

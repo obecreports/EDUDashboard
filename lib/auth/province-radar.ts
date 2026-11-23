@@ -4,6 +4,7 @@ import {
   isOverseerLike,
   isOverseerType1,
   isOverseerType2,
+  isSchoolAdminRole,
   normalizeRole,
 } from '@/lib/types';
 import type { PermissionUser } from '@/lib/auth/permissions';
@@ -91,12 +92,12 @@ export function staffProvinces(
   return [...out];
 }
 
-/** Director control provinces from assigned_schools → school.province. */
+/** School-admin control provinces from assigned_schools → school.province. */
 export function directorProvinces(
   user: PermissionUser | null | undefined,
   schools: SchoolFull[] = []
 ): string[] {
-  if (!user || normalizeRole(user.role) !== 'director') return [];
+  if (!user || !isSchoolAdminRole(user.role)) return [];
   const assigned = new Set(
     (user.assigned_schools ?? []).map((s) => String(s).trim()).filter(Boolean)
   );
@@ -109,7 +110,7 @@ export function directorProvinces(
   );
 }
 
-/** Control provinces for nesting/clip: Type1/2 = assigned; Staff = district→province; Director = school provinces. */
+/** Control provinces for nesting/clip: Type1/2 = assigned; Staff = district→province; School admin = school provinces. */
 export function controlProvinces(
   user: PermissionUser | null | undefined,
   schools: SchoolFull[] = []
@@ -117,12 +118,12 @@ export function controlProvinces(
   if (!user) return [];
   const role = normalizeRole(user.role);
   if (role === 'staff') return staffProvinces(user, schools);
-  if (role === 'director') return directorProvinces(user, schools);
+  if (isSchoolAdminRole(role)) return directorProvinces(user, schools);
   if (isOverseerLike(role)) return actionProvinces(user);
   return [];
 }
 
-/** Directors whose school provinces ∩ Type 1 control provinces. */
+/** School admins whose school provinces ∩ Type 1 control provinces. */
 export function directorsUnderType1(
   type1: PermissionUser,
   directory: RadarUser[],
@@ -133,7 +134,7 @@ export function directorsUnderType1(
   return directory.filter(
     (u) =>
       !u.disabled &&
-      normalizeRole(u.role) === 'director' &&
+      isSchoolAdminRole(u.role) &&
       provincesIntersect(t1p, directorProvinces(u, schools))
   );
 }

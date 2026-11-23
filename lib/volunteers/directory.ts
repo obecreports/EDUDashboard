@@ -57,7 +57,7 @@ export function buildDomainPanel(
   scopedSchools: SchoolFull[]
 ): HomeDomainPanel {
   const role = normalizeRole(viewer.role);
-  if (role === 'director') {
+  if (role === 'school_admin' || role === 'director') {
     const ids = new Set(
       (viewer.assigned_schools ?? []).map((id) => String(id).trim()).filter(Boolean)
     );

@@ -45,7 +45,6 @@ import { eventHasMappedReport, type ReportActivityLink } from '@/lib/activity/co
 import { normalizeStatus } from '@/lib/visits/labels';
 import {
   canAccess,
-  canAccessSection,
   mergeContentAccess,
 } from '@/lib/auth/content-access';
 import type { ActivityPerson } from '@/components/dashboard/SuperOverseerActivityPanel';
@@ -69,20 +68,9 @@ async function DashboardBody() {
   if (!canAccess(r, 'dashboard', 'view', acl)) {
     redirect('/');
   }
-  const showActivityPanel = canAccessSection(
-    r,
-    'dashboard',
-    'dashboard_activity',
-    'view',
-    acl
-  );
-  const showRadarPanel = canAccessSection(
-    r,
-    'dashboard',
-    'dashboard_radar',
-    'view',
-    acl
-  );
+  // Dashboard children removed from ACL UI — panels follow page access
+  const showActivityPanel = canAccess(r, 'dashboard', 'view', acl);
+  const showRadarPanel = canAccess(r, 'dashboard', 'view', acl);
 
   const isSO = r === 'super_overseer';
   const isT1 = isOverseerType1(r, profile.overseer_tier);
@@ -199,8 +187,13 @@ async function DashboardBody() {
           .filter((u) => {
             // Covert roles stay on org-map / ACL only — not SO/OS activity tree
             if (isCovertFieldRole(u.role)) return false;
-            // ผู้อำนวยการ on activity tree come from directors + history, not login profiles
-            if (normalizeRole(u.role) === 'director') return false;
+            // School person directors on activity tree come from directors + history, not login profiles
+            if (
+              normalizeRole(u.role) === 'director' ||
+              normalizeRole(u.role) === 'school_admin'
+            ) {
+              return false;
+            }
             if (isSO) return true;
             if (u.id === profile.id) return false;
             return type1TeamIds?.has(u.id) ?? false;

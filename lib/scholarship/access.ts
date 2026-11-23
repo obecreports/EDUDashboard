@@ -1,4 +1,5 @@
 import {
+  canAccess,
   canAccessSection,
   canModifySensitivity,
   canViewSensitivity,
@@ -88,6 +89,27 @@ const FAMILY_KEY_MAP: {
   { field: 'fm_phone', prop: 'phone' },
 ];
 
+/**
+ * Identity shell always shown when the scholarship page is accessible,
+ * even if every subject section is off or page visibility is 0.
+ */
+export const SCHOLARSHIP_IDENTITY_KEYS: ScholarshipFieldKey[] = [
+  'full_name',
+  'grade_level',
+  'generation',
+  'school_name',
+  'status',
+  'terminated_remark_1',
+  'terminated_remark_2',
+  'overseer_level',
+];
+
+const IDENTITY_SET = new Set<ScholarshipFieldKey>(SCHOLARSHIP_IDENTITY_KEYS);
+
+function isIdentityKey(key: ScholarshipFieldKey): boolean {
+  return IDENTITY_SET.has(key);
+}
+
 export function canViewScholarshipField(
   role: string | null | undefined,
   key: ScholarshipFieldKey,
@@ -95,12 +117,22 @@ export function canViewScholarshipField(
 ): boolean {
   const meta = metaForKey(key);
   if (!meta) return false;
+
+  // Page must be accessible
+  if (!canAccess(role, 'scholarship_students', 'view', map)) return false;
+
+  // Identity fallback — always visible when page is on
+  if (isIdentityKey(key)) return true;
+
+  // Subject/section on/off
   if (
     !canAccessSection(role, 'scholarship_students', meta.section, 'view', map)
   ) {
     return false;
   }
-  return canViewSensitivity(role, meta.section, meta.sensitivity, map);
+
+  // Sensitivity from page-level viewUpTo
+  return canViewSensitivity(role, 'scholarship_students', meta.sensitivity, map);
 }
 
 export function canModifyScholarshipField(
@@ -110,24 +142,45 @@ export function canModifyScholarshipField(
 ): boolean {
   const meta = metaForKey(key);
   if (!meta) return false;
+
+  // Page must allow edit; section only needs to be visible (binary)
+  if (!canAccess(role, 'scholarship_students', 'modify', map)) return false;
   if (
-    !canAccessSection(role, 'scholarship_students', meta.section, 'modify', map)
+    !isIdentityKey(key) &&
+    !canAccessSection(role, 'scholarship_students', meta.section, 'view', map)
   ) {
     return false;
   }
-  return canModifySensitivity(role, meta.section, meta.sensitivity, map);
+
+  // Edit clearance = page view clearance
+  return canModifySensitivity(role, 'scholarship_students', meta.sensitivity, map);
 }
 
 export function anyScholarshipFieldModifiable(
   role: string | null | undefined,
   map: ContentAccessMap
 ): boolean {
-  return STUDENT_SCALAR_KEYS.some((k) =>
-    canModifyScholarshipField(role, k, map)
-  ) ||
+  return (
+    STUDENT_SCALAR_KEYS.some((k) => canModifyScholarshipField(role, k, map)) ||
     FAMILY_KEY_MAP.some(({ field }) =>
       canModifyScholarshipField(role, field, map)
-    );
+    )
+  );
+}
+
+/** True when a scholarship subject section has any visible (non-identity-only) content. */
+export function scholarshipSectionVisible(
+  section: ContentResourceId,
+  role: string | null | undefined,
+  map: ContentAccessMap
+): boolean {
+  if (!canAccess(role, 'scholarship_students', 'view', map)) return false;
+  if (!canAccessSection(role, 'scholarship_students', section, 'view', map)) {
+    return false;
+  }
+  return fieldsForSection(section).some((f) =>
+    canViewScholarshipField(role, f.key, map)
+  );
 }
 
 /** Strip fields the role cannot view before sending to the client. */
@@ -143,11 +196,6 @@ export function redactScholarshipStudent(
 
   for (const key of STUDENT_SCALAR_KEYS) {
     if (canViewScholarshipField(role, key, map)) continue;
-    if (key === 'full_name') continue; // always keep display name shell
-    if (key === 'student_code') continue;
-    if (key === 'status') continue;
-    if (key === 'school_name') continue;
-    if (key === 'grade_level') continue;
     (out as Record<string, unknown>)[key] = undefined;
   }
 
@@ -156,7 +204,11 @@ export function redactScholarshipStudent(
   else out.gpa = out.average_gpa;
 
   out.family_members = out.family_members.map((member) => {
-    const next: ScholarshipFamilyMember = { id: member.id, relationship: '', full_name: '' };
+    const next: ScholarshipFamilyMember = {
+      id: member.id,
+      relationship: '',
+      full_name: '',
+    };
     for (const { field, prop } of FAMILY_KEY_MAP) {
       if (!canViewScholarshipField(role, field, map)) continue;
       (next as Record<string, unknown>)[prop] = member[prop];
@@ -166,7 +218,6 @@ export function redactScholarshipStudent(
     return next;
   });
 
-  // Drop family cards if no L1 name/relationship visible and nothing else
   const canSeeFamilyCard =
     canViewScholarshipField(role, 'fm_full_name', map) ||
     canViewScholarshipField(role, 'fm_relationship', map);

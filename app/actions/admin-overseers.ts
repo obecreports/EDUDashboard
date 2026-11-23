@@ -67,6 +67,43 @@ export async function updateOverseerDisplayAction(formData: FormData): Promise<
   return { ok: true };
 }
 
+/** Persist drag-order of overseers shown on About / admin list. */
+export async function saveOverseerDisplayOrderAction(
+  orderedIds: string[]
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+
+  const ids = [
+    ...new Set(
+      (Array.isArray(orderedIds) ? orderedIds : [])
+        .map((x) => String(x ?? '').trim())
+        .filter(Boolean)
+    ),
+  ];
+
+  for (const id of ids) {
+    const existing = await fetchUserProfileById(id);
+    if (!existing || !isDisplayOverseer(existing)) {
+      return { ok: false, error: 'รายการมีบัญชีที่ไม่ใช่องคมนตรี' };
+    }
+  }
+
+  const { upsertSiteSetting } = await import('@/lib/auth/site-settings-db');
+  const { OVERSEER_DISPLAY_ORDER_KEY } = await import(
+    '@/lib/auth/overseer-display-order'
+  );
+  const res = await upsertSiteSetting(
+    OVERSEER_DISPLAY_ORDER_KEY,
+    ids,
+    gate.profile.id
+  );
+  if (!res.ok) return res;
+
+  revalidateOverseerPaths();
+  return { ok: true };
+}
+
 export async function saveOverseerPhotoAction(formData: FormData): Promise<
   { ok: true; url: string | null } | { ok: false; error: string }
 > {
