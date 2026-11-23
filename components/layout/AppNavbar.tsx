@@ -200,27 +200,12 @@ export function AppNavbar({
     showDataGroup = dataGroup.length > 0;
     usersGroup = MANAGE_USERS_HREFS.map((h) => byHref(h)).filter(Boolean) as NavItem[];
     showUsersGroup = usersGroup.length > 0;
-    mapItem =
-      byHref('/project-overview') ??
-      byHref('/thailand-map') ?? {
-        href: '/project-overview',
-        label: 'ภาพรวมโครงการ',
-        roles: [],
-      };
+    // Respect ACL: do not hardcode / fall back past denied project_overview.
+    mapItem = byHref('/project-overview');
   } else {
     mainBefore = [byHref('/about')].filter(Boolean) as NavItem[];
-    guestOverviewItem = byHref('/project-overview') ?? {
-      href: '/project-overview',
-      label: 'ภาพรวมโครงการ',
-      roles: [],
-    };
-    if (guestOverviewItem && !aclAllows(guestOverviewItem.href)) {
-      guestOverviewItem = undefined;
-    }
+    guestOverviewItem = byHref('/project-overview');
     guestSchoolsItem = byHref('/schools');
-    if (guestSchoolsItem && !aclAllows(guestSchoolsItem.href)) {
-      guestSchoolsItem = undefined;
-    }
   }
 
   const showProfile = isFieldRole(normalizedRole) || isAdminRole(normalizedRole);

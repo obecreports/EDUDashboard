@@ -27,10 +27,12 @@ import {
   T2_VIEW_TYPE1S_COOKIE,
 } from '@/lib/auth/province-radar';
 import {
+  canAccess,
   canAccessSection,
   mergeContentAccess,
 } from '@/lib/auth/content-access';
 import { readContentAccessMapStored } from '@/lib/auth/user-store';
+import { redirect } from 'next/navigation';
 
 export const revalidate = 120;
 
@@ -204,6 +206,15 @@ export default async function SchoolsPage({
     visit?: string;
   }>;
 }) {
+  const [{ role }, acl] = await Promise.all([
+    getSessionProfile(),
+    readContentAccessMapStored(),
+  ]);
+  const r = normalizeRole(role);
+  if (!canAccess(r, 'schools', 'view', acl)) {
+    redirect('/');
+  }
+
   const sp = await searchParams;
   return (
     <Suspense fallback={<ManagedSchoolsSkeleton />}>

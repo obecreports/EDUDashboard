@@ -1445,8 +1445,106 @@ export function SuperOverseerActivityPanel({
     setOpenAreas(new Set());
   };
 
-  const totalBookings = filteredEvents.length;
-  const totalReports = filteredReports.length;
+  /**
+   * KPI owners = activity roster. When a person filter is set, include the
+   * selection plus nested Type1 team (same expansion as the people tree).
+   */
+  const attributedPeopleIds = useMemo(() => {
+    const roster = new Set(people.map((p) => p.id));
+    if (selectedPeople.size === 0) return roster;
+
+    const ids = new Set<string>();
+    const addNestedUnder = (bossId: string) => {
+      if (!roster.has(bossId)) return;
+      ids.add(bossId);
+      for (const t2 of type2Under.get(bossId) ?? []) {
+        ids.add(t2.id);
+        for (const st of staffUnder.get(t2.id) ?? []) ids.add(st.id);
+      }
+      for (const st of staffUnder.get(bossId) ?? []) ids.add(st.id);
+      for (const d of directorsUnder.get(bossId) ?? []) ids.add(d.id);
+    };
+
+    for (const id of selectedPeople) {
+      addNestedUnder(id);
+      // Selecting a Type2 / staff boss still pulls their direct staff map entry
+      for (const st of staffUnder.get(id) ?? []) ids.add(st.id);
+    }
+    return ids;
+  }, [people, selectedPeople, type2Under, staffUnder, directorsUnder]);
+
+  const eventPassesPlaceFilter = (e: StaffCalendarEvent) => {
+    if (selectedPlaces.size === 0) return true;
+    const ids = [e.school_id, ...(e.school_ids ?? [])]
+      .filter(Boolean)
+      .map(String);
+    if (ids.length === 0) {
+      const prov = (e.province ?? '').trim() || 'ไม่ระบุจังหวัด';
+      return placeMatch(prov, 'ไม่ระบุเขต', '__none__');
+    }
+    return ids.some((id) => {
+      const s = schoolById.get(id);
+      const prov = (s?.province || e.province || '').trim() || 'ไม่ระบุจังหวัด';
+      const area = s?.area_name || s?.district || 'ไม่ระบุเขต';
+      return placeMatch(prov, area, id);
+    });
+  };
+
+  const reportPassesPlaceFilter = (r: ReportActivityLink) => {
+    if (selectedPlaces.size === 0) return true;
+    const sid = r.school_id ? String(r.school_id) : '';
+    if (!sid) return placeMatch('ไม่ระบุจังหวัด', 'ไม่ระบุเขต', '__none__');
+    const s = schoolById.get(sid);
+    const prov = (s?.province || '').trim() || 'ไม่ระบุจังหวัด';
+    const area = s?.area_name || s?.district || 'ไม่ระบุเขต';
+    return placeMatch(prov, area, sid);
+  };
+
+  const kpiClip =
+    viewerClipProvinces == null
+      ? null
+      : isGlobalDomainScope(viewerClipProvinces)
+        ? null
+        : viewerClipProvinces;
+
+  const totalBookings = useMemo(
+    () =>
+      filteredEvents.filter(
+        (e) =>
+          Boolean(e.staff_id) &&
+          attributedPeopleIds.has(e.staff_id) &&
+          eventInClip(e, kpiClip) &&
+          eventPassesPlaceFilter(e)
+      ).length,
+    // eventInClip / placeMatch close over schoolById + selectedPlaces
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      filteredEvents,
+      attributedPeopleIds,
+      kpiClip,
+      selectedPlaces,
+      schoolById,
+    ]
+  );
+
+  const totalReports = useMemo(
+    () =>
+      filteredReports.filter(
+        (r) =>
+          Boolean(r.staff_id) &&
+          attributedPeopleIds.has(r.staff_id) &&
+          reportInClip(r, kpiClip) &&
+          reportPassesPlaceFilter(r)
+      ).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      filteredReports,
+      attributedPeopleIds,
+      kpiClip,
+      selectedPlaces,
+      schoolById,
+    ]
+  );
 
   return (
     <section className="ed-card p-4 space-y-3 so-activity">

@@ -114,14 +114,14 @@ export default async function ReportsPage({
           district: s.district ?? '',
           school_size: String(s.school_size || ''),
           staff_id: c.staff_id,
-          staff_name: nameById.get(c.staff_id) || c.staff_name,
+          staff_name: nameById.get(c.staff_id) || c.staff_name || 'ไม่ระบุ',
           text: c.text,
           created_at: c.created_at,
           edited_at: c.edited_at ?? null,
           updated_at: c.updated_at ?? c.edited_at ?? null,
           updated_by: c.updated_by ?? null,
           updated_by_name: c.updated_by
-            ? nameById.get(c.updated_by) || c.updated_by
+            ? nameById.get(c.updated_by) || 'ไม่ระบุ'
             : null,
           tags: c.tags ?? [],
           image_urls: c.image_urls ?? [],
@@ -130,7 +130,7 @@ export default async function ReportsPage({
           ops_notes: c.ops_notes ?? null,
           participants: participantIds.map((id) => ({
             id,
-            name: nameById.get(id) || id,
+            name: nameById.get(id) || 'ไม่ระบุ',
           })),
         };
       });

@@ -714,12 +714,9 @@ export function canAccess(
   map: ContentAccessMap = DEFAULT_CONTENT_ACCESS
 ): boolean {
   const r = normalizeRole(role);
-  if (r === 'super_admin' || r === 'admin') {
-    if (ADMIN_ROLES.includes(r) && level === 'view') return true;
-  }
-  const granted = accessOf(
-    map[resource]?.[r] ?? DEFAULT_CONTENT_ACCESS[resource]?.[r]
-  );
+  const cellRaw = map[resource]?.[r] ?? DEFAULT_CONTENT_ACCESS[resource]?.[r];
+  const granted = accessOf(cellRaw);
+  // Respect ACL map for all roles including admin/super_admin (no view bypass).
   return LEVEL_RANK[granted] >= LEVEL_RANK[level];
 }
 

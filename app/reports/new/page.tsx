@@ -126,7 +126,7 @@ export default async function NewReportPage({
         : [normalizeActivity(String(e.activity || 'เยี่ยมชมโรงเรียน'))];
     const participants = participantIds.map((id) => ({
       id,
-      name: nameById.get(id) || id,
+      name: nameById.get(id) || 'ไม่ระบุ',
     }));
 
     const hint: Hint = {
@@ -177,7 +177,7 @@ export default async function NewReportPage({
               : [normalizeActivity(String(e.activity || 'เยี่ยมชมโรงเรียน'))],
             participants: participantIds.map((id) => ({
               id,
-              name: nameById.get(id) || id,
+              name: nameById.get(id) || 'ไม่ระบุ',
             })),
           };
         }

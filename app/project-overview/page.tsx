@@ -1,9 +1,13 @@
 import { Suspense } from 'react';
+import { redirect } from 'next/navigation';
 import { PageBanner } from '@/components/layout/PageBanner';
 import { ThailandMapClient } from '@/components/map/ThailandMapClient';
 import { PillarsOverviewClient } from '@/components/pillars/PillarsOverviewClient';
 import { StrategyOverviewSection } from '@/components/strategy/StrategyOverviewSection';
 import { PageSkeleton, StrategySkeleton } from '@/components/ui/PageSkeleton';
+import { canAccess } from '@/lib/auth/content-access';
+import { getSessionProfile } from '@/lib/auth/session';
+import { readContentAccessMapStored } from '@/lib/auth/user-store';
 import {
   EMPTY_PILLAR_INDICATORS,
   EMPTY_PILLAR_OVERVIEW,
@@ -21,7 +25,7 @@ import {
   mapPillarRow,
   type SchoolPillarScoreRow,
 } from '@/lib/supabase/school-pillars';
-import { PAGE_BANNERS, type SchoolFull } from '@/lib/types';
+import { PAGE_BANNERS, normalizeRole, type SchoolFull } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -145,7 +149,15 @@ async function OverviewBody() {
   );
 }
 
-export default function ProjectOverviewPage() {
+export default async function ProjectOverviewPage() {
+  const [{ role }, acl] = await Promise.all([
+    getSessionProfile(),
+    readContentAccessMapStored(),
+  ]);
+  if (!canAccess(normalizeRole(role), 'project_overview', 'view', acl)) {
+    redirect('/');
+  }
+
   return (
     <div>
       <PageBanner

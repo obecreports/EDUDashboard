@@ -18,7 +18,7 @@ import {
 import { formatPersonLabel, normalizeRole } from '@/lib/types';
 
 export const metadata: Metadata = {
-  title: 'โครงการกองทุนการศึกษา · Connext ED',
+  title: 'โครงการกองทุนการศึกษา',
   description: 'สร้างคนดีให้บ้านเมือง — ระบบติดตามโรงเรียนในโครงการกองทุนการศึกษา',
 };
 

@@ -60,7 +60,7 @@ function BuildingCard({ building }: { building: SchoolBuildingCard }) {
 
       <div className="school-building-card__body">
         <h3 className="school-building-card__title">
-          อาคารเลขที่ {building.building_number}
+          รายการที่ {building.building_number}
         </h3>
         <dl className="school-building-card__facts">
           <div>

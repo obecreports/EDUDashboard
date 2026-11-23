@@ -106,6 +106,12 @@ function parseInitialStatus(raw?: string): Set<StatusFilterKey> {
   return new Set<StatusFilterKey>(['all']);
 }
 
+/** Grade card counts/filter follow the active score tab (3 pillars vs SMS). */
+function scoreForGradeFilter(s: SchoolFull, scoreMode: ScoreMode): number {
+  if (scoreMode === 'three') return s.threePillarScores?.overall ?? 0;
+  return s.overallScore ?? 0;
+}
+
 export function ManagedSchoolsClient({
   schools,
   mode = 'guest',
@@ -187,10 +193,10 @@ export function ManagedSchoolsClient({
       excellent: 0,
     };
     poolSchools.forEach((s) => {
-      c[statusFromScore(s.overallScore).key] += 1;
+      c[statusFromScore(scoreForGradeFilter(s, scoreMode)).key] += 1;
     });
     return c;
-  }, [poolSchools]);
+  }, [poolSchools, scoreMode]);
 
   const filtered = useMemo(() => {
     let list = [...poolSchools];
@@ -205,7 +211,9 @@ export function ManagedSchoolsClient({
       );
     }
     if (showScores && !statusFilter.has('all')) {
-      list = list.filter((s) => statusFilter.has(statusFromScore(s.overallScore).key));
+      list = list.filter((s) =>
+        statusFilter.has(statusFromScore(scoreForGradeFilter(s, scoreMode)).key)
+      );
     }
     if (!visitFilter.has('all')) {
       list = list.filter((s) => visitFilter.has((s.visitStatus ?? 'never') as VisitFilter));

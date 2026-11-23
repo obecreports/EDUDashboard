@@ -37,7 +37,7 @@ export const MOCK_CONTRACT_TEACHERS: ContractTeacher[] = [
     end_date: '2026-04-30',
     status: 'ปฏิบัติงาน',
     phone: '082-111-0001',
-    notes: 'ข้อมูลจำลองสำหรับทดสอบหน้า ครูอัตรจ้าง',
+    notes: 'ข้อมูลจำลองสำหรับทดสอบหน้า ครูอัตราจ้าง',
   },
   {
     id: 'ct-002',
