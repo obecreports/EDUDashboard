@@ -3876,7 +3876,16 @@ a {
   overflow: auto;
   padding-right: 0.15rem;
 }
-/* Home hub summary cards — solid light navy / gold / white + watermark icon */
+/* Home hub summary cards — one equal row; solid light navy / gold / white */
+.home-hub-stat-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.75rem;
+  align-items: stretch;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.15rem;
+}
 .home-hub-stat {
   position: relative;
   overflow: hidden;
@@ -3884,6 +3893,33 @@ a {
   border: 1px solid transparent;
   padding: 1rem 1.1rem;
   min-height: 7.25rem;
+  flex: 1 1 0;
+  min-width: 9.5rem;
+}
+a.home-hub-stat--link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+a.home-hub-stat--link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+a.home-hub-stat--link:focus-visible {
+  outline: 2px solid var(--tm-blue);
+  outline-offset: 2px;
+}
+@media (max-width: 640px) {
+  .home-hub-stat__value {
+    font-size: 1.25rem;
+  }
+  .home-hub-stat__label {
+    font-size: 0.65rem;
+  }
 }
 .home-hub-stat__bg-icon {
   position: absolute;

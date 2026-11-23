@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   School,
   Users,
-  Wallet,
 } from 'lucide-react';
 import { personAvatarUrl } from '@/lib/schools/images';
 import { uploadAndSaveSelfAvatar } from '@/components/home/upload-self-avatar';
@@ -25,39 +24,6 @@ export type HomeStats = {
   budgetProjects: number;
   budgetTotal: number;
 };
-
-const MENU = [
-  {
-    href: '/schools',
-    label: 'โรงเรียน',
-    desc: 'รายการโรงเรียนในขอบเขตของคุณ',
-    icon: School,
-  },
-  {
-    href: '/scholarship-students',
-    label: 'นักเรียนทุนฯ',
-    desc: 'รายชื่อนักเรียนทุนในขอบเขต',
-    icon: GraduationCap,
-  },
-  {
-    href: '/volunteers',
-    label: 'อาสาสมัคร',
-    desc: 'รายชื่ออาสาสมัครส่วนกลาง / ประจำพื้นที่',
-    icon: Users,
-  },
-  {
-    href: '/budget',
-    label: 'งบประมาณ',
-    desc: 'โครงการและงบสนับสนุน (ข้อมูลจำลอง)',
-    icon: Wallet,
-  },
-  {
-    href: '/dashboard',
-    label: 'เปรียบเทียบข้อมูลโรงเรียน',
-    desc: 'แดชบอร์ดและเรดาร์เปรียบเทียบ',
-    icon: LayoutDashboard,
-  },
-] as const;
 
 export function HomeHubClient({
   userId,
@@ -81,25 +47,32 @@ export function HomeHubClient({
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [openProvinces, setOpenProvinces] = useState<Record<string, boolean>>({});
+  /** Full-project controllers: collapse long province list under "ทั้งโครงการ". */
+  const collapseAsWholeProject =
+    role === 'super_overseer' || role === 'admin' || role === 'super_admin';
+  const [projectOpen, setProjectOpen] = useState(false);
 
   const roleLabel = roleDisplayLabel(role, overseerTier);
 
-  const statCards = useMemo(() => {
+  const hubCards = useMemo(() => {
     const cards: {
       key: string;
+      href: string;
       label: string;
-      value: string;
+      value?: string;
       sub?: string;
       icon: typeof School;
     }[] = [
       {
         key: 'schools',
+        href: '/schools',
         label: 'โรงเรียนในขอบเขต',
         value: String(stats.schoolCount),
         icon: School,
       },
       {
         key: 'ss',
+        href: '/scholarship-students',
         label: 'นักเรียนทุนฯ',
         value: String(stats.scholarshipCount),
         icon: GraduationCap,
@@ -108,19 +81,31 @@ export function HomeHubClient({
     if (stats.volunteerCount != null) {
       cards.push({
         key: 'vl',
+        href: '/volunteers',
         label: 'อาสาสมัคร',
         value: String(stats.volunteerCount),
         sub: 'ส่วนกลาง + ประจำพื้นที่',
         icon: Users,
       });
     }
-    cards.push({
-      key: 'budget',
-      label: 'งบประมาณ',
-      value: `${stats.budgetProjects} โครงการ`,
-      sub: formatBudgetBaht(stats.budgetTotal),
-      icon: HandCoins,
-    });
+    cards.push(
+      {
+        key: 'budget',
+        href: '/budget',
+        label: 'งบประมาณ',
+        value: `${stats.budgetProjects} โครงการ`,
+        sub: formatBudgetBaht(stats.budgetTotal),
+        icon: HandCoins,
+      },
+      {
+        key: 'dashboard',
+        href: '/dashboard',
+        label: 'เปรียบเทียบข้อมูลโรงเรียน',
+        value: 'เปิดหน้าข้อมูล',
+        sub: 'รายละเอียดด้านใน >',
+        icon: LayoutDashboard,
+      }
+    );
     return cards;
   }, [stats]);
 
@@ -144,25 +129,28 @@ export function HomeHubClient({
       <header>
         <p className="text-sm text-slate-500 m-0">{roleLabel}</p>
         <h1 className="section-heading mt-1 mb-0">{displayName}</h1>
-        <p className="text-slate-500 mt-1 mb-0">หน้าโปรไฟล์และเมนูหลัก</p>
+        <p className="text-slate-500 mt-1 mb-0">สรุปข้อมูลและเมนูหลัก</p>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {statCards.map((c, i) => {
+      <section className="home-hub-stat-row">
+        {hubCards.map((c, i) => {
           const Icon = c.icon;
           const tone = (['navy', 'gold', 'white', 'navy'] as const)[i % 4];
           return (
-            <div
+            <Link
               key={c.key}
-              className={`home-hub-stat home-hub-stat--${tone}`}
+              href={c.href}
+              className={`home-hub-stat home-hub-stat--${tone} home-hub-stat--link`}
             >
               <Icon className="home-hub-stat__bg-icon" size={88} aria-hidden />
               <div className="home-hub-stat__body">
                 <p className="home-hub-stat__label">{c.label}</p>
-                <p className="home-hub-stat__value">{c.value}</p>
+                {c.value ? (
+                  <p className="home-hub-stat__value">{c.value}</p>
+                ) : null}
                 {c.sub ? <p className="home-hub-stat__sub">{c.sub}</p> : null}
               </div>
-            </div>
+            </Link>
           );
         })}
       </section>
@@ -215,72 +203,114 @@ export function HomeHubClient({
               <p className="text-sm text-slate-500 m-0">ยังไม่มีโรงเรียนในขอบเขต</p>
             )
           ) : domain.tree.length ? (
-            <ul className="m-0 p-0 list-none space-y-2">
-              {domain.tree.map((row) => {
-                const open = Boolean(openProvinces[row.province]);
-                return (
-                  <li
-                    key={row.province}
-                    className="rounded-lg border border-slate-200 overflow-hidden"
-                  >
-                    <button
-                      type="button"
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 bg-slate-50"
-                      onClick={() =>
-                        setOpenProvinces((prev) => ({
-                          ...prev,
-                          [row.province]: !prev[row.province],
-                        }))
-                      }
+            collapseAsWholeProject ? (
+              <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-semibold text-slate-800 bg-slate-50"
+                  onClick={() => setProjectOpen((v) => !v)}
+                  aria-expanded={projectOpen}
+                >
+                  <span>
+                    ทั้งโครงการ
+                    <span className="ml-2 font-normal text-slate-500">
+                      ({domain.tree.length} จังหวัด)
+                    </span>
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className={`shrink-0 transition ${projectOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {projectOpen ? (
+                  <ul className="m-0 p-2 list-none space-y-2 bg-white">
+                    {domain.tree.map((row) => {
+                      const open = Boolean(openProvinces[row.province]);
+                      return (
+                        <li
+                          key={row.province}
+                          className="rounded-lg border border-slate-200 overflow-hidden"
+                        >
+                          <button
+                            type="button"
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 bg-slate-50"
+                            onClick={() =>
+                              setOpenProvinces((prev) => ({
+                                ...prev,
+                                [row.province]: !prev[row.province],
+                              }))
+                            }
+                          >
+                            <span>{row.province}</span>
+                            <ChevronDown
+                              size={16}
+                              className={`shrink-0 transition ${open ? 'rotate-180' : ''}`}
+                            />
+                          </button>
+                          {open ? (
+                            <ul className="m-0 px-3 py-2 list-disc list-inside text-sm text-slate-600 space-y-1">
+                              {row.districts.length ? (
+                                row.districts.map((d) => <li key={d}>{d}</li>)
+                              ) : (
+                                <li className="list-none text-slate-400">
+                                  ไม่มีเขตในข้อมูลโรงเรียน
+                                </li>
+                              )}
+                            </ul>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </div>
+            ) : (
+              <ul className="m-0 p-0 list-none space-y-2">
+                {domain.tree.map((row) => {
+                  const open = Boolean(openProvinces[row.province]);
+                  return (
+                    <li
+                      key={row.province}
+                      className="rounded-lg border border-slate-200 overflow-hidden"
                     >
-                      <span>{row.province}</span>
-                      <ChevronDown
-                        size={16}
-                        className={`shrink-0 transition ${open ? 'rotate-180' : ''}`}
-                      />
-                    </button>
-                    {open ? (
-                      <ul className="m-0 px-3 py-2 list-disc list-inside text-sm text-slate-600 space-y-1">
-                        {row.districts.length ? (
-                          row.districts.map((d) => <li key={d}>{d}</li>)
-                        ) : (
-                          <li className="list-none text-slate-400">ไม่มีเขตในข้อมูลโรงเรียน</li>
-                        )}
-                      </ul>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 bg-slate-50"
+                        onClick={() =>
+                          setOpenProvinces((prev) => ({
+                            ...prev,
+                            [row.province]: !prev[row.province],
+                          }))
+                        }
+                      >
+                        <span>{row.province}</span>
+                        <ChevronDown
+                          size={16}
+                          className={`shrink-0 transition ${open ? 'rotate-180' : ''}`}
+                        />
+                      </button>
+                      {open ? (
+                        <ul className="m-0 px-3 py-2 list-disc list-inside text-sm text-slate-600 space-y-1">
+                          {row.districts.length ? (
+                            row.districts.map((d) => <li key={d}>{d}</li>)
+                          ) : (
+                            <li className="list-none text-slate-400">
+                              ไม่มีเขตในข้อมูลโรงเรียน
+                            </li>
+                          )}
+                        </ul>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )
           ) : (
             <p className="text-sm text-slate-500 m-0">ยังไม่มีจังหวัดในขอบเขต</p>
           )}
         </div>
       </section>
 
-      <section>
-        <h2 className="section-heading text-base mb-3">เมนู</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {MENU.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="panel-card !p-4 flex gap-3 items-start no-underline text-inherit hover:border-tm-blue/40 transition border border-transparent"
-              >
-                <span className="rounded-lg bg-sky-50 text-tm-blue p-2.5 shrink-0">
-                  <Icon size={22} aria-hidden />
-                </span>
-                <span>
-                  <span className="block font-bold text-tm-blue">{item.label}</span>
-                  <span className="block text-sm text-slate-500 mt-0.5">{item.desc}</span>
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
     </div>
   );
 }

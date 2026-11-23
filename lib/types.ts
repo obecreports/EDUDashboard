@@ -296,7 +296,7 @@ export const ADMIN_ROLE_LABELS: Record<UserRole, string> = {
   special_volunteer: 'อาสาสมัครเฉพาะกิจ',
   covert_overseer: 'องคมนตรี (อิสระ)',
   director: 'ผู้อำนวยการโรงเรียน',
-  super_overseer: 'ท่านประธาน',
+  super_overseer: 'ประธานโครงการ',
   admin: 'ผู้ดูแลระบบ (Admin)',
   super_admin: 'ผู้ดูแลระบบสูงสุด (Super Admin)',
 };
@@ -311,7 +311,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   /** Same display name as overseer */
   covert_overseer: 'องคมนตรี',
   director: 'ผู้อำนวยการโรงเรียน',
-  super_overseer: 'ท่านประธาน',
+  super_overseer: 'ประธานโครงการ',
   admin: 'ผู้ดูแลระบบ (Admin)',
   super_admin: 'ผู้ดูแลระบบสูงสุด (Super Admin)',
 };
