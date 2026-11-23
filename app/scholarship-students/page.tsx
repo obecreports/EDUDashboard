@@ -11,6 +11,7 @@ import { canAccess } from '@/lib/auth/content-access';
 import { fetchSchools } from '@/lib/supabase/schools';
 import { filterSchoolsInDomain } from '@/lib/volunteers/directory';
 import { fetchScholarshipStudents } from '@/lib/supabase/scholarship-students';
+import { SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE } from '@/lib/scholarship/labels';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,11 @@ async function Body() {
   }
 
   let students = await fetchScholarshipStudents();
-  if (isFieldRole(r) && !isAdminRole(r)) {
+  // Outside-project bucket only for full-project controllers + special_volunteer.
+  const canSeeOutsideProject =
+    isAdminRole(r) || r === 'super_overseer' || r === 'special_volunteer';
+
+  if (isFieldRole(r) && !isAdminRole(r) && r !== 'super_overseer') {
     const [schools, users] = await Promise.all([
       fetchSchools().catch(() => []),
       readStoredUsers().catch(() => []),
@@ -35,8 +40,21 @@ async function Body() {
     const scopedIds = new Set(
       filterSchoolsInDomain(schools, profile, users).map((s) => String(s.school_id))
     );
+    students = students.filter((s) => {
+      const inDomain =
+        Boolean(s.school_id) && scopedIds.has(String(s.school_id));
+      if (inDomain) return true;
+      if (
+        canSeeOutsideProject &&
+        s.province === SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE
+      ) {
+        return true;
+      }
+      return false;
+    });
+  } else if (!canSeeOutsideProject) {
     students = students.filter(
-      (s) => s.school_id && scopedIds.has(String(s.school_id))
+      (s) => s.province !== SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE
     );
   }
   const canModify = canAccess(r, 'scholarship_students', 'modify', acl);

@@ -4,10 +4,15 @@ import type {
   ScholarshipStudent,
   ScholarshipStudentStatus,
 } from '@/lib/mock/scholarship-students';
+import { SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE } from '@/lib/scholarship/labels';
+
+export { SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE };
 
 /** Use `*` so Supabase client types resolve (long column lists → GenericStringError). */
 const STUDENT_SELECT = '*';
 const FAMILY_SELECT = '*';
+
+type SchoolMeta = { province: string; school_name: string };
 
 function text(v: unknown): string | undefined {
   if (v == null) return undefined;
@@ -129,6 +134,50 @@ function mapStudent(
   };
 }
 
+async function fetchProjectSchoolMetaMap(): Promise<Map<string, SchoolMeta>> {
+  const map = new Map<string, SchoolMeta>();
+  try {
+    const supabase = createAnonClient();
+    // Production School_Basic uses province_name / school_name (no school_name_th / province).
+    const { data, error } = await supabase
+      .from('School_Basic')
+      .select('school_id, school_name, province_name');
+    if (error || !data) return map;
+    for (const row of data as unknown as Record<string, unknown>[]) {
+      if (row.school_id == null) continue;
+      const id = String(row.school_id);
+      const province = text(row.province_name) || '';
+      const school_name = text(row.school_name) || '';
+      map.set(id, { province, school_name });
+    }
+  } catch {
+    /* ignore */
+  }
+  return map;
+}
+
+function enrichStudentProvince(
+  student: ScholarshipStudent,
+  schoolMap: Map<string, SchoolMeta>
+): ScholarshipStudent {
+  const sid = String(student.school_id || '').trim();
+  const meta = sid ? schoolMap.get(sid) : undefined;
+  if (meta) {
+    return {
+      ...student,
+      province: meta.province || SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE,
+      school_name:
+        student.school_name && student.school_name !== '—'
+          ? student.school_name
+          : meta.school_name || student.school_name,
+    };
+  }
+  return {
+    ...student,
+    province: SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE,
+  };
+}
+
 async function fetchFamilyByStudentIds(
   studentIds: string[]
 ): Promise<Map<string, ScholarshipFamilyMember[]>> {
@@ -163,15 +212,23 @@ async function fetchFamilyByStudentIds(
 export async function fetchScholarshipStudents(): Promise<ScholarshipStudent[]> {
   try {
     const supabase = createAnonClient();
-    const { data, error } = await supabase
-      .from('scholarship_students')
-      .select(STUDENT_SELECT)
-      .order('full_name', { ascending: true });
+    const [{ data, error }, schoolMap] = await Promise.all([
+      supabase
+        .from('scholarship_students')
+        .select(STUDENT_SELECT)
+        .order('full_name', { ascending: true }),
+      fetchProjectSchoolMetaMap(),
+    ]);
     if (error || !data) return [];
     const rows = data as unknown as Record<string, unknown>[];
     const ids = rows.map((r) => String(r.id));
     const familyMap = await fetchFamilyByStudentIds(ids);
-    return rows.map((r) => mapStudent(r, familyMap.get(String(r.id)) ?? []));
+    return rows.map((r) =>
+      enrichStudentProvince(
+        mapStudent(r, familyMap.get(String(r.id)) ?? []),
+        schoolMap
+      )
+    );
   } catch {
     return [];
   }
@@ -184,16 +241,22 @@ export async function fetchScholarshipStudentById(
   if (!sid) return null;
   try {
     const supabase = createAnonClient();
-    const { data, error } = await supabase
-      .from('scholarship_students')
-      .select(STUDENT_SELECT)
-      .eq('id', sid)
-      .maybeSingle();
+    const [{ data, error }, schoolMap] = await Promise.all([
+      supabase
+        .from('scholarship_students')
+        .select(STUDENT_SELECT)
+        .eq('id', sid)
+        .maybeSingle(),
+      fetchProjectSchoolMetaMap(),
+    ]);
     if (error || !data) return null;
     const familyMap = await fetchFamilyByStudentIds([sid]);
-    return mapStudent(
-      data as unknown as Record<string, unknown>,
-      familyMap.get(sid) ?? []
+    return enrichStudentProvince(
+      mapStudent(
+        data as unknown as Record<string, unknown>,
+        familyMap.get(sid) ?? []
+      ),
+      schoolMap
     );
   } catch {
     return null;
@@ -209,16 +272,24 @@ export async function fetchScholarshipStudentsBySchoolId(
   if (!Number.isFinite(n)) return [];
   try {
     const supabase = createAnonClient();
-    const { data, error } = await supabase
-      .from('scholarship_students')
-      .select(STUDENT_SELECT)
-      .eq('school_id', n)
-      .order('full_name', { ascending: true });
+    const [{ data, error }, schoolMap] = await Promise.all([
+      supabase
+        .from('scholarship_students')
+        .select(STUDENT_SELECT)
+        .eq('school_id', n)
+        .order('full_name', { ascending: true }),
+      fetchProjectSchoolMetaMap(),
+    ]);
     if (error || !data) return [];
     const rows = data as unknown as Record<string, unknown>[];
     const ids = rows.map((r) => String(r.id));
     const familyMap = await fetchFamilyByStudentIds(ids);
-    return rows.map((r) => mapStudent(r, familyMap.get(String(r.id)) ?? []));
+    return rows.map((r) =>
+      enrichStudentProvince(
+        mapStudent(r, familyMap.get(String(r.id)) ?? []),
+        schoolMap
+      )
+    );
   } catch {
     return [];
   }

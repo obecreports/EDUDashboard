@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { ScholarshipStudent } from '@/lib/mock/scholarship-students';
+import { SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE } from '@/lib/scholarship/labels';
 
 export function ScholarshipStudentsClient({
   students,
@@ -14,13 +15,15 @@ export function ScholarshipStudentsClient({
   const [q, setQ] = useState('');
   const [province, setProvince] = useState('');
 
-  const provinces = useMemo(
-    () =>
-      [...new Set(students.map((s) => s.province).filter(Boolean))].sort((a, b) =>
-        a.localeCompare(b, 'th')
-      ),
-    [students]
-  );
+  const provinces = useMemo(() => {
+    const set = new Set(
+      students.map((s) => s.province).filter((p): p is string => Boolean(p))
+    );
+    const hasOther = set.delete(SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE);
+    const sorted = [...set].sort((a, b) => a.localeCompare(b, 'th'));
+    if (hasOther) sorted.push(SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE);
+    return sorted;
+  }, [students]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -65,7 +68,7 @@ export function ScholarshipStudentsClient({
         </label>
         {canModify ? (
           <span className="text-xs text-tm-blue font-semibold pb-2">
-            สิทธิ์แก้ไข (mock)
+            สิทธิ์แก้ไข
           </span>
         ) : null}
       </div>
@@ -98,7 +101,7 @@ export function ScholarshipStudentsClient({
                   </td>
                   <td className="p-3">{s.grade_level}</td>
                   <td className="p-3">{s.school_name}</td>
-                  <td className="p-3">{s.province}</td>
+                  <td className="p-3">{s.province || '—'}</td>
                   <td className="p-3">{s.scholarship_type}</td>
                   <td className="p-3">{s.status}</td>
                   <td className="p-3 text-right">
@@ -116,7 +119,7 @@ export function ScholarshipStudentsClient({
         </table>
       </div>
       <p className="text-xs text-slate-500 m-0">
-        แสดง {filtered.length} จาก {students.length} คน · ข้อมูลจำลอง
+        แสดง {filtered.length} จาก {students.length} คน
       </p>
     </div>
   );
