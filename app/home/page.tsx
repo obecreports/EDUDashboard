@@ -7,7 +7,8 @@ import { PageSkeleton } from '@/components/ui/PageSkeleton';
 import { HomeHubClient } from '@/components/home/HomeHubClient';
 import { fetchSchools } from '@/lib/supabase/schools';
 import { readStoredUsers } from '@/lib/auth/user-store';
-import { listScholarshipStudents } from '@/lib/mock/scholarship-students';
+import { fetchScholarshipStudents } from '@/lib/supabase/scholarship-students';
+import { SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE } from '@/lib/scholarship/labels';
 import { getDomainBudgetSummary } from '@/lib/mock/domain-budget';
 import {
   buildDomainPanel,
@@ -31,16 +32,30 @@ async function HomeBody() {
     redirect('/login?next=/home');
   }
 
-  const [schools, users] = await Promise.all([
+  const [schools, users, allScholarship] = await Promise.all([
     fetchSchools().catch(() => []),
     readStoredUsers().catch(() => []),
+    fetchScholarshipStudents().catch(() => []),
   ]);
 
   const scopedSchools = filterSchoolsInDomain(schools, profile, users);
   const scopedIds = new Set(scopedSchools.map((s) => String(s.school_id)));
-  const scholarshipCount = listScholarshipStudents().filter((s) =>
-    scopedIds.has(String(s.school_id))
-  ).length;
+  // Same domain rules as /scholarship-students (DB, not mock list).
+  const canSeeOutsideProject =
+    r === 'super_overseer' || r === 'special_volunteer';
+  const scholarshipCount = allScholarship.filter((s) => {
+    const inDomain =
+      Boolean(s.school_id) && scopedIds.has(String(s.school_id));
+    if (inDomain) return true;
+    if (
+      canSeeOutsideProject &&
+      s.province === SCHOLARSHIP_OUTSIDE_PROJECT_PROVINCE
+    ) {
+      return true;
+    }
+    // Full-project controllers already have all schools in scopedIds.
+    return false;
+  }).length;
 
   const showVlCount =
     r === 'super_overseer' || r === 'overseer' || r === 'covert_overseer';
