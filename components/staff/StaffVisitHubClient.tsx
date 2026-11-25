@@ -14,7 +14,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
-  AlertTriangle,
   LogOut,
   MapPin,
   MessageSquarePlus,
@@ -191,9 +190,6 @@ export function StaffVisitHubClient({
     return list;
   }, [activeEvents, scopeView, currentUserId, personIds]);
 
-  const waiting = scopedEvents.filter((e) => normalizeStatus(e.status_th ?? e.status) === 'นัดหมายแล้ว').length;
-  const done = scopedEvents.filter((e) => normalizeStatus(e.status_th ?? e.status) === 'เยี่ยมชมเสร็จสิ้น').length;
-
   const personLabel = (staffId: string) => {
     const p = peopleById.get(staffId);
     if (!p) {
@@ -232,6 +228,16 @@ export function StaffVisitHubClient({
             (a.school_name || '').localeCompare(b.school_name || '', 'th')
         ),
     [scopedEvents, range]
+  );
+
+  /** Summary cards follow the same filters as the list (scope/person/date range). */
+  const waiting = useMemo(
+    () => rangedEvents.filter((e) => e.date >= today).length,
+    [rangedEvents, today]
+  );
+  const passedVisit = useMemo(
+    () => rangedEvents.filter((e) => e.date < today).length,
+    [rangedEvents, today]
   );
 
   const totalListPages = Math.max(1, Math.ceil(rangedEvents.length / SCHEDULE_PAGE_SIZE));
@@ -383,19 +389,8 @@ export function StaffVisitHubClient({
               <CheckCircle2 size={18} />
             </div>
             <div>
-              <div className="status-card__value" style={{ color: '#15803D' }}>{done}</div>
-              <div className="status-card__label">ลงพื้นที่แล้ว</div>
-            </div>
-          </div>
-          <div className="status-card">
-            <div className="status-card__icon" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
-              <AlertTriangle size={18} />
-            </div>
-            <div>
-              <div className="status-card__value" style={{ color: '#B91C1C' }}>
-                {Math.max(0, managedCount - done)}
-              </div>
-              <div className="status-card__label">ควรพัฒนา</div>
+              <div className="status-card__value" style={{ color: '#15803D' }}>{passedVisit}</div>
+              <div className="status-card__label">ผ่านวันนัด</div>
             </div>
           </div>
         </div>

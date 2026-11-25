@@ -101,7 +101,7 @@ export function HomeHubClient({
         key: 'dashboard',
         href: '/dashboard',
         label: 'เปรียบเทียบข้อมูลโรงเรียน',
-        value: 'เปิดหน้าข้อมูล',
+        value: 'Dashboard',
         sub: 'รายละเอียดด้านใน >',
         icon: LayoutDashboard,
       }
