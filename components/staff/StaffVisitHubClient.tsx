@@ -130,6 +130,8 @@ export function StaffVisitHubClient({
   const [scopeView, setScopeView] = useState<'mine' | 'chain'>('chain');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [listPage, setListPage] = useState(1);
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [bookDate, setBookDate] = useState<string | null>(null);
 
   useEffect(() => {
     setEvents(initial);
@@ -286,7 +288,13 @@ export function StaffVisitHubClient({
   };
 
   const runCancel = (id: string) => {
-    if (!window.confirm('ยกเลิกนัดหมายนี้สำหรับทุกคนในทีม?')) return;
+    setCancelId(id);
+  };
+
+  const confirmCancel = () => {
+    if (!cancelId) return;
+    const id = cancelId;
+    setCancelId(null);
     setActionMsg(null);
     start(async () => {
       const fd = new FormData();
@@ -362,6 +370,11 @@ export function StaffVisitHubClient({
       </section>
     ) : null;
 
+  const newScheduleHref =
+    range.from === range.to
+      ? `/calendar/new?date=${encodeURIComponent(range.from)}`
+      : '/calendar/new';
+
   return (
     <div>
       <div className="page-shell py-5 space-y-5">
@@ -414,6 +427,13 @@ export function StaffVisitHubClient({
                 นัดทั้งหมด
               </button>
             </div>
+            {canCreateSchedule ? (
+              <div className="ml-auto hidden md:block">
+                <Link href={newScheduleHref} className="ed-btn ed-btn--primary ed-btn--sm">
+                  <CalendarDays size={14} /> เพิ่มนัดหมาย
+                </Link>
+              </div>
+            ) : null}
           </div>
           {people.length > 0 ? (
             <div className="max-w-md">
@@ -441,15 +461,8 @@ export function StaffVisitHubClient({
               }}
             />
             {canCreateSchedule ? (
-              <div className="pt-1">
-                <Link
-                  href={
-                    range.from === range.to
-                      ? `/calendar/new?date=${encodeURIComponent(range.from)}`
-                      : '/calendar/new'
-                  }
-                  className="ed-btn ed-btn--primary ed-btn--sm"
-                >
+              <div className="pt-1 md:hidden">
+                <Link href={newScheduleHref} className="ed-btn ed-btn--primary ed-btn--sm">
                   <CalendarDays size={14} /> เพิ่มนัดหมาย
                 </Link>
               </div>
@@ -489,7 +502,12 @@ export function StaffVisitHubClient({
           <div className="ed-visit-layout__cal space-y-3">
             <section className="ed-card p-4 ed-month-cal-wrap">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <strong className="text-lg">{monthLabel}</strong>
+                <div>
+                  <strong className="text-lg">{monthLabel}</strong>
+                  {canCreateSchedule ? (
+                    <p className="text-xs text-slate-500 m-0">ดับเบิลคลิกวันที่เพื่อสร้างนัดหมาย</p>
+                  ) : null}
+                </div>
                 <div className="flex items-center gap-2">
                   <div className="cal-owner-legend m-0">
                     <span>
@@ -561,6 +579,7 @@ export function StaffVisitHubClient({
                       className={`ed-month-cal__day ${isToday ? 'ed-month-cal__day--today' : ''} ${
                         inRange ? 'ed-month-cal__day--range' : ''
                       } ${ownerClass}`}
+                      title={canCreateSchedule ? 'ดับเบิลคลิกเพื่อสร้างนัดหมายวันนี้' : undefined}
                       onClick={() => {
                         setPreset('custom');
                         setRange({ from: dateStr, to: dateStr });
@@ -568,6 +587,14 @@ export function StaffVisitHubClient({
                           setExpandedIds(new Set(dayEvents.map((e) => e.id)));
                         }
                       }}
+                      onDoubleClick={
+                        canCreateSchedule
+                          ? (ev) => {
+                              ev.preventDefault();
+                              setBookDate(dateStr);
+                            }
+                          : undefined
+                      }
                     >
                       <span className="ed-month-cal__day-num">{day}</span>
                       <div className="ed-month-cal__peeks">
@@ -854,14 +881,14 @@ export function StaffVisitHubClient({
                   className="ed-btn ed-btn--outline ed-btn--sm"
                   onClick={expandAllListed}
                 >
-                  ขยายทั้งหมด
+                  แสดงทั้งหมด
                 </button>
                 <button
                   type="button"
                   className="ed-btn ed-btn--outline ed-btn--sm"
                   onClick={collapseAllListed}
                 >
-                  ยุบทั้งหมด
+                  ย่อทั้งหมด
                 </button>
               </div>
             ) : null}
@@ -1106,6 +1133,73 @@ export function StaffVisitHubClient({
         )}
       </div>
 
+      {bookDate ? (
+        <div
+          className="session-idle-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="book-visit-title"
+        >
+          <div className="session-idle-modal">
+            <p id="book-visit-title" className="text-sm text-slate-700 m-0">
+              ต้องการนัดหมายวันที่ {formatThaiDate(bookDate)}?
+            </p>
+            <div className="flex flex-wrap gap-2 mt-4">
+              <button
+                type="button"
+                className="ed-btn ed-btn--primary ed-btn--sm"
+                onClick={() => {
+                  const date = bookDate;
+                  setBookDate(null);
+                  router.push(`/calendar/new?date=${encodeURIComponent(date)}`);
+                }}
+              >
+                ใช่
+              </button>
+              <button
+                type="button"
+                className="ed-btn ed-btn--outline ed-btn--sm"
+                onClick={() => setBookDate(null)}
+              >
+                ไม่
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {cancelId ? (
+        <div
+          className="session-idle-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-visit-title"
+        >
+          <div className="session-idle-modal">
+            <p id="cancel-visit-title" className="text-sm text-slate-700 m-0">
+              ยกเลิกนัดหมายนี้สำหรับทุกคนในทีม?
+            </p>
+            <div className="flex flex-wrap gap-2 mt-4">
+              <button
+                type="button"
+                className="ed-btn ed-btn--primary ed-btn--sm"
+                disabled={pending}
+                onClick={confirmCancel}
+              >
+                ใช่
+              </button>
+              <button
+                type="button"
+                className="ed-btn ed-btn--outline ed-btn--sm"
+                disabled={pending}
+                onClick={() => setCancelId(null)}
+              >
+                ไม่
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

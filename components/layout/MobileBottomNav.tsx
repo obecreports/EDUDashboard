@@ -40,7 +40,7 @@ const TABS: Tab[] = [
   },
   {
     href: '/reports/new',
-    label: 'บันทึก',
+    label: 'ส่งบันทึก',
     icon: ClipboardPlus,
     elevated: true,
     match: (p) => p.startsWith('/reports'),

@@ -932,7 +932,7 @@ export function NewReportClient({
             disabled={pending || !canSubmit}
             onClick={submitAll}
           >
-            {pending ? 'กำลังบันทึก…' : 'บันทึกความคิดเห็น'}
+            {pending ? 'กำลังบันทึก…' : 'ส่งบันทึก'}
           </button>
           <button
             type="button"
@@ -940,10 +940,10 @@ export function NewReportClient({
             disabled={pending || !schoolId}
             onClick={saveDraft}
           >
-            บันทึกร่าง
+            บันทึกแบบร่าง
           </button>
           <Link href="/reports" className="ed-btn ed-btn--outline">
-            ไปหน้าบันทึกทั้งหมด
+            ดูบันทึกทั้งหมด
           </Link>
         </div>
       </div>

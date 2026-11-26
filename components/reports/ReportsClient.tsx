@@ -439,14 +439,14 @@ export function ReportsClient({
                 className="ed-btn ed-btn--outline ed-btn--sm"
                 onClick={() => setExpandedDays(new Set(pageDayKeys))}
               >
-                ขยายทั้งหมด
+                แสดงทั้งหมด
               </button>
               <button
                 type="button"
                 className="ed-btn ed-btn--outline ed-btn--sm"
                 onClick={() => setExpandedDays(new Set())}
               >
-                ยุบทั้งหมด
+                ย่อทั้งหมด
               </button>
             </div>
           ) : null}
